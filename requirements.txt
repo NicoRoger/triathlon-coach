@@ -1,6 +1,6 @@
 pydantic>=2.6,<3
 supabase>=2.4,<3
 requests>=2.31
-garminconnect>=0.3.3
+garminconnect>=0.3.0,<0.3.3
 cryptography>=42
 pytest>=7.4
