@@ -1,0 +1,27 @@
+name: morning-briefing
+
+on:
+  schedule:
+    - cron: '30 5 * * *'  # 06:30 Europe/Rome (UTC+1) — adjust for DST manually if needed
+  workflow_dispatch:
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      HEALTHCHECKS_PING_URL_BRIEFING_MORNING: ${{ secrets.HC_BRIEFING }}
+      PYTHONPATH: '.'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - run: python -m coach.planning.briefing

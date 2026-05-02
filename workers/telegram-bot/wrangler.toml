@@ -1,0 +1,17 @@
+name = "telegram-bot"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+# KV per dedup updates
+[[kv_namespaces]]
+binding = "PROCESSED_UPDATES"
+id = "REPLACE_WITH_KV_ID"  # crea con: wrangler kv:namespace create PROCESSED_UPDATES
+
+# Secrets (set via: wrangler secret put <NAME>)
+# - TELEGRAM_BOT_TOKEN
+# - TELEGRAM_ALLOWED_CHAT_ID
+# - SUPABASE_URL
+# - SUPABASE_SERVICE_KEY
+
+[observability]
+enabled = true

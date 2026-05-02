@@ -1,0 +1,35 @@
+name: dr-snapshot
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # ogni notte 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write  # per commit dello snapshot ref
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DR_ENCRYPTION_KEY: ${{ secrets.DR_ENCRYPTION_KEY }}
+      PYTHONPATH: '.'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - run: python -m scripts.dr_snapshot
+
+      - name: Commit snapshot reference
+        run: |
+          git config user.name "DR Bot"
+          git config user.email "dr-bot@noreply"
+          git add docs/DR_INDEX.md
+          git diff --cached --quiet || git commit -m "DR snapshot $(date -u +%Y-%m-%d)"
+          git push

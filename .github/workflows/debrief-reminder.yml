@@ -1,0 +1,27 @@
+name: debrief-reminder
+
+on:
+  schedule:
+    - cron: '30 19 * * *'  # 21:30 Europe/Rome (UTC+2 estate, regola se necessario)
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - name: Send reminder
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$(cat <<EOF
+          {
+            "chat_id": "${TELEGRAM_CHAT_ID}",
+            "text": "<b>📋 Debrief serale</b>\n\nRispondi con:\n1. RPE sessione (1-10)\n2. Sensazioni\n3. Dolori? (no / dove)\n4. Energia + sonno previsto\n\n<i>Ignora se off oggi</i>",
+            "parse_mode": "HTML"
+          }
+          EOF
+          )"

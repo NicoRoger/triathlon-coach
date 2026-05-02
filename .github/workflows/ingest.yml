@@ -1,0 +1,52 @@
+name: ingest
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'  # ogni 3 ore
+  workflow_dispatch:        # trigger manuale
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      GARMIN_SESSION_JSON: ${{ secrets.GARMIN_SESSION_JSON }}
+      STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+      STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+      STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
+      HEALTHCHECKS_PING_URL_GARMIN_SYNC: ${{ secrets.HC_GARMIN }}
+      HEALTHCHECKS_PING_URL_STRAVA_SYNC: ${{ secrets.HC_STRAVA }}
+      INGEST_DAYS_BACK: '7'
+      PYTHONPATH: '.'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Garmin sync (with retries)
+        id: garmin
+        run: |
+          for i in 1 2 3; do
+            echo "Garmin attempt $i"
+            python -m coach.ingest.garmin && break || sleep $((i * 30))
+          done
+
+      - name: Strava sync
+        if: always()
+        run: python -m coach.ingest.strava
+
+      - name: Compute daily metrics
+        if: always()
+        run: python -m coach.analytics.daily
