@@ -43,9 +43,9 @@ jobs:
             python -m coach.ingest.garmin && break || sleep $((i * 30))
           done
 
-      - name: Strava sync
-        if: always()
-        run: python -m coach.ingest.strava
+      #- name: Strava sync
+       # if: always()
+        #run: python -m coach.ingest.strava
 
       - name: Compute daily metrics
         if: always()
