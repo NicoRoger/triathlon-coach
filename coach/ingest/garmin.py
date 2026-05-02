@@ -123,8 +123,8 @@ def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
 
     return DailyWellness(
         date=day,
-        hrv_rmssd=hrv.get("lastNightAvg"),
-        hrv_status=hrv.get("status"),
+        hrv_rmssd=(payload.get("sleep") or {}).get("avgOvernightHrv") or (hrv.get("hrvSummary") or {}).get("lastNightAvg"),
+        hrv_status=(hrv.get("hrvSummary") or {}).get("status") or (payload.get("sleep") or {}).get("hrvStatus"),
         sleep_score=(sleep.get("sleepScores", {}) or {}).get("overall", {}).get("value"),
         sleep_total_s=sleep.get("sleepTimeSeconds"),
         sleep_deep_s=sleep.get("deepSleepSeconds"),
