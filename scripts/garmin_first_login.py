@@ -20,7 +20,7 @@ def main() -> None:
     try:
         from garminconnect import Garmin
     except ImportError:
-        print("Installa: pip install python-garminconnect")
+        print("Installa: pip install garminconnect")
         sys.exit(1)
 
     email = input("Email Garmin: ").strip()
@@ -28,10 +28,10 @@ def main() -> None:
 
     tokendir = Path.home() / ".garminconnect"
     tokendir.mkdir(exist_ok=True)
+    os.environ["GARMINTOKENS"] = str(tokendir)
 
     g = Garmin(email, password)
     g.login()
-    g.garth.dump(str(tokendir))
     print(f"\nToken salvati in: {tokendir}")
 
     # Encode all files to base64 JSON

@@ -50,14 +50,16 @@ def _restore_garmin_session() -> Path:
     tokendir = Path(tempfile.mkdtemp(prefix="garmin_"))
     for name, content in decoded.items():
         (tokendir / name).write_text(content)
+    # Library espera GARMINTOKENS env var
+    os.environ["GARMINTOKENS"] = str(tokendir)
     return tokendir
 
 
 def _login():
     from garminconnect import Garmin  # type: ignore
-    tokendir = _restore_garmin_session()
+    _restore_garmin_session()
     g = Garmin()
-    g.login(str(tokendir))
+    g.login()  # legge da GARMINTOKENS env var
     return g
 
 
