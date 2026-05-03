@@ -13,11 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 THRESHOLDS_HOURS = {
-    "garmin_sync": 8,         # ingest 3h → 8h è 2-3 fallimenti consecutivi
-    #"strava_sync": 8,
-    "briefing_morning": 26,    # daily 06:30, 26h dà margine
+    "garmin_sync": 8,
+    # "strava_sync": 8,  # disabled: Garmin is single source of truth
+    "briefing_morning": 26,
     "analytics_daily": 8,
-    "dr_snapshot": 30,         # daily, 30h margine
+    "dr_snapshot": 30,
+    # debrief_evening not monitored: workflow doesn't update health table
 }
 
 
