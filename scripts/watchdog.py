@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 THRESHOLDS_HOURS = {
     "garmin_sync": 8,         # ingest 3h → 8h è 2-3 fallimenti consecutivi
-    "strava_sync": 8,
+    #"strava_sync": 8,
     "briefing_morning": 26,    # daily 06:30, 26h dà margine
     "analytics_daily": 8,
     "dr_snapshot": 30,         # daily, 30h margine
