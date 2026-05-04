@@ -5,7 +5,7 @@ compatibility_date = "2025-04-01"
 # KV per dedup updates
 [[kv_namespaces]]
 binding = "PROCESSED_UPDATES"
-id = "REPLACE_WITH_KV_ID"  # crea con: wrangler kv:namespace create PROCESSED_UPDATES
+id = "9d1822af8eff446e832c004178d578ad"  # crea con: wrangler kv:namespace create PROCESSED_UPDATES
 
 # Secrets (set via: wrangler secret put <NAME>)
 # - TELEGRAM_BOT_TOKEN
