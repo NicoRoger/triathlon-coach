@@ -16,6 +16,8 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       HEALTHCHECKS_PING_URL_BRIEFING_MORNING: ${{ secrets.HC_BRIEFING }}
       PYTHONPATH: '.'
+      SHOULDER_ACTIVE: ${{ secrets.SHOULDER_ACTIVE }}
+      PLANTAR_ACTIVE: ${{ secrets.PLANTAR_ACTIVE }}
 
     steps:
       - uses: actions/checkout@v4
