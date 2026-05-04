@@ -130,15 +130,32 @@ def compute_for(day: date, history_days: int = 90) -> dict:
 
     readiness = compute_readiness(wh, ts, ss)
 
+    # Recupera i dati Garmin training load dalla daily_wellness
+    garmin_acute = today_wellness.get("training_load_acute") if today_wellness else None
+    garmin_chronic = today_wellness.get("training_load_chronic") if today_wellness else None
+    garmin_balance = None
+    if garmin_acute is not None and garmin_chronic is not None:
+        # Coerente col TSB nostro: positivo = fresco, negativo = stanco
+        garmin_balance = round(garmin_chronic - garmin_acute, 2)
+    garmin_status = today_wellness.get("training_status") if today_wellness else None
+
     metrics = {
         "date": day.isoformat(),
+        # PMC nostro (TSS-based) — null finché non popoliamo zone fisiologiche
         "ctl": round(today_pmc.ctl, 2) if today_pmc else None,
         "atl": round(today_pmc.atl, 2) if today_pmc else None,
         "tsb": round(today_pmc.tsb, 2) if today_pmc else None,
         "daily_tss": round(today_pmc.daily_tss, 2) if today_pmc else None,
+        # PMC Garmin (training load proprietario) — funzionante da subito
+        "garmin_acute_load": round(garmin_acute, 2) if garmin_acute is not None else None,
+        "garmin_chronic_load": round(garmin_chronic, 2) if garmin_chronic is not None else None,
+        "garmin_load_balance": garmin_balance,
+        "garmin_training_status": garmin_status,
+        # HRV
         "hrv_z_score": round(z, 2) if z is not None else None,
         "hrv_baseline_28d": round(baseline_28, 2) if baseline_28 is not None else None,
         "hrv_baseline_28d_sd": round(baseline_sd, 2) if baseline_sd is not None else None,
+        # Readiness
         "readiness_score": readiness.score,
         "readiness_label": readiness.label,
         "readiness_factors": readiness.factors,

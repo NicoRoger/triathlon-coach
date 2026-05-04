@@ -115,6 +115,83 @@ def _normalize_activity(raw: dict) -> Activity:
         raw_payload=raw,
     )
 
+def _extract_vo2max(max_metrics_payload: Optional[dict], discipline: str) -> Optional[float]:
+    """Estrae VO2max dal payload max_metrics. Garmin restituisce struttura diversa per running/cycling."""
+    if not max_metrics_payload:
+        return None
+    # max_metrics può essere lista o dict, robusto a entrambi
+    items = max_metrics_payload if isinstance(max_metrics_payload, list) else [max_metrics_payload]
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        # generic struttura: {"generic": {"vo2MaxValue": X}, "cycling": {"vo2MaxValue": Y}}
+        if discipline == "running":
+            generic = item.get("generic") or {}
+            v = generic.get("vo2MaxValue") or generic.get("vo2MaxPreciseValue")
+            if v:
+                return float(v)
+        elif discipline == "cycling":
+            cycling = item.get("cycling") or {}
+            v = cycling.get("vo2MaxValue") or cycling.get("vo2MaxPreciseValue")
+            if v:
+                return float(v)
+    return None
+
+
+def _extract_training_status(payload: Optional[dict]) -> Optional[str]:
+    """Estrae il training status testuale (productive, maintaining, overreaching, ecc.)."""
+    if not payload or not isinstance(payload, dict):
+        return None
+    # Garmin annida in mostRecentTrainingStatus
+    mrts = payload.get("mostRecentTrainingStatus") or {}
+    summary = mrts.get("latestTrainingStatusData") or {}
+    # summary è dict con un device id come chiave
+    if isinstance(summary, dict) and summary:
+        first_device = next(iter(summary.values()), None)
+        if isinstance(first_device, dict):
+            ts = first_device.get("trainingStatus")
+            if ts is not None:
+                # Spesso è int, mappa standard Garmin: 1=peaking, 2=productive, 3=maintaining,
+                # 4=recovery, 5=unproductive, 6=detraining, 7=overreaching, 0=no_status
+                map_status = {
+                    0: "no_status",
+                    1: "peaking",
+                    2: "productive",
+                    3: "maintaining",
+                    4: "recovery",
+                    5: "unproductive",
+                    6: "detraining",
+                    7: "overreaching",
+                    8: "strained",       # carico molto alto, vicino limite
+                    9: "no_recent_load", # poco carico recente
+                }
+                if isinstance(ts, int):
+                    return map_status.get(ts, str(ts))
+                return str(ts).lower()
+    return None
+
+
+def _extract_training_load(payload: Optional[dict], kind: str) -> Optional[float]:
+    """Estrae acute/chronic training load da mostRecentTrainingStatus.
+
+    Path corretto: mostRecentTrainingStatus.latestTrainingStatusData.<deviceId>.acuteTrainingLoadDTO
+    Contiene dailyTrainingLoadAcute e dailyTrainingLoadChronic.
+    """
+    if not payload or not isinstance(payload, dict):
+        return None
+    mrts = payload.get("mostRecentTrainingStatus") or {}
+    summary = mrts.get("latestTrainingStatusData") or {}
+    if not isinstance(summary, dict) or not summary:
+        return None
+    first_device = next(iter(summary.values()), None)
+    if not isinstance(first_device, dict):
+        return None
+    atl_dto = first_device.get("acuteTrainingLoadDTO") or {}
+    if kind == "acute":
+        return atl_dto.get("dailyTrainingLoadAcute")
+    elif kind == "chronic":
+        return atl_dto.get("dailyTrainingLoadChronic")
+    return None
 
 def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
     """Garmin user_summary + sleep + hrv → DailyWellness.
@@ -157,12 +234,13 @@ def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
         body_battery_max=raw.get("bodyBatteryHighestValue"),
         stress_avg=raw.get("averageStressLevel"),
         resting_hr=raw.get("restingHeartRate"),
-        # VO2max e training_status: TODO endpoint dedicati
-        training_status=None,
-        training_load_acute=None,
-        training_load_chronic=None,
-        vo2max_run=None,
-        vo2max_bike=None,
+        # VO2max — da endpoint dedicato max_metrics
+        vo2max_run=_extract_vo2max(raw.get("max_metrics"), "running"),
+        vo2max_bike=_extract_vo2max(raw.get("max_metrics"), "cycling"),
+        # Training status — da endpoint dedicato
+        training_status=_extract_training_status(raw.get("training_status")),
+        training_load_acute=_extract_training_load(raw.get("training_status"), "acute"),
+        training_load_chronic=_extract_training_load(raw.get("training_status"), "chronic"),
         raw_payload=raw,
     )
 
@@ -206,12 +284,35 @@ def sync_wellness(days_back: int = 7) -> int:
         try:
             user_summary = g.get_user_summary(day.isoformat())
             sleep = g.get_sleep_data(day.isoformat())
+            
+            # HRV: opzionale
             hrv = None
             try:
                 hrv = g.get_hrv_data(day.isoformat())
             except Exception:
                 pass
-            payload = {**(user_summary or {}), "sleep": sleep, "hrv": hrv}
+            
+            # VO2max: opzionale, endpoint diverso
+            vo2max = None
+            try:
+                vo2max = g.get_max_metrics(day.isoformat())
+            except Exception:
+                pass
+            
+            # Training status: opzionale, endpoint diverso
+            training_status = None
+            try:
+                training_status = g.get_training_status(day.isoformat())
+            except Exception:
+                pass
+            
+            payload = {
+                **(user_summary or {}),
+                "sleep": sleep,
+                "hrv": hrv,
+                "max_metrics": vo2max,
+                "training_status": training_status,
+            }
             wellness = _normalize_wellness(payload, day)
             sb.table("daily_wellness").upsert(
                 wellness.model_dump(mode="json", exclude_none=True),

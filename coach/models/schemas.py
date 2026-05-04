@@ -166,7 +166,11 @@ class DailyMetrics(BaseDBModel):
     atl: Optional[float] = None
     tsb: Optional[float] = None
     daily_tss: Optional[float] = None
-
+    # PMC Garmin (training load proprietario)
+    garmin_acute_load: Optional[float] = None
+    garmin_chronic_load: Optional[float] = None
+    garmin_load_balance: Optional[float] = None
+    garmin_training_status: Optional[str] = None
     ctl_swim: Optional[float] = None
     ctl_bike: Optional[float] = None
     ctl_run: Optional[float] = None
