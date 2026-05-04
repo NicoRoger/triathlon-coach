@@ -117,28 +117,52 @@ def _normalize_activity(raw: dict) -> Activity:
 
 
 def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
-    """Garmin user_summary + sleep + hrv → DailyWellness."""
-    sleep = raw.get("sleep", {}) or {}
-    hrv = raw.get("hrv", {}) or {}
+    """Garmin user_summary + sleep + hrv → DailyWellness.
+    
+    Path verificati su payload reali (maggio 2026):
+    - HRV: sleep.avgOvernightHrv (numerico) + hrv.hrvSummary.status (label)
+    - Sleep: sleep.dailySleepDTO.sleepScores.overall.value (score 0-100)
+    - Sleep durations: sleep.dailySleepDTO.{sleepTime,deepSleep,remSleep}Seconds
+    - Body battery, stress, resting HR: top-level del user_summary
+    - VO2max e training_status: NULL per ora, fix in iterazione successiva
+      con endpoint Garmin dedicati (get_vo2max_data, get_training_status).
+    """
+    sleep = raw.get("sleep") or {}
+    hrv = raw.get("hrv") or {}
+    sleep_dto = sleep.get("dailySleepDTO") or {}
+    sleep_scores = sleep_dto.get("sleepScores") or {}
+    overall_score = (sleep_scores.get("overall") or {}).get("value")
+
+    # Sleep efficiency: tempo dormendo / tempo a letto
+    sleep_total = sleep_dto.get("sleepTimeSeconds")
+    awake = sleep_dto.get("awakeSleepSeconds")
+    sleep_eff = None
+    if sleep_total and awake is not None:
+        time_in_bed = sleep_total + awake
+        sleep_eff = round(sleep_total / time_in_bed, 4) if time_in_bed > 0 else None
 
     return DailyWellness(
         date=day,
-        hrv_rmssd=(payload.get("sleep") or {}).get("avgOvernightHrv") or (hrv.get("hrvSummary") or {}).get("lastNightAvg"),
-        hrv_status=(hrv.get("hrvSummary") or {}).get("status") or (payload.get("sleep") or {}).get("hrvStatus"),
-        sleep_score=(sleep.get("sleepScores", {}) or {}).get("overall", {}).get("value"),
-        sleep_total_s=sleep.get("sleepTimeSeconds"),
-        sleep_deep_s=sleep.get("deepSleepSeconds"),
-        sleep_rem_s=sleep.get("remSleepSeconds"),
-        sleep_efficiency=sleep.get("sleepEfficiency"),
+        # HRV
+        hrv_rmssd=sleep.get("avgOvernightHrv") or (hrv.get("hrvSummary") or {}).get("lastNightAvg"),
+        hrv_status=(hrv.get("hrvSummary") or {}).get("status") or sleep.get("hrvStatus"),
+        # Sleep — nuovo fix
+        sleep_score=overall_score,
+        sleep_total_s=sleep_total,
+        sleep_deep_s=sleep_dto.get("deepSleepSeconds"),
+        sleep_rem_s=sleep_dto.get("remSleepSeconds"),
+        sleep_efficiency=sleep_eff,
+        # Top-level user_summary
         body_battery_min=raw.get("bodyBatteryLowestValue"),
         body_battery_max=raw.get("bodyBatteryHighestValue"),
         stress_avg=raw.get("averageStressLevel"),
         resting_hr=raw.get("restingHeartRate"),
-        training_status=raw.get("trainingStatus", {}).get("trainingStatus") if isinstance(raw.get("trainingStatus"), dict) else None,
-        training_load_acute=raw.get("acuteTrainingLoad"),
-        training_load_chronic=raw.get("chronicTrainingLoad"),
-        vo2max_run=raw.get("vo2MaxRunning"),
-        vo2max_bike=raw.get("vo2MaxCycling"),
+        # VO2max e training_status: TODO endpoint dedicati
+        training_status=None,
+        training_load_acute=None,
+        training_load_chronic=None,
+        vo2max_run=None,
+        vo2max_bike=None,
         raw_payload=raw,
     )
 
