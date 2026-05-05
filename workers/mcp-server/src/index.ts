@@ -93,6 +93,31 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "commit_plan_change",
+    description: "Scrive una sessione pianificata nel DB. Da chiamare SOLO dopo conferma esplicita dell'atleta su una proposta. Idempotente: se esiste già una sessione per quella data e sport, viene aggiornata.",
+    inputSchema: {
+      type: "object",
+      required: ["planned_date", "sport", "session_type", "duration_s", "description"],
+      properties: {
+        planned_date: { type: "string", format: "date" },
+        sport: { type: "string", enum: ["swim", "bike", "run", "brick", "strength"] },
+        session_type: { type: "string", description: "Tipo sessione: Z2_endurance, threshold, vo2max, recovery, race_pace, technique, brick, ecc." },
+        duration_s: { type: "integer", minimum: 60 },
+        target_tss: { type: "number" },
+        target_zones: {
+          type: "object",
+          description: "Distribuzione zone, es. {z1: 0.2, z2: 0.7, z4: 0.1}",
+        },
+        description: { type: "string", description: "Descrizione human-readable della sessione, con razionali" },
+        structured: {
+          type: "object",
+          description: "Opzionale: workout strutturato per esportazione futura su Garmin",
+        },
+        mesocycle_id: { type: "string", description: "Opzionale: UUID mesociclo associato" },
+      },
+    },
+  },
 ];
 
 export default {
@@ -160,6 +185,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return queryLog(args.days || 7, args.kind || "all", env);
     case "propose_plan_change":
       return proposePlan(args, env);
+    case "commit_plan_change":
+      return commitPlanChange(args, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -223,4 +250,95 @@ async function proposePlan(args: any, env: Env) {
       "Per applicare questa modifica, l'atleta deve confermare esplicitamente. " +
       "Modificare la tabella `planned_sessions` richiede un secondo passaggio.",
   };
+}
+async function commitPlanChange(args: any, env: Env): Promise<any> {
+  const required = ["planned_date", "sport", "session_type", "duration_s", "description"];
+  for (const k of required) {
+    if (args[k] === undefined || args[k] === null) {
+      throw new Error(`Missing required field: ${k}`);
+    }
+  }
+
+  const validSports = ["swim", "bike", "run", "brick", "strength"];
+  if (!validSports.includes(args.sport)) {
+    throw new Error(`Invalid sport: ${args.sport}. Must be one of ${validSports.join(", ")}`);
+  }
+
+  // Upsert su (planned_date, sport): se esiste già una sessione per quel giorno/sport, viene aggiornata
+  const payload: any = {
+    planned_date: args.planned_date,
+    sport: args.sport,
+    session_type: args.session_type,
+    duration_s: args.duration_s,
+    description: args.description,
+    status: "planned",
+  };
+  if (args.target_tss !== undefined) payload.target_tss = args.target_tss;
+  if (args.target_zones !== undefined) payload.target_zones = args.target_zones;
+  if (args.structured !== undefined) payload.structured = args.structured;
+  if (args.mesocycle_id !== undefined) payload.mesocycle_id = args.mesocycle_id;
+
+  // Cerca sessione esistente
+  const existingResp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}`,
+    {
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      },
+    }
+  );
+  const existing = (await existingResp.json()) as any[];
+
+  if (existing.length > 0) {
+    // Update
+    const id = existing[0].id;
+    const updateResp = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "apikey": env.SUPABASE_SERVICE_KEY,
+          "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=representation",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!updateResp.ok) {
+      throw new Error(`Update failed: ${updateResp.status} ${await updateResp.text()}`);
+    }
+    return {
+      status: "updated",
+      action: "Updated existing session",
+      session_id: id,
+      payload,
+    };
+  } else {
+    // Insert
+    const insertResp = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/planned_sessions`,
+      {
+        method: "POST",
+        headers: {
+          "apikey": env.SUPABASE_SERVICE_KEY,
+          "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=representation",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!insertResp.ok) {
+      throw new Error(`Insert failed: ${insertResp.status} ${await insertResp.text()}`);
+    }
+    const result = (await insertResp.json()) as any[];
+    return {
+      status: "created",
+      action: "Created new planned session",
+      session_id: result[0]?.id,
+      payload,
+    };
+  }
 }
