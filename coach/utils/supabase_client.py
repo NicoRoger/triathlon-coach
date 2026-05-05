@@ -4,6 +4,13 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+# Auto-load .env per dev locale (CI usa secret invece)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from supabase import Client, create_client
 
 
