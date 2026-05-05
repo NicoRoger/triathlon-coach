@@ -216,6 +216,48 @@ def _build_warnings_section(metrics: dict) -> str:
         lines.append(f"• {p}")
     return "\n".join(lines)
 
+def _build_race_progress_section(today: date) -> str:
+    """Sezione progresso verso la gara A.
+    
+    Hardcoded per Lavarone Cross Sprint settembre 2026.
+    Quando avremo la tabella race_targets popolata, leggerà da DB.
+    """
+    # Lavarone Cross Sprint — data approssimativa inizio settembre 2026
+    race_date = date(2026, 9, 6)  # da raffinare quando data ufficiale
+    days_left = (race_date - today).days
+    
+    if days_left < 0:
+        return ""  # gara passata, sezione skippata
+    
+    weeks_left = days_left // 7
+    
+    # Fase corrente sulla base di weeks_left (logica del macro-piano in CLAUDE.md §3)
+    if weeks_left >= 14:
+        phase = "Ricostruzione"
+        focus = "Base aerobica, tecnica, recupero infortuni. NO intensità ancora."
+    elif weeks_left >= 10:
+        phase = "Test + Build 1"
+        focus = "Test fitness questa fase. Introduzione Z2/Z3 controllata, primo blocco soglia."
+    elif weeks_left >= 6:
+        phase = "Build 2 specifico"
+        focus = "Specifico cross: brick MTB+trail, OWS, simulazioni, qualità Z4."
+    elif weeks_left >= 3:
+        phase = "Pre-gara"
+        focus = "Specifico race-pace, taper iniziale."
+    elif weeks_left >= 1:
+        phase = "Taper"
+        focus = "Volume ridotto, intensità mantenuta in micro-dosi."
+    else:
+        phase = "Race week"
+        focus = "Modalità gara attiva — vedi race week protocol."
+    
+    lines = [
+        "<b>📅 Verso Lavarone Cross Sprint</b>",
+        f"Mancano <b>{days_left} giorni</b> ({weeks_left} settimane).",
+        f"Fase: {phase}",
+        f"<i>{focus}</i>",
+    ]
+    return "\n".join(lines)
 
 def _build_footer() -> str:
     return "<i>💬 /log note · /debrief stasera · /help comandi</i>"
@@ -257,6 +299,7 @@ def build_brief() -> str:
         _build_wellness_section(wellness, metrics),
         _build_load_section(metrics),
         _build_session_section(planned),
+        _build_race_progress_section(today),  # <-- NUOVA RIGA
         _build_warnings_section(metrics),
         _build_footer(),
     ]
