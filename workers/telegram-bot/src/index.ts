@@ -214,12 +214,17 @@ function parseLog(body: string): { kind: string; fields: any; summary: string } 
 
 // ============================================================================
 // Parsing debrief serale (deterministico, no LLM)
+// Colonne esistenti in subjective_log: rpe, soreness, motivation,
+//   illness_flag, illness_details, injury_flag, injury_details, injury_location,
+//   raw_text, parsed_data (JSONB)
+// Tutto ciò che non è una colonna nativa va in parsed_data.
 // ============================================================================
 function parseDebrief(body: string): { fields: any; summary: string } {
   const fields: any = {};
+  const parsed: any = {};
   const summary: string[] = [];
 
-  // RPE
+  // RPE → colonna nativa
   const rpeMatch = body.match(/rpe\s*(\d{1,2})/i);
   if (rpeMatch) {
     const v = parseInt(rpeMatch[1], 10);
@@ -229,27 +234,39 @@ function parseDebrief(body: string): { fields: any; summary: string } {
     }
   }
 
-  // Dolori
+  // Soreness → colonna nativa
+  const sorMatch = body.match(/(soreness|dolore muscolare)\s*(\d{1,2})/i);
+  if (sorMatch) {
+    const v = parseInt(sorMatch[2], 10);
+    if (v >= 0 && v <= 10) {
+      fields.soreness = v;
+    }
+  }
+
+  // Dolori → parsed_data (pain_reported, pain_location non sono colonne)
   const lower = body.toLowerCase();
   if (/\b(no dolori|nessun dolore|no pain|niente dolori)\b/i.test(lower)) {
-    fields.pain_reported = false;
+    parsed.pain_reported = false;
   } else if (/\b(dolore|dolori|male|fastidio)\b/i.test(lower)) {
-    fields.pain_reported = true;
+    parsed.pain_reported = true;
     const locMatch = body.match(/\b(ginocchio|caviglia|polpaccio|tendine d'achille|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone|anca|quadricipite|gluteo)\b/i);
-    if (locMatch) fields.pain_location = locMatch[1];
+    if (locMatch) parsed.pain_location = locMatch[1];
   }
 
-  // Energia
+  // Energia → parsed_data
   if (/\b(energia alta|fresco|riposato)\b/i.test(lower)) {
-    fields.energy = "high";
+    parsed.energy = "high";
   } else if (/\b(energia media|normale)\b/i.test(lower)) {
-    fields.energy = "medium";
+    parsed.energy = "medium";
   } else if (/\b(energia bassa|stanco|scarico|distrutto|cotto)\b/i.test(lower)) {
-    fields.energy = "low";
+    parsed.energy = "low";
   }
 
-  // Sensazioni (tutto il testo va come campo sensations)
-  fields.sensations = body.slice(0, 500);
+  // Sensazioni → parsed_data
+  parsed.sensations = body.slice(0, 500);
+
+  // Metti tutto il parsing strutturato in parsed_data (colonna JSONB)
+  fields.parsed_data = parsed;
 
   return { fields, summary: summary.join(", ") };
 }
