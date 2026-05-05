@@ -15,16 +15,19 @@ jobs:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          MESSAGE='<b>📋 È ora della weekly review</b>
+          MESSAGE=$(cat <<'EOF'
+          <b>📋 È ora della weekly review</b>
 
-Domenica sera, momento di rivedere la settimana e pianificare la prossima.
+          Domenica sera, momento di rivedere la settimana e pianificare la prossima.
 
-Apri Claude Code dal Mac e digita:
-<code>fai la weekly review</code>
+          Apri Claude Code dal Mac e digita:
+          <code>fai la weekly review</code>
 
-Il coach analizzerà i dati della settimana, ti farà la diagnosi, e proporrà la struttura della settimana che inizia domani. Approvi o modifichi prima del commit nel piano.
+          Il coach analizzerà i dati della settimana, ti farà la diagnosi, e proporrà la struttura della settimana che inizia domani. Approvi o modifichi prima del commit nel piano.
 
-<i>Tempo richiesto: 15-20 min</i>'
+          <i>Tempo richiesto: 15-20 min</i>
+          EOF
+          )
           curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TG_CHAT}" \
             --data-urlencode "text=${MESSAGE}" \
