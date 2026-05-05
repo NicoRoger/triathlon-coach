@@ -11,9 +11,10 @@ Costo runtime: 0 chiamate LLM, tutto rule-based.
 """
 from __future__ import annotations
 
+
 import logging
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 import requests
@@ -259,6 +260,94 @@ def _build_race_progress_section(today: date) -> str:
     ]
     return "\n".join(lines)
 
+def _get_upcoming_race(today: date) -> Optional[dict]:
+    """Trova la prossima gara A o B entro 7 giorni.
+    
+    Restituisce None se non c'è gara imminente.
+    Per ora hardcoded sulla sola Lavarone 2026, in futuro leggerà da DB races.
+    """
+    # Hardcoded race calendar (TBD: leggi da tabella races quando popolata)
+    races = [
+        {
+            "name": "Lavarone Cross Sprint",
+            "date": date(2026, 9, 6),
+            "priority": "A",
+            "distance": "750m + 16-17km MTB + 5km trail",
+        }
+    ]
+    
+    for race in races:
+        days_to_race = (race["date"] - today).days
+        if 0 <= days_to_race <= 7 and race["priority"] in ("A", "B"):
+            race["days_to_race"] = days_to_race
+            return race
+    return None
+
+
+def _build_race_week_section(race: dict, today: date) -> str:
+    """Sezione race week (T-7 a T-0).
+    
+    Sostituisce/affianca la sezione 'Verso Lavarone' nei 7 giorni gara.
+    """
+    days = race["days_to_race"]
+    weekday_it = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+    
+    if days == 0:
+        return _build_race_day_section(race)
+    
+    label = {
+        7: "T-7 — Inizio settimana gara",
+        6: "T-6 — Settimana gara, taper attivo",
+        5: "T-5 — Settimana gara",
+        4: "T-4 — Settimana gara",
+        3: "T-3 — Sessione richiamo intensità oggi",
+        2: "T-2 — Apertura + check materiale",
+        1: "T-1 — Vigilia",
+    }.get(days, f"T-{days}")
+    
+    lines = [
+        f"<b>🏆 {race['name']} — {label}</b>",
+        f"Gara: {weekday_it[race['date'].weekday()]} {race['date'].day}/{race['date'].month}",
+    ]
+    
+    # Indicazioni per giorno
+    if days == 7:
+        lines.append("")
+        lines.append("Inizia il taper: volume -40%, intensità mantenuta in micro-dosi.")
+        lines.append("Verifica iscrizione, alloggio, viaggio. Inizia check bici.")
+    elif days == 3:
+        lines.append("")
+        lines.append("Sessione di richiamo: 10min Z2 + 5×30s allungo + 10min Z2.")
+        lines.append("Brief percorso e meteo: cerca aggiornamenti gara.")
+    elif days == 2:
+        lines.append("")
+        lines.append("Ultima sessione apertura: 20-30 min Z1-Z2 + 3-4 allunghi brevi.")
+        lines.append("📋 Oggi: check materiale completo (vedi skill race_week_protocol).")
+    elif days == 1:
+        lines.append("")
+        lines.append("Sessione vigilia: 15-20 min Z1, 1-2 allunghi neutri.")
+        lines.append("Cena entro 19:30, idratazione spalmata, letto entro 22:00.")
+        lines.append("Tutto pronto stasera, NIENTE preparazione domattina.")
+    
+    lines.append("")
+    lines.append("<i>Per il piano gara dettagliato apri Claude Code: 'attiva race week protocol'</i>")
+    
+    return "\n".join(lines)
+
+
+def _build_race_day_section(race: dict) -> str:
+    """T-0: il giorno della gara. Ricorda di aprire Claude Code per il race brief."""
+    return (
+        f"<b>🏆 {race['name']} — RACE DAY</b>\n"
+        f"\n"
+        f"Oggi è il giorno. Apri Claude Code ORA per ricevere il race day brief "
+        f"completo (timeline, colazione, warm-up, pace plan, mental checkpoints).\n"
+        f"\n"
+        f"<i>Comando: 'race day brief'</i>\n"
+        f"\n"
+        f"In bocca al lupo. Hai fatto il lavoro, oggi è esecuzione."
+    )
+
 def _build_footer() -> str:
     return "<i>💬 /log note · /debrief stasera · /help comandi</i>"
 
@@ -293,16 +382,31 @@ def build_brief() -> str:
     ).eq("status", "planned").execute()
     planned = planned_res.data[0] if planned_res.data else None
 
-    sections = [
-        _build_header(today),
-        _build_freshness_warning(age),
-        _build_wellness_section(wellness, metrics),
-        _build_load_section(metrics),
-        _build_session_section(planned),
-        _build_race_progress_section(today),  # <-- NUOVA RIGA
-        _build_warnings_section(metrics),
-        _build_footer(),
-    ]
+    # Controlla se siamo in race week (T-7 a T-0 di una gara A/B)
+    upcoming_race = _get_upcoming_race(today)
+    
+    if upcoming_race:
+        # Race week: il brief è ridotto e race-focused
+        sections = [
+            _build_header(today),
+            _build_freshness_warning(age),
+            _build_wellness_section(wellness, metrics),
+            _build_race_week_section(upcoming_race, today),  # sostituisce progress + load
+            _build_warnings_section(metrics),
+            _build_footer(),
+        ]
+    else:
+        # Brief standard
+        sections = [
+            _build_header(today),
+            _build_freshness_warning(age),
+            _build_wellness_section(wellness, metrics),
+            _build_load_section(metrics),
+            _build_session_section(planned),
+            _build_race_progress_section(today),
+            _build_warnings_section(metrics),
+            _build_footer(),
+        ]
     # Join non-empty con doppia newline
     return "\n\n".join(s for s in sections if s.strip())
 
