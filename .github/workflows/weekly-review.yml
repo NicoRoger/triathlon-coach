@@ -1,0 +1,31 @@
+name: weekly-review
+
+on:
+  schedule:
+    - cron: '0 17 * * 0'  # domenica 19:00 Europe/Rome (estate UTC+2 = 17 UTC)
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send weekly review reminder
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          MESSAGE='<b>📋 È ora della weekly review</b>
+
+Domenica sera, momento di rivedere la settimana e pianificare la prossima.
+
+Apri Claude Code dal Mac e digita:
+<code>fai la weekly review</code>
+
+Il coach analizzerà i dati della settimana, ti farà la diagnosi, e proporrà la struttura della settimana che inizia domani. Approvi o modifichi prima del commit nel piano.
+
+<i>Tempo richiesto: 15-20 min</i>'
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=${MESSAGE}" \
+            --data-urlencode "parse_mode=HTML"
