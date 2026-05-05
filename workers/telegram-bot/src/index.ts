@@ -82,6 +82,24 @@ export default {
 async function handleCommand(env: Env, chatId: number, text: string): Promise<void> {
   const t = text.trim();
 
+  // Stato conversazionale: se siamo in attesa di debrief, il prossimo messaggio
+  // non-comando viene parsato come evening_debrief (non come free_note)
+  const debriefKey = `debrief:${chatId}`;
+  const awaitingDebrief = await env.PROCESSED_UPDATES.get(debriefKey);
+
+  if (awaitingDebrief && !t.startsWith("/")) {
+    // Risposta al debrief — parsa come evening_debrief
+    await env.PROCESSED_UPDATES.delete(debriefKey);
+    const parsed = parseDebrief(t);
+    await insertSubjective(env, { kind: "evening_debrief", ...parsed.fields, raw_text: t });
+    return sendMessage(env, chatId, `✅ Debrief salvato${parsed.summary ? ` (${parsed.summary})` : ""}.`);
+  }
+
+  // Se manda un comando mentre è in attesa debrief, cancella lo stato e processa il comando
+  if (awaitingDebrief && t.startsWith("/")) {
+    await env.PROCESSED_UPDATES.delete(debriefKey);
+  }
+
   if (t === "/help" || t === "/start") {
     return sendMessage(env, chatId, HELP);
   }
@@ -113,6 +131,8 @@ async function handleCommand(env: Env, chatId: number, text: string): Promise<vo
   }
 
   if (t === "/debrief") {
+    // Setta stato conversazionale: il prossimo messaggio sarà parsato come debrief
+    await env.PROCESSED_UPDATES.put(debriefKey, "1", { expirationTtl: 3600 }); // scade dopo 1h
     return sendMessage(env, chatId,
       `<b>Debrief serale</b>\n\nRispondi in un solo messaggio con:\n` +
       `1. RPE sessione principale (1-10)\n` +
@@ -190,6 +210,48 @@ function parseLog(body: string): { kind: string; fields: any; summary: string } 
     fields,
     summary: summary.join(", "),
   };
+}
+
+// ============================================================================
+// Parsing debrief serale (deterministico, no LLM)
+// ============================================================================
+function parseDebrief(body: string): { fields: any; summary: string } {
+  const fields: any = {};
+  const summary: string[] = [];
+
+  // RPE
+  const rpeMatch = body.match(/rpe\s*(\d{1,2})/i);
+  if (rpeMatch) {
+    const v = parseInt(rpeMatch[1], 10);
+    if (v >= 1 && v <= 10) {
+      fields.rpe = v;
+      summary.push(`RPE ${v}`);
+    }
+  }
+
+  // Dolori
+  const lower = body.toLowerCase();
+  if (/\b(no dolori|nessun dolore|no pain|niente dolori)\b/i.test(lower)) {
+    fields.pain_reported = false;
+  } else if (/\b(dolore|dolori|male|fastidio)\b/i.test(lower)) {
+    fields.pain_reported = true;
+    const locMatch = body.match(/\b(ginocchio|caviglia|polpaccio|tendine d'achille|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone|anca|quadricipite|gluteo)\b/i);
+    if (locMatch) fields.pain_location = locMatch[1];
+  }
+
+  // Energia
+  if (/\b(energia alta|fresco|riposato)\b/i.test(lower)) {
+    fields.energy = "high";
+  } else if (/\b(energia media|normale)\b/i.test(lower)) {
+    fields.energy = "medium";
+  } else if (/\b(energia bassa|stanco|scarico|distrutto|cotto)\b/i.test(lower)) {
+    fields.energy = "low";
+  }
+
+  // Sensazioni (tutto il testo va come campo sensations)
+  fields.sensations = body.slice(0, 500);
+
+  return { fields, summary: summary.join(", ") };
 }
 
 // ============================================================================
