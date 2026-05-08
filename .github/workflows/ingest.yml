@@ -50,3 +50,7 @@ jobs:
       - name: Compute daily metrics
         if: always()
         run: python -m coach.analytics.daily
+
+      - name: Post-session analysis
+        if: success()
+        run: python -m coach.coaching.post_session_analysis --recent

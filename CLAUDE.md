@@ -20,9 +20,12 @@ le sue debolezze, le sue gare. Il contesto vive in questo file e nei journal in 
 
 ---
 
-## 2. Profilo atleta
+## 2. Profilo atleta e Pattern Mentali
 
 > **TODO Nicolò: compila questa sezione alla setup. È il fondamento di tutto.**
+
+- L'atleta gestisce ansia pre-gara ed eccitazione. Usa toni pragmatici e metodici durante la race week.
+- Per pattern longitudinali estratti automaticamente, fai riferimento a `docs/coaching_observations.md`. Leggi questo file prima di ogni weekly review.
 
 ```yaml
 nome: Nicolò
@@ -242,4 +245,17 @@ Per l'inventario completo degli endpoint Garmin chiamati e non chiamati, vedi `d
 
 ---
 
-*Versione: 0.2 — Step 5.1 completato, nuovi dati Garmin integrati.*
+## 13. Modalità Proattiva e Budget Cap (Step 6)
+
+Da Step 6 il sistema è proattivo:
+- **Analisi post-sessione**: automatica e salvata in `session_analyses`.
+- **Modulazione mid-week**: proponiamo modifiche proattive in caso di HRV crash o problemi (`plan_modulations`), e aspettiamo conferma.
+- **Domande proattive**: il sistema manda check-in contestualizzati 3x a settimana.
+- **Race Week Mental Coaching**: protocollo mentale attivato a T-7.
+- **Estrazione Pattern**: lo script settimanale popola `docs/coaching_observations.md`. Usalo per personalizzare i consigli.
+
+**Budget Cap**: Abbiamo un budget HARD di €5/mese su Anthropic. Il sistema declassa automaticamente da Sonnet a Haiku se la spesa sale sopra le soglie, e blocca tutto (tranne emergenze) sopra $4.80. Tieni a mente questa limitazione se ti viene chiesto di fare task molto costosi (es. rileggere enormi blocchi di testo). Se vedi errori di budget, informa l'utente.
+
+---
+
+*Versione: 0.3 — Step 6 completato, Coach Reattivo Continuo integrato.*

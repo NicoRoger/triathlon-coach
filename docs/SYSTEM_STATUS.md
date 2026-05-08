@@ -1,4 +1,4 @@
-# System Status — Snapshot 6 maggio 2026
+# System Status — Snapshot 8 maggio 2026 (Step 6 Completato)
 
 ## Tabelle DB (Supabase Postgres)
 
@@ -10,6 +10,9 @@
 | `planned_sessions` | Sessioni pianificate (sport, tipo, durata, descrizione, zone target, calendar_event_id) | ✅ Schema pronto, tool MCP attivo |
 | `subjective_log` | Log soggettivi: RPE, malattia, infortuni, debrief serale, note libere | ✅ Popolata via Telegram bot |
 | `health` | Health check per componente (last_success_at, failure_count) | ✅ Monitorata da watchdog |
+| `api_usage` | Tracking costi API Anthropic | ✅ Popolata da LLMClient |
+| `session_analyses` | Analisi AI post-sessione | ✅ Popolata dal workflow ingest |
+| `plan_modulations` | Proposte modulazione mid-week AI-driven | ✅ Approvabili via Telegram |
 
 ## GitHub Actions — Workflow attivi
 
@@ -22,8 +25,10 @@
 | `dr-snapshot` | `dr-snapshot.yml` | 02:00 UTC (`0 2 * * *`) | Snapshot DB cifrato + commit ref |
 | `keepalive` | `keepalive.yml` | 12:00 UTC (`0 12 * * *`) | Ping Supabase anti-pause |
 | `weekly-review` | `weekly-review.yml` | Domenica 19:00 Rome (`0 17 * * 0`) | Reminder weekly review → Telegram |
+| `proactive-check-in` | `proactive-check-in.yml` | Mar, Gio, Sab 18:00 Rome | Domande proattive all'atleta via Telegram |
+| `pattern-extraction` | `pattern-extraction.yml` | Domenica 23:00 Rome | Estrae pattern su coaching_observations.md |
 
-**Totale: 7 workflow attivi.**
+**Totale: 9 workflow attivi.**
 
 ## Tool MCP esposti (workers/mcp-server/src/index.ts)
 

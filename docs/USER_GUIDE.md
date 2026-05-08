@@ -115,6 +115,7 @@ Ricevi range di tempo con confidence interval basato sui tuoi dati.
 /brief          — genera e invia brief on-demand (non aspettare le 06:30)
 /log <testo>    — log soggettivo libero (RPE, sensazioni, note)
 /rpe <1-10>     — log RPE rapido per ultima sessione
+/budget         — mostra lo stato del budget API Anthropic mensile
 /status         — stato sync, ultimo dato Garmin, ultimo HRV
 /debrief        — avvia flow debrief serale manuale
 ```
@@ -163,6 +164,16 @@ Genera block completo con carico progressivo, settimana scarico, test fitness sc
 ---
 
 ## Setup iniziale
+
+### Anthropic API Key (Requisito Obbligatorio)
+
+Dal rilascio dello Step 6, il sistema usa Claude in modo autonomo (budget limitato a €5/mese):
+1. Vai su https://console.anthropic.com e carica almeno $10 di credito.
+2. Vai su https://console.anthropic.com/settings/limits e imposta il limite di spesa mensile a **$5.50**.
+3. Genera una API key da https://console.anthropic.com/settings/keys.
+4. Aggiungila nei secret di GitHub come `ANTHROPIC_API_KEY`.
+5. Aggiungila nei secret di Cloudflare Worker (`telegram-bot` e `mcp-server`) via `wrangler secret put ANTHROPIC_API_KEY`.
+6. Mettila nel tuo file `.env` locale.
 
 ### Google Calendar (opzionale ma consigliato)
 

@@ -1,0 +1,36 @@
+name: proactive-check-in
+
+on:
+  schedule:
+    # Martedì, Giovedì, Sabato alle 18:00 (Europe/Rome = 16:00 UTC in estate o 17:00 UTC in inverno)
+    # Assumiamo 16:00 UTC
+    - cron: '0 16 * * 2,4,6'
+  workflow_dispatch:
+
+concurrency:
+  group: proactive-check-in
+  cancel-in-progress: true
+
+jobs:
+  check_in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PYTHONPATH: '.'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Proactive Questions Check-In
+        run: python -m coach.coaching.proactive_questions

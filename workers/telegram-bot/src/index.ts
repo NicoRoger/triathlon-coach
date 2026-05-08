@@ -29,6 +29,16 @@ interface TelegramUpdate {
     voice?: { file_id: string; duration: number };
     date: number;
   };
+  callback_query?: {
+    id: string;
+    data: string;
+    message?: {
+      message_id: number;
+      chat: { id: number };
+      text?: string;
+    };
+    from: { id: number };
+  };
 }
 
 const HELP = `<b>Comandi</b>:
@@ -36,6 +46,7 @@ const HELP = `<b>Comandi</b>:
 /log &lt;testo&gt; — log libero (RPE, sensazioni, malattia, dolori)
 /rpe &lt;1-10&gt; — RPE rapido ultima sessione
 /debrief — avvia debrief serale
+/budget — stato budget API Anthropic
 /status — stato sync e dati recenti
 /help — questo messaggio
 
@@ -69,15 +80,86 @@ export default {
       return new Response("OK");
     }
 
-    const text = update.message.text || "";
-    try {
-      await handleCommand(env, chatId, text);
-    } catch (e: any) {
-      await sendMessage(env, chatId, `Errore: ${e.message || e}`);
+    if (update.callback_query) {
+      const chatId = update.callback_query.message?.chat.id || update.callback_query.from.id;
+      if (String(chatId) !== env.TELEGRAM_ALLOWED_CHAT_ID) {
+        return new Response("OK");
+      }
+      try {
+        await handleCallbackQuery(env, update.callback_query);
+      } catch (e: any) {
+        await sendMessage(env, chatId, `Errore callback: ${e.message || e}`);
+      }
+      return new Response("OK");
+    }
+
+    const text = update.message?.text || "";
+    if (text) {
+      try {
+        await handleCommand(env, chatId, text);
+      } catch (e: any) {
+        await sendMessage(env, chatId, `Errore: ${e.message || e}`);
+      }
     }
     return new Response("OK");
   },
 };
+
+async function handleCallbackQuery(env: Env, query: any): Promise<void> {
+  const data = query.data;
+  const chatId = query.message?.chat.id || query.from.id;
+  const messageId = query.message?.message_id;
+
+  // Answer callback query
+  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: query.id }),
+  });
+
+  if (data.startsWith("accept_mod_") || data.startsWith("reject_mod_") || data.startsWith("discuss_mod_")) {
+    const parts = data.split("_");
+    const action = parts[0];
+    const modId = parts.slice(2).join("_");
+
+    let status = "proposed";
+    let msg = "";
+
+    if (action === "accept") {
+      status = "accepted";
+      msg = "✅ Modulazione accettata. È stata registrata su DB. (Esegui lo script python di apply_modulation per finalizzare, o chiedi a Claude Code)";
+    } else if (action === "reject") {
+      status = "rejected";
+      msg = "❌ Modulazione rifiutata. Il piano rimane invariato.";
+    } else if (action === "discuss") {
+      status = "discussing";
+      msg = "💬 D'accordo. Apri Claude Code quando vuoi e discuteremo le alternative.";
+    }
+    
+    // Aggiorna DB
+    await fetch(`${env.SUPABASE_URL}/rest/v1/plan_modulations?id=eq.${modId}`, {
+      method: "PATCH",
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+      },
+      body: JSON.stringify({ status: status, resolved_at: new Date().toISOString() }),
+    });
+
+    await sendMessage(env, chatId, msg);
+    
+    // Rimuovi bottoni
+    if (messageId) {
+       await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+      });
+    }
+  }
+}
 
 async function handleCommand(env: Env, chatId: number, text: string): Promise<void> {
   const t = text.trim();
@@ -112,6 +194,11 @@ async function handleCommand(env: Env, chatId: number, text: string): Promise<vo
   if (t === "/status") {
     const status = await getStatus(env);
     return sendMessage(env, chatId, status);
+  }
+
+  if (t === "/budget") {
+    const budgetStats = await getBudgetStats(env);
+    return sendMessage(env, chatId, budgetStats);
   }
 
   if (t.startsWith("/rpe ")) {
@@ -339,6 +426,46 @@ async function getStatus(env: Env): Promise<string> {
     lines.push(`${emoji} ${r.component}: ${ago !== null ? ago + "h fa" : "mai"}${r.failure_count > 0 ? ` (${r.failure_count} fail)` : ""}`);
   }
   return lines.join("\n");
+}
+
+async function getBudgetStats(env: Env): Promise<string> {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  
+  const resp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/api_usage?timestamp=gte.${monthStart}&select=cost_usd_estimated,success`,
+    {
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      },
+    }
+  );
+  if (!resp.ok) return "Errore nel recupero budget.";
+  
+  const rows = (await resp.json()) as any[];
+  
+  let totalCost = 0;
+  let successful = 0;
+  for (const r of rows) {
+    totalCost += parseFloat(r.cost_usd_estimated || "0");
+    if (r.success) successful++;
+  }
+  
+  const limit = 5.00;
+  const pct = ((totalCost / limit) * 100).toFixed(1);
+  const remaining = limit - totalCost;
+  
+  let level = "🟢 OK";
+  if (totalCost > 4.8) level = "🔴 BLOCKED";
+  else if (totalCost > 4.5) level = "🟠 DEGRADED";
+  else if (totalCost > 4.0) level = "🟡 WARNING";
+  
+  return `<b>💰 Budget API Mensile</b>
+Stato: ${level}
+Spesa: $${totalCost.toFixed(2)} / $${limit.toFixed(2)} (${pct}%)
+Rimanente: $${remaining.toFixed(2)}
+Chiamate totali: ${rows.length} (${successful} OK)`;
 }
 
 async function sendMessage(env: Env, chatId: number, text: string): Promise<void> {

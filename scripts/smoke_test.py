@@ -24,6 +24,7 @@ def check_env():
     required = [
         "SUPABASE_URL", "SUPABASE_SERVICE_KEY",
         "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+        "ANTHROPIC_API_KEY",
     ]
     missing = [v for v in required if not os.environ.get(v)]
     if missing:
@@ -37,6 +38,9 @@ def check_supabase():
     res = sb.table("health").select("component").limit(1).execute()
     if not res.data:
         raise RuntimeError("health table vuota — applicare schema.sql?")
+        
+    res_api = sb.table("api_usage").select("id").limit(1).execute()
+    # just checking it doesn't crash (table exists)
 
 
 @check("Telegram bot reachable")

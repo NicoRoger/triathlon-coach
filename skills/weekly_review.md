@@ -37,43 +37,20 @@ Leggi inoltre:
 - `docs/training_journal.md` (ultime decisioni)
 - `docs/injury_log.md` (stato infortuni in corso)
 
-### Fase 2 — Analisi della settimana conclusa
+### Fase 2 — Analisi della settimana conclusa e Diagnosi (via AI)
 
-Produci una sintesi onesta. Non glissare su quello che è andato male.
+Esegui lo script Python per generare l'analisi narrativa approfondita della settimana tramite Claude AI:
+`python -m coach.coaching.weekly_analysis`
 
-**Metriche aggregate**:
-- Volume settimanale (ore + km per disciplina)
-- Garmin training load: trend acute/chronic, ACWR finale
-- HRV medio della settimana, z-score medio, giorni con flag
-- Sonno medio, stress medio, **avg sleep stress medio** (Step 5.1: se >25, segnala recovery quality degradata)
-- **Training readiness Garmin** vs readiness nostro: trend settimanale, discrepanze >15 punti (Step 5.1)
-- Distribuzione zone (se possibile da hr_zones_s)
-- **Pace consistency** da activity splits (Step 5.1: analisi split negativi/positivi nelle sessioni chiave)
+Questo script consoliderà le metriche, i debrief, le risposte proattive e le analisi post-sessione in un'analisi di 15-20 righe.
+Leggi attentamente l'output e usalo come base per la tua comunicazione con l'atleta. Evidenzia cosa ha funzionato bene e il "costo" fisiologico pagato. Non essere compiacente.
 
-**Aderenza pianificato vs eseguito**:
-- Sessioni completate / pianificate
-- Sessioni saltate (con motivo se loggato)
-- Sessioni modificate (perché)
-- Eventuali sessioni non pianificate fatte comunque
+### Fase 3 — Lezione della settimana (via AI)
 
-**Qualità delle sessioni**:
-- RPE medio
-- Sessioni dove RPE >> previsto (segnale di affaticamento)
-- Sessioni dove RPE << previsto (sessione facile, magari aumentare carico)
-- Pattern dolori/fastidi ricorrenti
+Genera una pillola formativa o "lezione della settimana" eseguendo lo script:
+`python -c "from coach.coaching.weekly_analysis import generate_weekly_lesson; print(generate_weekly_lesson())"`
 
-**Flag attivati e gestione**:
-- Quali flag (`fatigue_warning`, `injury_flag`, ecc.) si sono attivati
-- Come è stato gestito (sessione modificata? Ignorata?)
-
-### Fase 3 — Diagnosi
-
-Sulla base dell'analisi, identifica 2-3 trend chiave. Esempi:
-
-- "ACWR è salito da 1.1 a 1.4 in 7 giorni: stai costruendo carico, ma sei sopra la zona ottimale, occhio."
-- "Soreness costante su quadricipite dopo sessioni corsa: la fascite plantare sta cambiando la tua biomeccanica, attenzione."
-- "Sonno medio 6:45h: sotto la tua baseline tipica. Trend negativo, va affrontato prima che impatti l'HRV."
-- "Hai saltato 2 sessioni nuoto questa settimana per spalla. È normale in fase reattiva (Cook & Purdam 2009), ma stiamo perdendo continuità tecnica."
+Includila nel tuo messaggio all'atleta per aumentare la consapevolezza su nutrizione, recupero, o gestione fatica.
 
 ### Fase 4 — Proposta settimana successiva
 
