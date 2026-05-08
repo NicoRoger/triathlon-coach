@@ -51,13 +51,15 @@ Alle 19:00 ricevi il reminder su Telegram. Apri Claude Code e digita:
 fai la weekly review
 ```
 
-L'agente segue il protocollo in 5 fasi:
+L'agente segue il protocollo in 7 fasi:
 
+0. **Sync dati** — se l'ultimo sync Garmin è > 1 ora fa, forza un aggiornamento automatico (tool `force_garmin_sync`). Questo garantisce che la review sia basata su dati completi anche se hai appena finito un allenamento
 1. **Raccolta dati** — chiama `get_recent_metrics(14)`, `get_activity_history('all', 7)`, `query_subjective_log(7, 'all')`
 2. **Analisi** — confronta carico realizzato vs pianificato, trend HRV, compliance, segnali soggettivi
 3. **Diagnosi** — identifica pattern (es. "troppo volume Z3", "sonno in calo", "spalla migliorata")
 4. **Proposta** — struttura settimana successiva: schema settimanale + dettaglio sessioni per i prossimi 2-3 giorni
 5. **Conferma + commit** — ti mostra il piano, tu dici "ok" o "modifica X". Solo dopo il tuo ok, chiama `commit_plan_change` per ogni sessione
+6. **Google Calendar** — dopo il commit, crea/aggiorna gli eventi nel tuo Google Calendar con orario, sport, durata e descrizione completa
 
 Il tutto richiede 15-20 minuti. Il piano ibrido (struttura solida + dettagli vicini) viene raffinato ogni 2-3 giorni in conversazioni successive.
 
@@ -157,6 +159,42 @@ Razionale fisiologico contestualizzato ai tuoi dati. L'agente cita CLAUDE.md §3
 Proponi il prossimo mesociclo di 4 settimane.
 ```
 Genera block completo con carico progressivo, settimana scarico, test fitness schedulato.
+
+---
+
+## Setup iniziale
+
+### Google Calendar (opzionale ma consigliato)
+
+L'agente può creare automaticamente gli eventi delle sessioni pianificate nel tuo Google Calendar.
+
+1. Vai su https://claude.com/settings/connectors
+2. Cerca "Google Calendar" e attivalo
+3. Autorizza l'account Google con cui vuoi sincronizzare
+4. Verifica in Claude Code con `claude mcp list` che il connector sia ✓ Connected
+
+Dopo il setup, la weekly review e l'adjust_week creeranno/aggiorneranno gli eventi automaticamente.
+Mapping: ogni sessione diventa un evento con emoji sport (🏊/🚴/🏃/💪), orario default 06:30, durata e descrizione completa.
+
+### PAT GitHub per sync forzato
+
+Per permettere all'agente di forzare un sync Garmin prima della weekly review:
+
+1. Genera un PAT GitHub (classic) con scope `repo` + `workflow`
+   - https://github.com/settings/tokens/new
+2. Aggiungi il PAT come secret del Cloudflare Worker MCP:
+   ```bash
+   cd workers/mcp-server
+   wrangler secret put GH_PAT_TRIGGER
+   ```
+3. Deploy del worker aggiornato:
+   ```bash
+   wrangler deploy
+   ```
+
+### Migration SQL
+
+Esegui le migration in `migrations/` nel Supabase SQL Editor. Vedi `migrations/README.md` per istruzioni.
 
 ---
 

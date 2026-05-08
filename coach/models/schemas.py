@@ -86,6 +86,10 @@ class Activity(BaseDBModel):
     if_value: Optional[float] = None
     rpe: Optional[int] = Field(None, ge=1, le=10)
 
+    # Garmin completeness Step 5.1
+    splits: Optional[list[dict[str, Any]]] = None
+    weather: Optional[dict[str, Any]] = None
+
     raw_payload: Optional[dict[str, Any]] = None
     notes: Optional[str] = None
 
@@ -113,6 +117,10 @@ class DailyWellness(BaseDBModel):
     training_load_chronic: Optional[float] = None
     vo2max_run: Optional[float] = None
     vo2max_bike: Optional[float] = None
+
+    # Garmin completeness Step 5.1
+    training_readiness_score: Optional[int] = None
+    avg_sleep_stress: Optional[float] = None
 
     raw_payload: Optional[dict[str, Any]] = None
 
@@ -170,6 +178,7 @@ class DailyMetrics(BaseDBModel):
     garmin_acute_load: Optional[float] = None
     garmin_chronic_load: Optional[float] = None
     garmin_load_balance: Optional[float] = None
+    garmin_training_readiness: Optional[int] = None
     garmin_training_status: Optional[str] = None
     ctl_swim: Optional[float] = None
     ctl_bike: Optional[float] = None

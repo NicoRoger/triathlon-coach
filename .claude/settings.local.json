@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir C:triathlon-coach *)",
+      "Bash(PYTHONPATH=. python -m scripts.weekly_review_dump)",
+      "Bash(PYTHONPATH=. PYTHONIOENCODING=utf-8 python -m scripts.weekly_review_dump)",
+      "mcp__triathlon-coach__force_garmin_sync",
+      "mcp__claude_ai_Google_Calendar__list_events",
+      "mcp__triathlon-coach__get_planned_session",
+      "mcp__claude_ai_Google_Calendar__create_event",
+      "mcp__triathlon-coach__commit_plan_change"
+    ]
+  }
+}

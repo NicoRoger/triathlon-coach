@@ -23,6 +23,11 @@ Trigger:
    - **Mantiene** la sessione lunga se è gara A in <8 settimane
 5. Per ogni cambio: chiamata `propose_plan_change` separata
 6. Riassunto finale con before/after
+7. Dopo conferma atleta e `commit_plan_change`, aggiorna Google Calendar:
+   - Sessione **spostata**: `gcal:delete_event` sul vecchio `calendar_event_id` + `gcal:create_event` nella nuova data
+   - Sessione **modificata** (stessa data): `gcal:update_event` con nuovi dettagli
+   - Sessione **cancellata**: `gcal:delete_event` se ha `calendar_event_id`
+   - Se gcal fallisce, non bloccare — segnala all'utente
 
 ## Output template
 ```
@@ -52,3 +57,4 @@ Approvi? Risposta sì/no/modifica.
 ## Cosa NON fare
 - Non scrivere su DB direttamente. Sempre `propose_plan_change` → conferma.
 - Non improvvisare nuovi tipi di sessione fuori dal repertorio standard.
+

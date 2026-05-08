@@ -11,7 +11,17 @@ Trigger primario: ogni domenica sera, quando l'atleta digita "fai la weekly revi
 
 Trigger secondari (replanning mid-week): "ho saltato la sessione di ieri, ripianifica", "domani non posso allenarmi, sposta", "sono in trasferta da mercoledì".
 
-## Procedura — 5 fasi
+## Procedura — 7 fasi
+
+### Fase 0 — Sync dati attuali
+
+Prima di analizzare la settimana, garantisci che i dati siano aggiornati.
+
+1. Chiama `get_recent_metrics(days=1)` e ispeziona `last_sync_at` di garmin_sync.
+2. Se l'ultimo sync Garmin è > 1 ora fa, chiama `force_garmin_sync`.
+3. Se il tool restituisce `status: completed`, attendi che il sync sia visibile e procedi.
+4. Se restituisce `skipped`, procedi direttamente (sync già recente).
+5. Se restituisce `timeout`, avvisa l'utente: "Sync forzato ma non ancora visibile, procedo con i dati che ho ma considera che potrebbe mancare l'ultima attività. Vuoi aspettare?"
 
 ### Fase 1 — Raccolta dati
 
@@ -35,8 +45,10 @@ Produci una sintesi onesta. Non glissare su quello che è andato male.
 - Volume settimanale (ore + km per disciplina)
 - Garmin training load: trend acute/chronic, ACWR finale
 - HRV medio della settimana, z-score medio, giorni con flag
-- Sonno medio, stress medio
+- Sonno medio, stress medio, **avg sleep stress medio** (Step 5.1: se >25, segnala recovery quality degradata)
+- **Training readiness Garmin** vs readiness nostro: trend settimanale, discrepanze >15 punti (Step 5.1)
 - Distribuzione zone (se possibile da hr_zones_s)
+- **Pace consistency** da activity splits (Step 5.1: analisi split negativi/positivi nelle sessioni chiave)
 
 **Aderenza pianificato vs eseguito**:
 - Sessioni completate / pianificate
@@ -132,6 +144,30 @@ description="..."
 )
 
 Per i giorni con parametri ancora indefiniti (gio-dom nell'esempio), scrivi una sessione con descrizione "TBD — dettagli a metà settimana" e duration_s placeholder. Verrà aggiornata via re-commit.
+
+### Fase 6 — Esportazione su Google Calendar
+
+Per ogni sessione committata in `planned_sessions`, crea l'evento corrispondente
+nel Google Calendar di Nicolò. Calendario: "primary" (calendario principale).
+
+Mapping sessione → evento:
+
+- **title**: "🏊 [sport] — [session_type]" (emoji: 🏊 swim, 🚴 bike, 🏃 run, 🏊🚴🏃 brick, 💪 strength)
+- **start**: `planned_date` alle 06:30 di default (l'utente si allena di mattina presto)
+  - Se l'utente preferisce orario diverso, lo specifica nel debrief o lo dichiara
+- **end**: start + `duration_s`
+- **description**: testo completo della sessione (con razionale fisiologico, strategico, parametri di successo)
+- **location**: vuota di default
+- **reminders**: 1 reminder a -30min
+
+Workflow:
+1. Per ogni sessione appena committata, chiama `gcal:list_events` con time_min=start-1h, time_max=start+1h, q="[sport]"
+2. Se esiste già un evento con titolo simile in quella finestra → chiama `gcal:update_event`
+3. Altrimenti → chiama `gcal:create_event`
+4. Dopo la creazione/update, ricevi il `calendar_event_id` e aggiorna la sessione in DB con `commit_plan_change` includendo il campo `calendar_event_id`
+
+Se la chiamata gcal fallisce, NON bloccare il commit della sessione — la sessione
+è comunque salvata in DB. Riporta il problema all'utente con messaggio chiaro.
 
 ## Vincoli di sicurezza
 

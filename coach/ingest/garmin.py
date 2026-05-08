@@ -4,6 +4,24 @@ Usa python-garminconnect (non ufficiale ma stabile). Token cache in env var
 `GARMIN_SESSION_JSON` (base64 di ~/.garminconnect/oauth1_token.json + oauth2_token.json).
 
 Idempotente: upsert su (external_id, source).
+
+Endpoint Garmin chiamati (aggiornato Step 5.1, maggio 2026):
+- get_activities_by_date(start, end)  — lista attività nel range
+- get_user_summary(date)             — body battery, stress avg, RHR, passi
+- get_sleep_data(date)               — sleep score, HRV notturno, fasi sonno, sleep stress
+- get_hrv_data(date)                 — HRV summary e status
+- get_max_metrics(date)              — VO2max running e cycling
+- get_training_status(date)          — training status, acute/chronic load
+- get_training_readiness(date)       — training readiness score Garmin [Step 5.1]
+- get_activity_splits(id)            — split per km/lap [Step 5.1]
+- get_activity_weather(id)           — meteo durante attività [Step 5.1]
+
+Endpoint valutati e NON chiamati (vedi docs/audit_garmin_completeness_2026-05-07.md):
+- get_body_battery: solo min/max sufficiente (da user_summary)
+- get_stress_data: solo avg sufficiente
+- get_respiration_data, get_steps_data, get_floors: non rilevanti
+- get_pulse_ox, get_spo2_data: solo per alta quota
+- download_activity: richiede storage, DA VALUTARE in futuro
 """
 from __future__ import annotations
 
@@ -12,9 +30,10 @@ import json
 import logging
 import os
 import tempfile
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from coach.models import Activity, DailyWellness, Source, Sport
 from coach.utils.supabase_client import get_supabase
@@ -63,7 +82,7 @@ def _login():
     return g
 
 
-def _normalize_activity(raw: dict) -> Activity:
+def _normalize_activity(raw: dict, splits: Optional[list] = None, weather: Optional[dict] = None) -> Activity:
     """Garmin activity → Pydantic Activity."""
     raw_sport = (raw.get("activityType", {}).get("typeKey") or "").lower()
     sport = SPORT_MAP.get(raw_sport, Sport.OTHER)
@@ -112,6 +131,8 @@ def _normalize_activity(raw: dict) -> Activity:
         avg_pace_s_per_100m=avg_pace_per_100m,
         tss=tss,
         if_value=raw.get("intensityFactor"),
+        splits=splits,
+        weather=weather,
         raw_payload=raw,
     )
 
@@ -193,6 +214,59 @@ def _extract_training_load(payload: Optional[dict], kind: str) -> Optional[float
         return atl_dto.get("dailyTrainingLoadChronic")
     return None
 
+
+def _extract_training_readiness(payload) -> Optional[int]:
+    """Estrae il training readiness score Garmin (0-100).
+    
+    Step 5.1: endpoint get_training_readiness restituisce uno score proprietario
+    che combina HRV, sleep, recovery time, training load.
+    
+    Il payload è tipicamente una lista di dict con chiave 'score'.
+    Prende lo score dal record con primaryActivityTracker=true, o il primo disponibile.
+    """
+    if not payload:
+        return None
+    # Normalizza a lista
+    items = payload if isinstance(payload, list) else [payload]
+    # Preferisci il device primario
+    for item in items:
+        if isinstance(item, dict) and item.get("primaryActivityTracker"):
+            s = item.get("score") or item.get("readinessScore")
+            if s is not None:
+                try:
+                    return int(s)
+                except (ValueError, TypeError):
+                    pass
+    # Fallback: primo score trovato
+    for item in items:
+        if isinstance(item, dict):
+            s = item.get("score") or item.get("readinessScore")
+            if s is not None:
+                try:
+                    return int(s)
+                except (ValueError, TypeError):
+                    continue
+    return None
+
+
+def _extract_avg_sleep_stress(sleep_payload: Optional[dict]) -> Optional[float]:
+    """Estrae avg sleep stress da dailySleepDTO.
+    
+    Step 5.1: il campo è già nel raw_payload sleep ma non veniva estratto.
+    Path: sleep.dailySleepDTO.avgSleepStress (camelCase, confermato su payload reali)
+    """
+    if not sleep_payload or not isinstance(sleep_payload, dict):
+        return None
+    dto = sleep_payload.get("dailySleepDTO") or {}
+    # Garmin usa camelCase: avgSleepStress (non averageSleepStress)
+    stress = dto.get("avgSleepStress") or dto.get("averageSleepStress")
+    if stress is not None:
+        try:
+            return float(stress)
+        except (ValueError, TypeError):
+            pass
+    return None
+
 def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
     """Garmin user_summary + sleep + hrv → DailyWellness.
     
@@ -241,12 +315,18 @@ def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
         training_status=_extract_training_status(raw.get("training_status")),
         training_load_acute=_extract_training_load(raw.get("training_status"), "acute"),
         training_load_chronic=_extract_training_load(raw.get("training_status"), "chronic"),
+        # Step 5.1: nuovi campi
+        training_readiness_score=_extract_training_readiness(raw.get("training_readiness")),
+        avg_sleep_stress=_extract_avg_sleep_stress(sleep),
         raw_payload=raw,
     )
 
 
 def sync_activities(days_back: int = 7) -> int:
     """Sync attività ultimi N giorni. Idempotente.
+
+    Step 5.1: per ogni attività chiama anche get_activity_splits e
+    get_activity_weather (opzionali, con rate limiting).
 
     Returns:
         Numero attività sincronizzate (insert + update).
@@ -263,7 +343,31 @@ def sync_activities(days_back: int = 7) -> int:
     count = 0
     for raw in activities_raw:
         try:
-            act = _normalize_activity(raw)
+            activity_id = raw.get("activityId")
+
+            # Step 5.1: fetch splits e weather (opzionali, rate limited)
+            splits = None
+            weather = None
+            if activity_id:
+                try:
+                    splits_raw = g.get_activity_splits(activity_id)
+                    if isinstance(splits_raw, dict):
+                        splits = splits_raw.get("lapDTOs") or splits_raw.get("splits")
+                    elif isinstance(splits_raw, list):
+                        splits = splits_raw
+                    time.sleep(0.3)  # Rate limiting
+                except Exception:
+                    logger.debug("Splits non disponibili per %s", activity_id)
+
+                try:
+                    weather = g.get_activity_weather(activity_id)
+                    if weather and not isinstance(weather, dict):
+                        weather = None
+                    time.sleep(0.3)  # Rate limiting
+                except Exception:
+                    logger.debug("Weather non disponibile per %s", activity_id)
+
+            act = _normalize_activity(raw, splits=splits, weather=weather)
             sb.table("activities").upsert(
                 act.model_dump(mode="json", exclude_none=True),
                 on_conflict="external_id,source",
@@ -306,12 +410,20 @@ def sync_wellness(days_back: int = 7) -> int:
             except Exception:
                 pass
             
+            # Step 5.1: Training readiness score Garmin (opzionale)
+            training_readiness = None
+            try:
+                training_readiness = g.get_training_readiness(day.isoformat())
+            except Exception:
+                pass
+            
             payload = {
                 **(user_summary or {}),
                 "sleep": sleep,
                 "hrv": hrv,
                 "max_metrics": vo2max,
                 "training_status": training_status,
+                "training_readiness": training_readiness,
             }
             wellness = _normalize_wellness(payload, day)
             sb.table("daily_wellness").upsert(

@@ -52,8 +52,11 @@ Esempio cross sprint: 10 min Z2 + 5×30s allungo + 10 min Z2.
 
 Brief inizia a includere:
 - Previsione meteo gara (cita fonte web se disponibile)
+- **Meteo attività recenti** (Step 5.1): controlla `activities.weather` delle ultime
+  3-5 attività outdoor per confrontare condizioni di allenamento vs forecast gara.
+  Se T° gara >5°C sopra media allenamenti recenti → nota su acclimatamento e idratazione.
 - Conferma profilo percorso
-- Strategia pacing per disciplina
+- Strategia pacing per disciplina (usa `activities.splits` delle sessioni chiave recenti per baseline pace)
 
 ### T-2 (venerdì se gara domenica)
 

@@ -169,7 +169,8 @@ Pattern:
 ```
 🏊 Brief {date}
 TSB: {tsb} | CTL: {ctl} | HRV z: {hrv_z} {flag_emoji}
-Sonno: {sleep_score}/100 | Body battery: {bb}
+Sonno: {sleep_score}/100 | Body battery: {bb} | Sleep stress: {sleep_stress}
+Garmin readiness: {garmin_readiness}/100 vs nostro: {readiness_score}/100
 
 Sessione prevista: {session_name}
 {session_details}
@@ -195,6 +196,10 @@ richiede:
 - `adjust_week`: ribilancia carico settimanale dato un evento (malattia, viaggio, fatica)
 - `generate_mesocycle`: pianifica blocco 4 settimane con tappa intermedia
 - `log_debrief`: parsing risposta debrief serale → struttura → DB
+- `weekly_review`: protocollo review settimanale (7 fasi con sync + gcal)
+- `race_week_protocol`: gestione settimana gara T-7 → T+1
+- `race_prediction`: predizione performance con confidence interval
+- `delete_session`: cancellazione sessione pianificata + cleanup Google Calendar
 
 ---
 
@@ -215,6 +220,26 @@ richiede:
 - `docs/race_history.md` — gare passate, sensazioni, esecuzione
 - `docs/injury_log.md` — infortuni, rieducazione, pattern ricorrenti
 
+## 10. Riferimento tabelle DB
+
+- `planned_sessions.calendar_event_id` (TEXT, nullable) — chiave di lookup verso Google Calendar. Quando l'agente crea/aggiorna/cancella eventi gcal, usa questa colonna per tracciare l'associazione sessione ↔ evento.
+
 ---
 
-*Versione: 0.1 — La compilazione di §2 è il primo task post-setup.*
+## 12. Note operative (Step 5.1)
+
+### Nuovi dati Garmin disponibili (maggio 2026)
+
+Da Step 5.1 la pipeline ingest estrae dati aggiuntivi ad alto valore:
+
+- **`daily_wellness.training_readiness_score`**: score 0-100 proprietario Garmin che combina HRV, sleep, recovery time, training load. Complemento al nostro readiness score. Se i due discrepano >15 punti, segnalalo nel brief.
+- **`daily_wellness.avg_sleep_stress`**: stress medio durante il sonno. Alto (>25) = recovery quality degradata. Correla con HRV trend negativo.
+- **`activities.splits`**: JSONB con split per km/lap (pace, HR, elevation). Usa per analisi pace consistency nella weekly review.
+- **`activities.weather`**: JSONB con meteo attività (T°, vento, umidità). Critico per race week: confronta con forecast gara.
+- **`daily_metrics.garmin_training_readiness`**: passthrough da wellness per accesso facile nei brief.
+
+Per l'inventario completo degli endpoint Garmin chiamati e non chiamati, vedi `docs/audit_garmin_completeness_2026-05-07.md`.
+
+---
+
+*Versione: 0.2 — Step 5.1 completato, nuovi dati Garmin integrati.*

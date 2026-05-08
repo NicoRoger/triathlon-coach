@@ -22,6 +22,7 @@ interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_KEY: string;
   MCP_BEARER_TOKEN: string;
+  GH_PAT_TRIGGER: string;
 }
 
 interface JsonRpcRequest {
@@ -115,7 +116,16 @@ const TOOLS = [
           description: "Opzionale: workout strutturato per esportazione futura su Garmin",
         },
         mesocycle_id: { type: "string", description: "Opzionale: UUID mesociclo associato" },
+        calendar_event_id: { type: "string", description: "Opzionale: ID evento Google Calendar associato" },
       },
+    },
+  },
+  {
+    name: "force_garmin_sync",
+    description: "Forza un sync Garmin triggerando il workflow ingest via GitHub Actions. Se l'ultimo sync è < 1 ora fa, restituisce 'skipped'. Altrimenti triggera e attende fino a 90s. Usato dalla weekly review per garantire dati freschi.",
+    inputSchema: {
+      type: "object",
+      properties: {},
     },
   },
 ];
@@ -187,6 +197,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return proposePlan(args, env);
     case "commit_plan_change":
       return commitPlanChange(args, env);
+    case "force_garmin_sync":
+      return forceGarminSync(env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -277,6 +289,7 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   if (args.target_zones !== undefined) payload.target_zones = args.target_zones;
   if (args.structured !== undefined) payload.structured = args.structured;
   if (args.mesocycle_id !== undefined) payload.mesocycle_id = args.mesocycle_id;
+  if (args.calendar_event_id !== undefined) payload.calendar_event_id = args.calendar_event_id;
 
   // Cerca sessione esistente
   const existingResp = await fetch(
@@ -341,4 +354,76 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
       payload,
     };
   }
+}
+
+// ============================================================================
+// Force Garmin Sync — triggera ingest.yml via GitHub Actions API
+// ============================================================================
+async function forceGarminSync(env: Env): Promise<any> {
+  // 1. Controlla freshness ultimo sync
+  const healthRows = await sb(env, `health?component=eq.garmin_sync&select=last_success_at`);
+  const lastSync = healthRows?.[0]?.last_success_at;
+  const lastSyncDate = lastSync ? new Date(lastSync) : null;
+
+  if (lastSyncDate) {
+    const minutesAgo = Math.round((Date.now() - lastSyncDate.getTime()) / 60000);
+    if (minutesAgo < 60) {
+      return {
+        status: "skipped",
+        reason: `sync recent (${minutesAgo} minutes ago)`,
+        last_sync: lastSync,
+      };
+    }
+  }
+
+  // 2. Triggera workflow via GitHub Actions API
+  // Setup richiesto: PAT GitHub con scope `repo` + `workflow`
+  // Configurare come secret Cloudflare Worker: wrangler secret put GH_PAT_TRIGGER
+  const dispatchResp = await fetch(
+    "https://api.github.com/repos/NicoRoger/triathlon-coach/actions/workflows/ingest.yml/dispatches",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.GH_PAT_TRIGGER}`,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "triathlon-coach-mcp",
+      },
+      body: JSON.stringify({ ref: "main" }),
+    }
+  );
+
+  if (!dispatchResp.ok) {
+    const errText = await dispatchResp.text();
+    throw new Error(`GitHub dispatch failed: ${dispatchResp.status} ${errText}`);
+  }
+
+  // 3. Polling: attendi fino a 90s che health.last_success_at venga aggiornato
+  const startTime = Date.now();
+  const timeoutMs = 90_000;
+  const pollIntervalMs = 10_000;
+  const baselineSync = lastSync || "";
+
+  while (Date.now() - startTime < timeoutMs) {
+    await sleep(pollIntervalMs);
+    const updated = await sb(env, `health?component=eq.garmin_sync&select=last_success_at`);
+    const newSync = updated?.[0]?.last_success_at;
+    if (newSync && newSync !== baselineSync) {
+      return {
+        status: "completed",
+        duration_s: Math.round((Date.now() - startTime) / 1000),
+        last_sync: newSync,
+      };
+    }
+  }
+
+  return {
+    status: "timeout",
+    warning: "sync triggered but not yet visible",
+    duration_s: Math.round((Date.now() - startTime) / 1000),
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

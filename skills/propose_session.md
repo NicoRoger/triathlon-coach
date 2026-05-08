@@ -18,11 +18,15 @@ description: Dettaglia la sessione del giorno (o di una data specifica) con zone
    - Se readiness ≥ 75 e nessun flag → sessione come da piano
    - Se readiness 50-74 → riduci intensità di 1 step (es. soglia → tempo, VO2 → soglia)
    - Se readiness < 50 → proponi recovery o riposo (richiede `propose_plan_change`)
-5. Output strutturato con:
+5. **In race week** (Step 5.1): controlla `activities.weather` delle attività recenti.
+   Se temperatura prevista >30°C o vento forte, adatta intensità (-5-10% target) e
+   aggiungi note su idratazione extra. Vedi anche forecast esterno se disponibile.
+6. Output strutturato con:
    - Warm-up esplicito (durata, zona)
    - Main set (intervalli, durate, zone, recupero)
    - Cool-down
    - Note tecniche/contestuali
+   - **Condizioni meteo** se disponibili da weather data (Step 5.1)
 
 ## Template output
 ```

@@ -150,6 +150,7 @@ def compute_for(day: date, history_days: int = 90) -> dict:
         "garmin_acute_load": round(garmin_acute, 2) if garmin_acute is not None else None,
         "garmin_chronic_load": round(garmin_chronic, 2) if garmin_chronic is not None else None,
         "garmin_load_balance": garmin_balance,
+        "garmin_training_readiness": today_wellness.get("training_readiness_score") if today_wellness else None,
         "garmin_training_status": garmin_status,
         # HRV
         "hrv_z_score": round(z, 2) if z is not None else None,

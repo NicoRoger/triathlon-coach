@@ -6,6 +6,7 @@ compatibility_date = "2025-04-01"
 # - SUPABASE_URL
 # - SUPABASE_SERVICE_KEY
 # - MCP_BEARER_TOKEN  (genera: openssl rand -base64 48)
+# - GH_PAT_TRIGGER    (PAT GitHub con scope `repo` + `workflow` per force_garmin_sync)
 
 [observability]
 enabled = true

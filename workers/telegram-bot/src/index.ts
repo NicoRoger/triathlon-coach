@@ -223,6 +223,7 @@ function parseDebrief(body: string): { fields: any; summary: string } {
   const fields: any = {};
   const parsed: any = {};
   const summary: string[] = [];
+  const lower = body.toLowerCase();
 
   // RPE → colonna nativa
   const rpeMatch = body.match(/rpe\s*(\d{1,2})/i);
@@ -243,8 +244,33 @@ function parseDebrief(body: string): { fields: any; summary: string } {
     }
   }
 
-  // Dolori → parsed_data (pain_reported, pain_location non sono colonne)
-  const lower = body.toLowerCase();
+  // Motivation → colonna nativa
+  const motMatch = body.match(/motivazione\s*(\d{1,2})/i);
+  if (motMatch) {
+    const v = parseInt(motMatch[1], 10);
+    if (v >= 1 && v <= 10) {
+      fields.motivation = v;
+      summary.push(`motivation ${v}`);
+    }
+  }
+
+  // Illness → colonna nativa (stessa logica di parseLog)
+  if (/\b(malato|malata|febbre|raffreddore|influenza|mal di gola|tosse|covid)\b/i.test(lower)) {
+    fields.illness_flag = true;
+    fields.illness_details = body.slice(0, 200);
+    summary.push("malattia");
+  }
+
+  // Injury → colonna nativa (stessa logica di parseLog)
+  if (/\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio)\b/i.test(lower)) {
+    fields.injury_flag = true;
+    fields.injury_details = body.slice(0, 200);
+    const locMatch = body.match(/\b(ginocchio|caviglia|polpaccio|tendine d'achille|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone)\b/i);
+    if (locMatch) fields.injury_location = locMatch[1];
+    summary.push("infortunio");
+  }
+
+  // Dolori → parsed_data (pain_reported, pain_location non sono colonne native)
   if (/\b(no dolori|nessun dolore|no pain|niente dolori)\b/i.test(lower)) {
     parsed.pain_reported = false;
   } else if (/\b(dolore|dolori|male|fastidio)\b/i.test(lower)) {

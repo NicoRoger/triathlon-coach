@@ -44,6 +44,10 @@ CREATE TABLE activities (
     -- Raw payload per riprocessing
     raw_payload     JSONB,
 
+    -- Garmin completeness Step 5.1
+    splits          JSONB,        -- split per km/lap (get_activity_splits)
+    weather         JSONB,        -- condizioni meteo (get_activity_weather)
+
     notes           TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -86,6 +90,10 @@ CREATE TABLE daily_wellness (
     training_load_chronic NUMERIC, -- 28d
     vo2max_run      NUMERIC,
     vo2max_bike     NUMERIC,
+
+    -- Garmin completeness Step 5.1
+    training_readiness_score SMALLINT,
+    avg_sleep_stress NUMERIC,
 
     raw_payload     JSONB,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -187,6 +195,9 @@ CREATE TABLE daily_metrics (
 
     -- Flag attivi
     flags           TEXT[],     -- ['fatigue_warning', 'illness_flag', ...]
+
+    -- Garmin training readiness Step 5.1
+    garmin_training_readiness SMALLINT,
 
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
