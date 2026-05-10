@@ -169,7 +169,8 @@ def _build_session_section(planned: Optional[dict]) -> str:
         type_str = planned.get("session_type") or ""
         lines.append(f"{sport_emoji} {type_str} · {dur_min}min")
         if planned.get("description"):
-            desc = planned["description"].strip().split("\n")[:4]
+            from html import escape as _esc
+            desc = [_esc(line) for line in planned["description"].strip().split("\n")[:4]]
             lines.append(f"<i>{chr(10).join(desc)}</i>")
         return "\n".join(lines)
 
