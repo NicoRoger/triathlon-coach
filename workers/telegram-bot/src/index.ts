@@ -241,6 +241,13 @@ async function handleCommand(env: Env, chatId: number, text: string | undefined)
       `<i>Esempio: "RPE 7, gambe pesanti seconda metà, no dolori, energia bassa, dormo presto"</i>`);
   }
 
+  // Se il testo libero sembra un debrief (contiene RPE), parsa automaticamente
+  if (/rpe\s*\d{1,2}/i.test(t)) {
+    const parsed = parseDebrief(t);
+    await insertSubjective(env, { kind: "evening_debrief", ...parsed.fields, raw_text: t });
+    return sendMessage(env, chatId, `✅ Riconosciuto debrief e salvato${parsed.summary ? ` (${parsed.summary})` : ""}.`);
+  }
+
   // Testo libero → free_note
   await insertSubjective(env, { kind: "free_note", raw_text: t });
   await sendMessage(env, chatId, "📝 Salvato come nota libera. Comandi: /help");
@@ -283,7 +290,8 @@ function parseLog(body: string): { kind: string; fields: any; summary: string } 
   }
 
   // Injury
-  if (/\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio)\b/i.test(lower)) {
+  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/i;
+  if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
     // Try locate
@@ -361,7 +369,8 @@ function parseDebrief(body: string): { fields: any; summary: string } {
   }
 
   // Injury → colonna nativa (stessa logica di parseLog)
-  if (/\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio)\b/i.test(lower)) {
+  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/i;
+  if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
     const locMatch = body.match(/\b(ginocchio|caviglia|polpaccio|tendine d'achille|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone)\b/i);
