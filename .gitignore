@@ -15,3 +15,7 @@ dist/
 .workers.dev
 bearer_temp.txt
 *.bearer
+
+.claude/
+
+_tmp_weekly.txt
