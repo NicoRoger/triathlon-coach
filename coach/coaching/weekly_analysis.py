@@ -76,7 +76,7 @@ def generate_weekly_lesson() -> str:
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     try:
-        from dotenv import load_dotenv; load_dotenv()
+        from dotenv import load_dotenv; load_dotenv(override=True)
     except ImportError: pass
     analysis = generate_weekly_analysis()
     print(analysis)

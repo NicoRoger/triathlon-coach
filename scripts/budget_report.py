@@ -14,7 +14,7 @@ from coach.utils.budget import get_month_stats
 def main() -> None:
     logging.basicConfig(level=logging.ERROR)
     try:
-        from dotenv import load_dotenv; load_dotenv()
+        from dotenv import load_dotenv; load_dotenv(override=True)
     except ImportError: pass
 
     try:

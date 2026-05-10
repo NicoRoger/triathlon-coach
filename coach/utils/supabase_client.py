@@ -7,7 +7,7 @@ from functools import lru_cache
 # Auto-load .env per dev locale (CI usa secret invece)
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 except ImportError:
     pass
 

@@ -110,7 +110,7 @@ def select_and_send_question() -> Optional[str]:
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     try:
-        from dotenv import load_dotenv; load_dotenv()
+        from dotenv import load_dotenv; load_dotenv(override=True)
     except ImportError: pass
     q = select_and_send_question()
     print(f"Domanda: {q}" if q else "Nessuna domanda")

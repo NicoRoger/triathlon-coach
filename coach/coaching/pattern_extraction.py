@@ -83,7 +83,7 @@ def extract_patterns(days: int = 28) -> Optional[str]:
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     try:
-        from dotenv import load_dotenv; load_dotenv()
+        from dotenv import load_dotenv; load_dotenv(override=True)
     except ImportError: pass
     
     print("Avvio estrazione pattern...")
