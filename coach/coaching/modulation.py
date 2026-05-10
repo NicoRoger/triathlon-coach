@@ -247,10 +247,14 @@ def generate_modulation_proposal(
         )
 
         # Parse risposta come JSON se possibile
+        import re
+        text = result["text"]
+        # Rimuove eventuali backticks markdown (es. ```json ... ```)
+        text_clean = re.sub(r'^```(?:json)?\n?(.*?)\n?```$', r'\1', text.strip(), flags=re.DOTALL)
         try:
-            return json.loads(result["text"])
+            return json.loads(text_clean)
         except json.JSONDecodeError:
-            return [{"description": result["text"]}]
+            return [{"description": text_clean}]
 
     except BudgetExceededError:
         logger.warning("Budget exceeded, skipping modulation proposal")

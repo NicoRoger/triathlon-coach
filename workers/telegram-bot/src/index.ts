@@ -161,7 +161,19 @@ async function handleCallbackQuery(env: Env, query: any): Promise<void> {
   }
 }
 
-async function handleCommand(env: Env, chatId: number, text: string): Promise<void> {
+async function handleCommand(env: Env, chatId: number, text: string | undefined): Promise<void> {
+  // Security P0: Reject unauthorized users
+  if (chatId.toString() !== env.TELEGRAM_CHAT_ID) {
+    console.warn(`Unauthorized access attempt from chatId: ${chatId}`);
+    return;
+  }
+
+  // Graceful failure for audio/photo messages
+  if (!text) {
+    await sendMessage(env, chatId, "Invia solo testo, non accetto media o audio per ora.");
+    return;
+  }
+
   const t = text.trim();
 
   // Stato conversazionale: se siamo in attesa di debrief, il prossimo messaggio

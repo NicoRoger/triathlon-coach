@@ -40,7 +40,12 @@ def check_supabase():
         raise RuntimeError("health table vuota — applicare schema.sql?")
         
     res_api = sb.table("api_usage").select("id").limit(1).execute()
-    # just checking it doesn't crash (table exists)
+    res_sa = sb.table("session_analyses").select("id").limit(1).execute()
+    res_pm = sb.table("plan_modulations").select("id").limit(1).execute()
+    res_ps = sb.table("planned_sessions").select("id").limit(1).execute()
+    res_dw = sb.table("daily_wellness").select("date").limit(1).execute()
+    res_dm = sb.table("daily_metrics").select("date").limit(1).execute()
+    res_sl = sb.table("subjective_log").select("id").limit(1).execute()
 
 
 @check("Telegram bot reachable")
@@ -69,6 +74,37 @@ def check_strava_secret():
     for v in ("STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET", "STRAVA_REFRESH_TOKEN"):
         if not os.environ.get(v):
             raise RuntimeError(f"{v} non settato")
+
+@check("Budget under limits")
+def check_budget():
+    from coach.utils.budget import get_month_spend_usd, BUDGET_HARD_CAP
+    spend = get_month_spend_usd()
+    if spend > BUDGET_HARD_CAP:
+        raise RuntimeError(f"Budget superato: ${spend}/${BUDGET_HARD_CAP}")
+
+@check("Health freshness")
+def check_health():
+    from coach.utils.supabase_client import get_supabase
+    from datetime import datetime, timezone
+    sb = get_supabase()
+    res = sb.table("health").select("*").execute()
+    now = datetime.now(timezone.utc)
+    
+    thresholds = {
+        "garmin_sync": 12,
+        "briefing_morning": 30,
+        "analytics_daily": 12,
+        "dr_snapshot": 36,
+    }
+    
+    for row in res.data or []:
+        comp = row["component"]
+        thr = thresholds.get(comp)
+        if thr and row.get("last_success_at"):
+            last = datetime.fromisoformat(row["last_success_at"].replace("Z", "+00:00"))
+            age = (now - last).total_seconds() / 3600
+            if age > thr:
+                raise RuntimeError(f"{comp} troppo vecchio: {age:.1f}h")
 
 
 def main() -> int:
