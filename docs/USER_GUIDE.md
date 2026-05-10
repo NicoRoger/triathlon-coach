@@ -14,30 +14,57 @@ Ogni mattina alle 06:30 ricevi su Telegram un brief che contiene:
 
 Se i dati Garmin sono vecchi (>18h), il brief lo segnala con warning in testa. Il brief è 100% rule-based, zero chiamate LLM — costo zero, affidabilità massima.
 
+**Vuoi commentare il brief?** Fai swipe → Rispondi direttamente sul messaggio e scrivi quello che vuoi. Il bot lo salva come `brief_response`, non come debrief — lo usa per il contesto della giornata.
+
 ### Post-allenamento — Log soggettivo
 
-Dopo la sessione, manda al bot un messaggio con RPE e sensazioni. Due opzioni:
+Dopo la sessione, manda al bot un messaggio con RPE e sensazioni.
 
 ```
 /rpe 7
 ```
-Log RPE rapido per l'ultima sessione.
+Log RPE rapido.
 
 ```
 /log Z2 60min bici, gambe pesanti ma watt ok. Spalla nessun problema.
 ```
-Log libero — il bot salva in `subjective_log` con timestamp.
+Log libero — il bot estrae RPE, soreness e flag automaticamente.
+
+```
+RPE 7, gambe ok, no dolori, energia buona
+```
+Anche senza `/log` — se il testo inizia con "RPE", viene salvato come debrief automaticamente.
+
+> **Azioni rischiose — conferma esplicita**: se scrivi qualcosa che contiene una parola di dolore o malattia (`dolore`, `male`, `febbre`, `infortunio`…), il bot chiede conferma prima di salvare il flag:
+> ```
+> Tu:  "ho male alla spalla forte"
+> Bot: "Ho capito: infortunio alla spalla. Salvo con flag attivo?"
+>      [✅ Sì] [✏️ Correggi] [❌ Era altro]
+> ```
+> Questo previene falsi positivi. Le conferme scadono dopo 24h — se non rispondi, nessun flag viene attivato.
 
 ### 21:30 — Debrief serale (automatico)
 
-Il bot ti scrive con 4 domande standard:
+Il bot ti manda un reminder con 4 domande:
 
 1. RPE sessione principale (1-10)
 2. Qualità tecnica / sensazione (libero)
 3. Dolori o segnali (sì/no + dove)
 4. Energia residua e sonno previsto
 
-Rispondi in un unico messaggio o uno per volta. Se oggi era off, ignora.
+**Il modo più comodo**: fai swipe → Rispondi direttamente sul messaggio del reminder, anche ore dopo. Il bot riconosce che stai rispondendo a quel reminder e salva correttamente come `evening_debrief`. Non serve usare `/debrief`.
+
+Se oggi era off, ignora il reminder.
+
+### 18:00 Mar/Gio/Sab — Domanda proattiva (automatico)
+
+Il bot ti fa una domanda contestuale (injury, recovery, motivazione, tecnica). Tre opzioni:
+
+| Bottone | Effetto |
+|---------|---------|
+| 💬 Rispondo dopo | Rimuove i bottoni — fai reply al messaggio quando vuoi |
+| 🤐 Salta | Domanda ignorata |
+| 🚫 Disabilita oggi | Nessun'altra domanda per oggi |
 
 ---
 
@@ -61,7 +88,7 @@ L'agente segue il protocollo in 7 fasi:
 5. **Conferma + commit** — ti mostra il piano, tu dici "ok" o "modifica X". Solo dopo il tuo ok, chiama `commit_plan_change` per ogni sessione
 6. **Google Calendar** — dopo il commit, crea/aggiorna gli eventi nel tuo Google Calendar con orario, sport, durata e descrizione completa
 
-Il tutto richiede 15-20 minuti. Il piano ibrido (struttura solida + dettagli vicini) viene raffinato ogni 2-3 giorni in conversazioni successive.
+Il tutto richiede 15-20 minuti.
 
 **Esempio di conversazione dopo la review:**
 ```
@@ -108,15 +135,15 @@ Ricevi range di tempo con confidence interval basato sui tuoi dati.
 
 ---
 
-## Telegram bot — Comandi
+## Telegram bot — Riferimento comandi
 
 ```
 /help              — lista comandi
-/brief             — genera e invia brief on-demand (non aspettare le 06:30)
+/brief             — brief on-demand (non aspettare le 06:30)
 /log <testo>       — log soggettivo libero (RPE, sensazioni, note)
 /rpe <1-10>        — log RPE rapido per ultima sessione
 /debrief           — avvia flow debrief serale manuale
-/undo              — annulla l'ultimo log (ultimi 30 minuti) — chiede conferma via bottoni
+/undo              — annulla l'ultimo log (ultimi 30 min) — chiede conferma bottoni
 /history           — ultimi 10 log
 /history 7d        — log ultimi 7 giorni
 /history rpe       — solo log con RPE registrato
@@ -125,44 +152,30 @@ Ricevi range di tempo con confidence interval basato sui tuoi dati.
 /status            — stato sync, ultimo dato Garmin, ultimo HRV
 ```
 
-### Reply threading
+### Reply threading — dettaglio
 
-Il bot ricorda ogni messaggio che manda (brief, reminder, domande proattive). Puoi rispondere direttamente a qualsiasi messaggio — anche ore dopo — e il bot capisce il contesto automaticamente:
+Il bot logga ogni messaggio che manda. Puoi fare swipe → Rispondi su qualsiasi messaggio del bot, anche giorni dopo, e il bot usa il contesto corretto:
 
-| Messaggio del bot | Tipo reply riconosciuto |
-|-------------------|------------------------|
-| Brief mattutino 06:30 | Commento al brief (salva come `brief_response`) |
-| Reminder debrief serale | Debrief completo con RPE/sensazioni (salva come `evening_debrief`) |
-| Domanda proattiva | Risposta contestualizzata alla categoria (recovery, injury, motivation, …) |
+| Messaggio originale | Come viene salvata la reply |
+|---------------------|-----------------------------|
+| Brief mattutino | `brief_response` (commento, non debrief) |
+| Reminder debrief serale | `evening_debrief` con RPE/sensazioni |
+| Domanda proattiva | `proactive_response` con categoria (recovery, injury…) |
 | Proposta modulazione | Non testuale — usa i bottoni ✅/❌/💬 |
+| Messaggio non riconosciuto | Fallback al parser standard |
 
-**Come usarlo**: apri la chat Telegram, trova il messaggio del bot, fai swipe → Rispondi, scrivi la risposta.
+Se il messaggio su cui fai reply è troppo vecchio (>90 giorni, eliminato dal cleanup domenicale), il bot cade sul parser standard senza perdere il messaggio.
 
-### Conferma azioni rischiose
+### Testo non riconosciuto — help contestuale
 
-Se scrivi qualcosa che contiene un dolore o una malattia, il bot chiede conferma **prima** di salvare il flag:
+Se mandi un testo che il bot non riesce a classificare (nessun RPE, nessun flag, nessun comando), invece di salvare silenziosamente ti chiede:
 
 ```
-Tu:  "ho male alla spalla forte da stamattina"
-Bot: "Ho capito: infortunio alla spalla. Salvo con flag attivo?"
-     [✅ Sì] [✏️ Correggi] [❌ Era altro]
+Bot: "Non sono sicuro di aver capito. Vuoi che salvi come:"
+     [📝 Nota libera] [🩹 Sintomo/dolore] [🎯 RPE post-sessione]
 ```
 
-- **✅ Sì** → salva con `injury_flag=true` e attiva il monitoraggio
-- **✏️ Correggi** → rispondi al bot con la versione corretta
-- **❌ Era altro** → salva come nota libera, nessun flag attivato
-
-Le conferme scadono dopo 24h — se non rispondi, nessun flag viene attivato.
-
-### Domande proattive (Mar/Gio/Sab 18:00)
-
-Le domande proattive arrivano con 3 bottoni opzionali:
-
-| Bottone | Effetto |
-|---------|---------|
-| 💬 Rispondo dopo | Rimuove i bottoni, puoi fare reply in seguito |
-| 🤐 Salta | Domanda ignorata |
-| 🚫 Disabilita oggi | Nessuna altra domanda per oggi |
+Clicca il bottone corretto — il bot salva nel modo giusto.
 
 ---
 
@@ -309,6 +322,17 @@ python scripts/dr_restore.py <snapshot-id>
    curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
      -d "url=https://telegram-bot.<account>.workers.dev/webhook"
    ```
+
+### "Il bot salva le cose nel modo sbagliato"
+
+- **Ha salvato il debrief come nota libera** → Hai mandato la risposta senza fare reply al reminder? Il bot usa il reply threading per capire il contesto. Fai swipe sul messaggio del reminder → Rispondi.
+- **Ha creato un flag injury che non volevo** → Usa `/undo` entro 30 minuti per annullare. Oppure la prossima volta clicca [❌ Era altro] quando ti chiede conferma.
+- **Non capisce il mio messaggio** → Ti apparirà il menu di classificazione [📝 Nota libera] [🩹 Sintomo] [🎯 RPE]. Clicca il tipo corretto.
+
+### "Il reply threading non funziona"
+
+- Il reply threading richiede che il Worker abbia loggato il messaggio in `bot_messages` quando lo ha mandato. Se hai aggiornato il Worker dopo che il messaggio era già stato inviato, quei vecchi messaggi non hanno un record in DB e il reply cade sul parser standard. Comportamento corretto.
+- Messaggi più vecchi di 90 giorni vengono eliminati dal cleanup domenicale — il reply su di essi cade sul parser standard.
 
 ### "L'agente non ha dati aggiornati in Claude.ai"
 
