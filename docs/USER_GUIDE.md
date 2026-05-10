@@ -111,14 +111,58 @@ Ricevi range di tempo con confidence interval basato sui tuoi dati.
 ## Telegram bot — Comandi
 
 ```
-/help           — lista comandi
-/brief          — genera e invia brief on-demand (non aspettare le 06:30)
-/log <testo>    — log soggettivo libero (RPE, sensazioni, note)
-/rpe <1-10>     — log RPE rapido per ultima sessione
-/budget         — mostra lo stato del budget API Anthropic mensile
-/status         — stato sync, ultimo dato Garmin, ultimo HRV
-/debrief        — avvia flow debrief serale manuale
+/help              — lista comandi
+/brief             — genera e invia brief on-demand (non aspettare le 06:30)
+/log <testo>       — log soggettivo libero (RPE, sensazioni, note)
+/rpe <1-10>        — log RPE rapido per ultima sessione
+/debrief           — avvia flow debrief serale manuale
+/undo              — annulla l'ultimo log (ultimi 30 minuti) — chiede conferma via bottoni
+/history           — ultimi 10 log
+/history 7d        — log ultimi 7 giorni
+/history rpe       — solo log con RPE registrato
+/history injury    — solo log con flag infortunio
+/budget            — stato budget API Anthropic mensile
+/status            — stato sync, ultimo dato Garmin, ultimo HRV
 ```
+
+### Reply threading
+
+Il bot ricorda ogni messaggio che manda (brief, reminder, domande proattive). Puoi rispondere direttamente a qualsiasi messaggio — anche ore dopo — e il bot capisce il contesto automaticamente:
+
+| Messaggio del bot | Tipo reply riconosciuto |
+|-------------------|------------------------|
+| Brief mattutino 06:30 | Commento al brief (salva come `brief_response`) |
+| Reminder debrief serale | Debrief completo con RPE/sensazioni (salva come `evening_debrief`) |
+| Domanda proattiva | Risposta contestualizzata alla categoria (recovery, injury, motivation, …) |
+| Proposta modulazione | Non testuale — usa i bottoni ✅/❌/💬 |
+
+**Come usarlo**: apri la chat Telegram, trova il messaggio del bot, fai swipe → Rispondi, scrivi la risposta.
+
+### Conferma azioni rischiose
+
+Se scrivi qualcosa che contiene un dolore o una malattia, il bot chiede conferma **prima** di salvare il flag:
+
+```
+Tu:  "ho male alla spalla forte da stamattina"
+Bot: "Ho capito: infortunio alla spalla. Salvo con flag attivo?"
+     [✅ Sì] [✏️ Correggi] [❌ Era altro]
+```
+
+- **✅ Sì** → salva con `injury_flag=true` e attiva il monitoraggio
+- **✏️ Correggi** → rispondi al bot con la versione corretta
+- **❌ Era altro** → salva come nota libera, nessun flag attivato
+
+Le conferme scadono dopo 24h — se non rispondi, nessun flag viene attivato.
+
+### Domande proattive (Mar/Gio/Sab 18:00)
+
+Le domande proattive arrivano con 3 bottoni opzionali:
+
+| Bottone | Effetto |
+|---------|---------|
+| 💬 Rispondo dopo | Rimuove i bottoni, puoi fare reply in seguito |
+| 🤐 Salta | Domanda ignorata |
+| 🚫 Disabilita oggi | Nessuna altra domanda per oggi |
 
 ---
 

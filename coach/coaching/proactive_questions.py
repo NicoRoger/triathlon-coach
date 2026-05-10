@@ -84,8 +84,22 @@ def select_and_send_question() -> Optional[str]:
     cat_emoji = {"injury": "🩹", "recovery": "😴", "motivation": "🔥", "technique": "🔧", "race_week": "🏁", "general": "💬"}
     msg = f"{cat_emoji.get(category, '💬')} <b>Check-in coach</b>\n\n{question}\n\n<i>Rispondi qui, lo registro per la prossima analisi.</i>"
     try:
-        from coach.planning.briefing import send_to_telegram
-        send_to_telegram(msg)
+        from coach.utils.telegram_logger import send_and_log_message
+
+        buttons = {
+            "inline_keyboard": [[
+                {"text": "💬 Rispondo dopo", "callback_data": "proactive_later"},
+                {"text": "🤐 Salta", "callback_data": "proactive_skip"},
+                {"text": "🚫 Disabilita oggi", "callback_data": "proactive_disable_today"},
+            ]]
+        }
+        send_and_log_message(
+            msg,
+            purpose="proactive_question",
+            context_data={"category": category, "question": question},
+            parent_workflow="proactive-check-in.yml",
+            reply_markup=buttons,
+        )
         logger.info("Proactive question sent: [%s] %s", category, question)
         return question
     except Exception:

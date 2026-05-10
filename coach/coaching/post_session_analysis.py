@@ -204,8 +204,12 @@ def _send_analysis_telegram(activity: dict, analysis: str) -> None:
         f"{analysis}"
     )
     try:
-        from coach.planning.briefing import send_to_telegram
-        send_to_telegram(msg)
+        from coach.utils.telegram_logger import send_and_log_message
+        send_and_log_message(
+            msg,
+            purpose="session_analysis",
+            context_data={"activity_id": activity.get("id"), "sport": activity.get("sport")},
+        )
     except Exception:
         logger.warning("Failed to send session analysis to Telegram")
 

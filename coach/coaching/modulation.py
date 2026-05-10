@@ -181,14 +181,13 @@ def _format_modulation_message(
 
 
 def _send_modulation_telegram(message: str, mod_id: str) -> Optional[int]:
-    """Manda messaggio con bottoni inline via Telegram."""
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
+    """Manda messaggio con bottoni inline via Telegram e logga in bot_messages."""
+    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
         logger.warning("Telegram not configured for modulation")
         return None
 
-    import requests
+    from coach.utils.telegram_logger import send_and_log_message
+
     keyboard = {
         "inline_keyboard": [[
             {"text": "✅ Accetto", "callback_data": f"accept_mod_{mod_id}"},
@@ -197,22 +196,12 @@ def _send_modulation_telegram(message: str, mod_id: str) -> Optional[int]:
         ]]
     }
 
-    resp = requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={
-            "chat_id": int(chat_id),
-            "text": message,
-            "parse_mode": "HTML",
-            "reply_markup": keyboard,
-        },
-        timeout=10,
+    return send_and_log_message(
+        message,
+        purpose="modulation_proposal",
+        context_data={"modulation_id": mod_id},
+        reply_markup=keyboard,
     )
-    if resp.ok:
-        result = resp.json()
-        return result.get("result", {}).get("message_id")
-    else:
-        logger.warning("Failed to send modulation Telegram: %s", resp.text)
-        return None
 
 
 def generate_modulation_proposal(

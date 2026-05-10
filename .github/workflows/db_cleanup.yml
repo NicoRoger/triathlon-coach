@@ -1,17 +1,15 @@
-name: debrief-reminder
+name: db-cleanup
 
 on:
   schedule:
-    - cron: '30 19 * * *'  # 21:30 Europe/Rome (UTC+2 estate, regola se necessario)
+    - cron: '0 2 * * 0'  # Ogni domenica alle 02:00
   workflow_dispatch:
 
 jobs:
-  remind:
+  cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       PYTHONPATH: '.'
@@ -22,5 +20,5 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       - run: pip install -r requirements.txt
-      - name: Send reminder
-        run: python scripts/send_notification.py debrief-reminder
+      - name: Run Cleanup
+        run: python scripts/db_cleanup.py

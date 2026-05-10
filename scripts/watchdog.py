@@ -48,12 +48,11 @@ def main() -> None:
 
     if alerts:
         msg = "<b>Watchdog alert</b>\n\n" + "\n\n".join(alerts)
-        token = os.environ["TELEGRAM_BOT_TOKEN"]
-        chat_id = os.environ["TELEGRAM_CHAT_ID"]
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"},
-            timeout=20,
+        from coach.utils.telegram_logger import send_and_log_message
+        send_and_log_message(
+            message=msg,
+            purpose="generic",
+            parent_workflow="watchdog.yml"
         )
         logger.warning("Watchdog: %d alert", len(alerts))
     else:

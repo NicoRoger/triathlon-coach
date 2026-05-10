@@ -411,20 +411,11 @@ def build_brief() -> str:
     return "\n\n".join(s for s in sections if s.strip())
 
 
-def send_to_telegram(message: str) -> None:
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
-    resp = requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": message,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
+def send_to_telegram(message: str, purpose: str = "morning_brief", parent_workflow: str = "morning-briefing.yml") -> None:
+    from coach.utils.telegram_logger import send_and_log_message
+    result = send_and_log_message(message, purpose=purpose, parent_workflow=parent_workflow)
+    if result is None:
+        raise RuntimeError("send_to_telegram failed (see logs)")
 
 
 def main() -> None:

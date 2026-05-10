@@ -9,26 +9,18 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      PYTHONPATH: '.'
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
       - name: Send weekly review reminder
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          MESSAGE=$(cat <<'EOF'
-          <b>📋 È ora della weekly review</b>
-
-          Domenica sera, momento di rivedere la settimana e pianificare la prossima.
-
-          Apri Claude Code dal Mac e digita:
-          <code>fai la weekly review</code>
-
-          Il coach analizzerà i dati della settimana, ti farà la diagnosi, e proporrà la struttura della settimana che inizia domani. Approvi o modifichi prima del commit nel piano.
-
-          <i>Tempo richiesto: 15-20 min</i>
-          EOF
-          )
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TG_CHAT}" \
-            --data-urlencode "text=${MESSAGE}" \
-            --data-urlencode "parse_mode=HTML"
+        run: python scripts/send_notification.py weekly-review
