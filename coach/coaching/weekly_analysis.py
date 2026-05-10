@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.llm_policy import LLMDisabledError
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ def generate_weekly_analysis(days: int = 7) -> str:
             temperature=0.4,
         )
         return result["text"]
+    except LLMDisabledError:
+        return "AI review disabilitata dalla policy locale. Procedi con la review rule-based."
     except BudgetExceededError:
         return "⚠️ Budget API raggiunto — analisi AI non disponibile. Procedi con la review rule-based."
     except Exception:
@@ -69,7 +72,7 @@ def generate_weekly_lesson() -> str:
             temperature=0.7,
         )
         return result["text"]
-    except (BudgetExceededError, Exception):
+    except (LLMDisabledError, BudgetExceededError, Exception):
         return ""
 
 

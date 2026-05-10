@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.llm_policy import LLMDisabledError
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def generate_race_briefing(race_info: dict) -> str:
             max_tokens=1000,
         )
         return result["text"]
-    except (BudgetExceededError, Exception) as e:
+    except (LLMDisabledError, BudgetExceededError, Exception) as e:
         logger.warning("Race briefing AI failed: %s", e)
         return "⚠️ Race briefing AI non disponibile. Usa il protocollo in skills/race_week_protocol.md."
 
@@ -96,6 +97,6 @@ def generate_race_day_brief() -> str:
         "3. Ricorda: i primi 10min sono sempre duri, non farti ingannare\n"
         "4. Pacing: parti conservativo, chiudi forte\n"
         "5. Nutrizione: segui il piano, non improvvisare\n\n"
-        "Apri Claude Code per il piano gara dettagliato: <code>race day brief</code>\n\n"
+        "Apri Claude web/mobile per il piano gara dettagliato: <code>race day brief</code>\n\n"
         "In bocca al lupo! 🐺"
     )

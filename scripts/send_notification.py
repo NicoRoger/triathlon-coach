@@ -26,10 +26,10 @@ def main():
         msg = (
             "<b>📋 È ora della weekly review</b>\n\n"
             "Domenica sera, momento di rivedere la settimana e pianificare la prossima.\n\n"
-            "Apri Claude Code dal Mac e digita:\n"
+            "Apri Claude da smartphone/web con il connector coach e digita:\n"
             "<code>fai la weekly review</code>\n\n"
             "Il coach analizzerà i dati della settimana, ti farà la diagnosi, e proporrà la struttura della settimana che inizia domani. Approvi o modifichi prima del commit nel piano.\n\n"
-            "<i>Tempo richiesto: 15-20 min</i>"
+            "<i>Tempo richiesto: 15-20 min. Claude Code resta opzionale dal Mac.</i>"
         )
         send_and_log_message(msg, purpose="weekly_review_reminder", parent_workflow="weekly-review.yml")
     else:

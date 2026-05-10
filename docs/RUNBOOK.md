@@ -8,7 +8,7 @@
 | Pre-allenamento | (opzionale) chiedi a Claude.ai approfondimento | MCP server fornisce contesto |
 | Post-allenamento | Vocale o testo a Telegram con RPE + sensazioni | Bot logga in `subjective_log` |
 | Sera 21:30 | Bot ti scrive con 4 domande standard | Salva debrief, append a journal |
-| Settimanale (dom sera) | Apri Claude Code, "rivedi settimana e proponi prossima" | Genera proposta mesociclo, attendi conferma |
+| Settimanale (dom sera) | Apri Claude mobile/web, "fai la weekly review" | Usa `get_weekly_context`, genera proposta, attendi conferma |
 | Mensile | Test fitness suggeriti dall'agente | Aggiornano zone in DB |
 
 ## Comandi Telegram bot
@@ -40,7 +40,7 @@ Il bot setta flag automatici (`illness_flag`, `injury_flag`). Il brief del giorn
 dopo proporrà recovery o stop, secondo regole in CLAUDE.md §5.
 
 ### Vuoi modificare il piano della settimana
-Apri Claude Code o Claude.ai:
+Apri Claude mobile/web:
 > "Ho una cena imprevista venerdì sera, sposta la sessione lunga."
 
 L'agente propone, tu confermi, modifica viene scritta su DB.
@@ -48,7 +48,7 @@ L'agente propone, tu confermi, modifica viene scritta su DB.
 ### Vuoi cambiare obiettivo gara
 Edit manuale di `CLAUDE.md` §Profilo → commit. L'agente leggerà la nuova versione
 al prossimo accesso. Per cambi grossi (es. cambio gara A), apri conversazione
-Claude Code per ridisegnare il macrociclo.
+Claude mobile/web per ridisegnare il macrociclo; Claude Code solo se devi modificare il repo.
 
 ### Il sistema sembra dare suggerimenti strani
 Diagnosi prima di patch (filosofia Audio Guided Condotta):

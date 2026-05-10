@@ -9,6 +9,10 @@
  * Endpoint: POST /mcp
  *
  * Tool esposti:
+ *   - get_weekly_context(days)
+ *   - get_race_context(days_ahead)
+ *   - get_session_review_context(activity_id)
+ *   - get_upcoming_plan(days)
  *   - get_recent_metrics(days)
  *   - get_planned_session(date)
  *   - get_activity_history(sport, days)
@@ -40,6 +44,49 @@ interface JsonRpcResponse {
 }
 
 const TOOLS = [
+  {
+    name: "get_weekly_context",
+    description: "Contesto aggregato per weekly review da Claude web/mobile: health sync, metriche, wellness, attivitÃ , piano, debrief, analisi e modulazioni. Usalo come primo tool per 'fai la weekly review'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", default: 7, minimum: 1, maximum: 28 },
+        include_next_days: { type: "integer", default: 7, minimum: 1, maximum: 21 },
+      },
+    },
+  },
+  {
+    name: "get_race_context",
+    description: "Contesto aggregato per race briefing: prossima gara pianificata, metriche recenti, attivitÃ , wellness, piano e log soggettivi. Usalo solo in race week o su richiesta gara.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        race_date: { type: "string", format: "date" },
+        days_ahead: { type: "integer", default: 21, minimum: 1, maximum: 180 },
+      },
+    },
+  },
+  {
+    name: "get_session_review_context",
+    description: "Contesto per analizzare una singola sessione su richiesta: attivitÃ , sessione pianificata, metriche del giorno, storico sport e debrief recenti. Non consuma API LLM lato backend.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        activity_id: { type: "string", description: "ID interno o external_id attivitÃ . Se omesso usa l'ultima attivitÃ ." },
+        history_days: { type: "integer", default: 21, minimum: 1, maximum: 90 },
+      },
+    },
+  },
+  {
+    name: "get_upcoming_plan",
+    description: "Restituisce le sessioni pianificate dei prossimi N giorni. Utile da smartphone per controllare il piano senza weekly review completa.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", default: 7, minimum: 1, maximum: 60 },
+      },
+    },
+  },
   {
     name: "get_recent_metrics",
     description: "Restituisce daily_metrics (CTL/ATL/TSB/HRV z-score/readiness) ultimi N giorni",
@@ -185,6 +232,14 @@ function err(id: any, code: number, message: string): JsonRpcResponse {
 // ============================================================================
 async function callTool(name: string, args: any, env: Env): Promise<any> {
   switch (name) {
+    case "get_weekly_context":
+      return getWeeklyContext(args.days || 7, args.include_next_days || 7, env);
+    case "get_race_context":
+      return getRaceContext(args.race_date, args.days_ahead || 21, env);
+    case "get_session_review_context":
+      return getSessionReviewContext(args.activity_id, args.history_days || 21, env);
+    case "get_upcoming_plan":
+      return getUpcomingPlan(args.days || 7, env);
     case "get_recent_metrics":
       return getRecentMetrics(args.days || 14, env);
     case "get_planned_session":
@@ -219,10 +274,232 @@ function todayISO(): string {
   return new Date().toISOString().split("T")[0];
 }
 
+function todayRomeISO(): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
 function daysAgoISO(n: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().split("T")[0];
+}
+
+function daysFromISO(n: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().split("T")[0];
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  const n = Number.isFinite(value) ? Math.trunc(value) : min;
+  return Math.min(Math.max(n, min), max);
+}
+
+function coachProtocol() {
+  return {
+    interface: "Claude web/mobile via remote MCP",
+    llm_billing: "Usa l'abbonamento Claude dell'atleta; il backend non fa chiamate LLM API.",
+    safety_rules: [
+      "Numeri prima delle parole: TSB/HRV/readiness/sessione.",
+      "Le decisioni safety restano rule-based: HRV crash, illness_flag, injury_flag.",
+      "Non scrivere su planned_sessions senza conferma esplicita dell'atleta.",
+      "Per applicare modifiche usa commit_plan_change solo dopo 'ok', 'approvo' o equivalente.",
+      "Se dati insufficienti o vecchi, dichiaralo e proponi il minimo intervento sicuro.",
+    ],
+    recommended_flow: [
+      "Weekly review: get_weekly_context -> eventuale force_garmin_sync se dati vecchi -> proposta -> conferma -> commit_plan_change.",
+      "Session analysis: get_session_review_context solo su richiesta o sessione anomala.",
+      "Race briefing: get_race_context solo in race week o su richiesta.",
+    ],
+  };
+}
+
+async function getWeeklyContext(days: number, includeNextDays: number, env: Env) {
+  days = clampInt(days, 1, 28);
+  includeNextDays = clampInt(includeNextDays, 1, 21);
+
+  const today = todayRomeISO();
+  const since = daysAgoISO(days);
+  const metricsSince = daysAgoISO(Math.max(days * 2, 14));
+  const until = daysFromISO(includeNextDays);
+
+  const [
+    health,
+    metrics,
+    wellness,
+    activities,
+    subjective,
+    plannedPast,
+    plannedUpcoming,
+    sessionAnalyses,
+    modulations,
+  ] = await Promise.all([
+    getHealth(env),
+    sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc`),
+    sb(env, `daily_wellness?date=gte.${metricsSince}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score,avg_sleep_stress`),
+    sb(env, `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss,splits,weather`),
+    sb(env, `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc`),
+    sb(env, `planned_sessions?planned_date=gte.${since}&planned_date=lt.${today}&order=planned_date.asc`),
+    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`),
+    sb(env, `session_analyses?created_at=gte.${since}T00:00:00Z&order=created_at.desc&select=activity_id,analysis_text,suggested_actions,created_at,model_used,cost_usd`),
+    sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,trigger_data,proposed_changes,status,proposed_at`),
+  ]);
+
+  return {
+    generated_at: new Date().toISOString(),
+    timezone: "Europe/Rome",
+    period: { today, completed_since: since, upcoming_until: until },
+    coach_protocol: coachProtocol(),
+    sync_status: summarizeSync(health),
+    health,
+    daily_metrics: metrics,
+    daily_wellness: wellness,
+    completed_activities: activities,
+    subjective_log: subjective,
+    planned_past: plannedPast,
+    planned_upcoming: plannedUpcoming,
+    session_analyses: sessionAnalyses,
+    open_modulations: modulations,
+    review_instructions: [
+      "Confronta planned_past vs completed_activities.",
+      "Apri con TSB/CTL/HRV/readiness e dati soggettivi rilevanti.",
+      "Formula diagnosi e proposta prossima settimana.",
+      "Chiedi conferma prima di ogni commit_plan_change.",
+    ],
+  };
+}
+
+async function getRaceContext(raceDate: string | undefined, daysAhead: number, env: Env) {
+  daysAhead = clampInt(daysAhead, 1, 180);
+  const today = todayRomeISO();
+  const until = raceDate || daysFromISO(daysAhead);
+  const since28 = daysAgoISO(28);
+  const since14 = daysAgoISO(14);
+
+  let raceQuery = `planned_sessions?session_type=eq.race&planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc&limit=1`;
+  if (raceDate) {
+    raceQuery = `planned_sessions?session_type=eq.race&planned_date=eq.${raceDate}&limit=1`;
+  }
+
+  const raceRows = await sb(env, raceQuery);
+  const race = raceRows?.[0] || null;
+  const targetDate = race?.planned_date || raceDate || until;
+
+  const [metrics, wellness, activities, subjective, planWindow] = await Promise.all([
+    sb(env, `daily_metrics?date=gte.${since28}&order=date.asc`),
+    sb(env, `daily_wellness?date=gte.${since28}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score,avg_sleep_stress`),
+    sb(env, `activities?started_at=gte.${since28}T00:00:00Z&order=started_at.desc&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss,splits,weather`),
+    sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc`),
+    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${targetDate}&order=planned_date.asc`),
+  ]);
+
+  return {
+    generated_at: new Date().toISOString(),
+    timezone: "Europe/Rome",
+    coach_protocol: coachProtocol(),
+    race,
+    target_date: targetDate,
+    daily_metrics: metrics,
+    daily_wellness: wellness,
+    recent_activities: activities,
+    subjective_log: subjective,
+    plan_until_race: planWindow,
+    race_briefing_instructions: [
+      "Usa solo se race week o richiesta esplicita.",
+      "Non dare diagnosi mediche o nutrizione specifica in grammi/calorie.",
+      "Produci timeline, warm-up, pacing qualitativo, checklist, contingency e mental checkpoints.",
+    ],
+  };
+}
+
+async function getSessionReviewContext(activityId: string | undefined, historyDays: number, env: Env) {
+  historyDays = clampInt(historyDays, 1, 90);
+  const since = daysAgoISO(historyDays);
+
+  let activityRows: any[];
+  if (activityId) {
+    const encoded = encodeURIComponent(activityId);
+    activityRows = await sb(env, `activities?external_id=eq.${encoded}&limit=1`);
+    if (activityRows.length === 0 && isUuid(activityId)) {
+      activityRows = await sb(env, `activities?id=eq.${encoded}&limit=1`);
+    }
+  } else {
+    activityRows = await sb(
+      env,
+      `activities?order=started_at.desc&limit=1&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss,splits,weather`
+    );
+  }
+
+  const activity = activityRows?.[0] || null;
+  if (!activity) {
+    return { status: "not_found", activity_id: activityId || null };
+  }
+
+  const activityDate = String(activity.started_at || "").slice(0, 10);
+  const sport = activity.sport || "all";
+
+  const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
+    sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}`),
+    sb(env, `daily_metrics?date=eq.${activityDate}&limit=1`),
+    sb(env, `subjective_log?logged_at=gte.${daysAgoISO(3)}T00:00:00Z&order=logged_at.desc`),
+    getActivityHistory(sport, historyDays, env),
+    sb(env, `session_analyses?activity_id=eq.${encodeURIComponent(activity.external_id || activity.id)}&limit=1`),
+  ]);
+
+  return {
+    generated_at: new Date().toISOString(),
+    timezone: "Europe/Rome",
+    coach_protocol: coachProtocol(),
+    activity,
+    planned_session: planned?.[0] || null,
+    daily_metrics: metrics?.[0] || null,
+    recent_subjective_log: subjective,
+    same_sport_history: sportHistory,
+    existing_analysis: analyses?.[0] || null,
+    analysis_instructions: [
+      "Analizza solo su richiesta esplicita o sessione anomala.",
+      "Confronta attività con planned_session e storico stesso sport.",
+      "Output breve: cosa è successo, segnale positivo/negativo, azione pratica.",
+    ],
+  };
+}
+
+async function getUpcomingPlan(days: number, env: Env) {
+  days = clampInt(days, 1, 60);
+  const today = todayRomeISO();
+  const until = daysFromISO(days);
+  return sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`);
+}
+
+async function getHealth(env: Env) {
+  return sb(env, `health?select=component,last_success_at,failure_count,last_error&order=component.asc`);
+}
+
+function summarizeSync(health: any[]) {
+  const garmin = health.find((row: any) => row.component === "garmin_sync");
+  const last = garmin?.last_success_at ? new Date(garmin.last_success_at) : null;
+  const ageMinutes = last ? Math.round((Date.now() - last.getTime()) / 60000) : null;
+  return {
+    garmin_last_success_at: garmin?.last_success_at || null,
+    garmin_age_minutes: ageMinutes,
+    is_fresh_for_weekly_review: ageMinutes !== null && ageMinutes < 60,
+    recommendation: ageMinutes === null
+      ? "unknown_sync_state"
+      : ageMinutes > 60
+        ? "call_force_garmin_sync_before_review"
+        : "sync_fresh_proceed",
+  };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 async function getRecentMetrics(days: number, env: Env) {

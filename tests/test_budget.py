@@ -20,6 +20,7 @@ from coach.utils.budget import (
     MODEL_IDS,
     check_budget_or_raise,
     estimate_cost,
+    infer_provider,
     select_model,
 )
 
@@ -40,6 +41,12 @@ class TestEstimateCost:
         cost = estimate_cost("unknown-model", 1000, 500)
         cost_sonnet = estimate_cost("sonnet", 1000, 500)
         assert cost == cost_sonnet
+
+    def test_infer_provider(self):
+        assert infer_provider("claude-sonnet-4-6") == "anthropic"
+        assert infer_provider("gemini-2.5-flash") == "google"
+        assert infer_provider("gpt-5.4-mini") == "openai"
+        assert infer_provider("unknown-model") == "unknown"
 
 
 class TestSelectModel:

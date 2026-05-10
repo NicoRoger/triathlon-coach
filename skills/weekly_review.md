@@ -13,44 +13,53 @@ Trigger secondari (replanning mid-week): "ho saltato la sessione di ieri, ripian
 
 ## Procedura — 7 fasi
 
+> Modalità preferita: Claude web/mobile con remote MCP connector. Non serve Claude Code
+> e non servono chiamate LLM API backend. Se sei in Claude Code puoi comunque seguire
+> la stessa procedura usando gli stessi tool MCP.
+
 ### Fase 0 — Sync dati attuali
 
 Prima di analizzare la settimana, garantisci che i dati siano aggiornati.
 
-1. Chiama `get_recent_metrics(days=1)` e ispeziona `last_sync_at` di garmin_sync.
-2. Se l'ultimo sync Garmin è > 1 ora fa, chiama `force_garmin_sync`.
-3. Se il tool restituisce `status: completed`, attendi che il sync sia visibile e procedi.
-4. Se restituisce `skipped`, procedi direttamente (sync già recente).
+1. Chiama `get_weekly_context(days=7, include_next_days=7)`.
+2. Ispeziona `sync_status.recommendation`.
+3. Se `call_force_garmin_sync_before_review`, chiama `force_garmin_sync` e poi richiama `get_weekly_context`.
+4. Se `force_garmin_sync` restituisce `skipped`, procedi direttamente (sync già recente).
 5. Se restituisce `timeout`, avvisa l'utente: "Sync forzato ma non ancora visibile, procedo con i dati che ho ma considera che potrebbe mancare l'ultima attività. Vuoi aspettare?"
 
 ### Fase 1 — Raccolta dati
 
-Recupera dal DB tramite MCP:
+Usa il payload di `get_weekly_context`:
 
-1. `get_activity_history(sport='all', days=7)` — sessioni completate
-2. `get_recent_metrics(days=14)` — daily_metrics ultime 2 settimane
-3. `query_subjective_log(days=7, kind='all')` — RPE, debrief, flag, malattie, infortuni
-4. `get_planned_session(date)` per ogni giorno della settimana scorsa — confronta pianificato vs eseguito
+1. `completed_activities` — sessioni completate
+2. `daily_metrics` e `daily_wellness` — carico, HRV, readiness, sonno, stress
+3. `subjective_log` — RPE, debrief, flag, malattie, infortuni
+4. `planned_past` — confronta pianificato vs eseguito
+5. `planned_upcoming` — base della proposta prossima settimana
+6. `session_analyses` e `open_modulations` — segnali già prodotti dal sistema
 
-Leggi inoltre:
-- `CLAUDE.md` §3 (stato corrente) e §8.5 (calendario gare)
-- `docs/training_journal.md` (ultime decisioni)
-- `docs/injury_log.md` (stato infortuni in corso)
+Se sei in Claude Code, leggi inoltre `CLAUDE.md`, `docs/training_journal.md` e
+`docs/injury_log.md`. Se sei in Claude web/mobile, usa `coach_protocol` e i dati MCP:
+non inventare memoria non presente nel payload.
 
-### Fase 2 — Analisi della settimana conclusa e Diagnosi (via AI)
+### Fase 2 — Analisi della settimana conclusa e Diagnosi
 
-Esegui lo script Python per generare l'analisi narrativa approfondita della settimana tramite Claude AI:
-`python -m coach.coaching.weekly_analysis`
+Genera direttamente in Claude una diagnosi narrativa di 15-20 righe usando il payload
+MCP. Non chiamare script Python e non richiedere API LLM backend.
 
-Questo script consoliderà le metriche, i debrief, le risposte proattive e le analisi post-sessione in un'analisi di 15-20 righe.
-Leggi attentamente l'output e usalo come base per la tua comunicazione con l'atleta. Evidenzia cosa ha funzionato bene e il "costo" fisiologico pagato. Non essere compiacente.
+Evidenzia:
+- carico realizzato vs pianificato
+- trend HRV/readiness/sonno
+- qualità soggettiva e RPE
+- segnali injury/illness
+- cosa ha funzionato e quale costo fisiologico è stato pagato
 
-### Fase 3 — Lezione della settimana (via AI)
+Non essere compiacente. Se i dati sono incompleti, dichiaralo.
 
-Genera una pillola formativa o "lezione della settimana" eseguendo lo script:
-`python -c "from coach.coaching.weekly_analysis import generate_weekly_lesson; print(generate_weekly_lesson())"`
+### Fase 3 — Lezione della settimana (opzionale)
 
-Includila nel tuo messaggio all'atleta per aumentare la consapevolezza su nutrizione, recupero, o gestione fatica.
+La lezione è opzionale e non deve attivare chiamate API. Includila solo se aggiunge
+valore concreto alla review; massimo 5 righe.
 
 ### Fase 4 — Proposta settimana successiva
 

@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.llm_policy import LLMDisabledError
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -245,6 +246,9 @@ def generate_modulation_proposal(
         except json.JSONDecodeError:
             return [{"description": text_clean}]
 
+    except LLMDisabledError as e:
+        logger.info("Skipping modulation proposal: %s", e)
+        return []
     except BudgetExceededError:
         logger.warning("Budget exceeded, skipping modulation proposal")
         return []

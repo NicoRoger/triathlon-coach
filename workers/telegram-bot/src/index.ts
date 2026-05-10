@@ -88,7 +88,7 @@ const HELP = `<b>Comandi</b>:
 /debrief — avvia debrief serale
 /undo — annulla ultimo log (ultimi 30 min)
 /history [7d|rpe|injury] — lista log recenti
-/budget — stato budget API Anthropic
+/budget — stato budget API AI
 /status — stato sync e dati recenti
 /help — questo messaggio
 
@@ -574,7 +574,7 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
 
     if (action === "accept") { status = "accepted"; msg = "✅ Modulazione accettata. Applicherò le modifiche al piano."; }
     else if (action === "reject") { status = "rejected"; msg = "❌ Modulazione rifiutata. Piano invariato."; }
-    else { status = "discussing"; msg = "💬 D'accordo. Apri Claude Code quando vuoi per discutere."; }
+    else { status = "discussing"; msg = "💬 D'accordo. Apri Claude da smartphone/web con il connector coach quando vuoi per discutere."; }
 
     await supabaseFetch(env, `/rest/v1/plan_modulations?id=eq.${modId}`, "PATCH",
       { status, resolved_at: new Date().toISOString() }, { Prefer: "return=minimal" });

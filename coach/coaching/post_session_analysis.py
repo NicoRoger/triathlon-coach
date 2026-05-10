@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.llm_policy import LLMDisabledError
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,9 @@ def analyze_session(activity_id: str) -> Optional[dict]:
             max_tokens=800,
             temperature=0.3,
         )
+    except LLMDisabledError as e:
+        logger.info("Skipping session analysis for %s: %s", activity_id, e)
+        return None
     except BudgetExceededError:
         logger.warning("Budget exceeded, skipping session analysis for %s", activity_id)
         return None

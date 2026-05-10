@@ -10,7 +10,7 @@
 | `planned_sessions` | Sessioni pianificate (sport, tipo, durata, descrizione, zone target, calendar_event_id) | ✅ Schema pronto, tool MCP attivo |
 | `subjective_log` | Log soggettivi: RPE, malattia, infortuni, debrief serale, note libere | ✅ Popolata via Telegram bot |
 | `health` | Health check per componente (last_success_at, failure_count) | ✅ Monitorata da watchdog |
-| `api_usage` | Tracking costi API Anthropic | ✅ Popolata da LLMClient |
+| `api_usage` | Tracking costi API AI cloud | ✅ Popolata da LLMClient |
 | `session_analyses` | Analisi AI post-sessione | ✅ Popolata dal workflow ingest |
 | `plan_modulations` | Proposte modulazione mid-week AI-driven | ✅ Approvabili via Telegram |
 | `bot_messages` | Messaggi inviati dal bot — base per reply threading | ✅ Migration pronta (Step 6.6) |
@@ -37,6 +37,10 @@
 
 | Tool | Descrizione | Scrive su DB? |
 |------|-------------|---------------|
+| `get_weekly_context` | Payload aggregato per weekly review da Claude mobile/web | No |
+| `get_race_context` | Payload aggregato per race briefing | No |
+| `get_session_review_context` | Contesto per analisi sessione on-demand | No |
+| `get_upcoming_plan` | Piano dei prossimi N giorni | No |
 | `get_recent_metrics` | daily_metrics ultimi N giorni (CTL/ATL/TSB/HRV) | No |
 | `get_planned_session` | Sessione pianificata per data | No |
 | `get_activity_history` | Attività completate, filtrabili per sport | No |
@@ -45,7 +49,7 @@
 | `commit_plan_change` | Scrive sessione in planned_sessions (upsert idempotente, supporta calendar_event_id) | ✅ Sì, dopo conferma atleta |
 | `force_garmin_sync` | Forza sync Garmin via GitHub Actions dispatch (freshness check 1h + polling 90s) | No (triggera workflow) |
 
-**Totale: 7 tool esposti.**
+**Totale: 11 tool esposti.**
 
 ## Skill files (skills/)
 
@@ -81,7 +85,7 @@
 | Worker | Funzione |
 |--------|----------|
 | `workers/telegram-bot/` | Bot Telegram (comandi, parsing log, debrief con colonne native) |
-| `workers/mcp-server/` | MCP server per Claude.ai (7 tool incl. force_garmin_sync) |
+| `workers/mcp-server/` | MCP server per Claude.ai/mobile (11 tool incl. weekly context e force_garmin_sync) |
 
 ## Test
 

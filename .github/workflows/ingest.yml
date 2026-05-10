@@ -23,6 +23,7 @@ jobs:
       HEALTHCHECKS_PING_URL_GARMIN_SYNC: ${{ secrets.HC_GARMIN }}
       HEALTHCHECKS_PING_URL_STRAVA_SYNC: ${{ secrets.HC_STRAVA }}
       INGEST_DAYS_BACK: '7'
+      COACH_LLM_MODE: quality
       PYTHONPATH: '.'
 
     steps:
@@ -51,6 +52,6 @@ jobs:
         if: always()
         run: python -m coach.analytics.daily
 
-      - name: Post-session analysis
+      - name: Post-session analysis (policy-gated)
         if: success()
         run: python -m coach.coaching.post_session_analysis --recent

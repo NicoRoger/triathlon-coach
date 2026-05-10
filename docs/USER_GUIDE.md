@@ -70,18 +70,18 @@ Il bot ti fa una domanda contestuale (injury, recovery, motivazione, tecnica). T
 
 ## Routine settimanale
 
-### Domenica sera — Weekly review in Claude Code
+### Domenica sera — Weekly review in Claude mobile/web
 
-Alle 19:00 ricevi il reminder su Telegram. Apri Claude Code e digita:
+Alle 19:00 ricevi il reminder su Telegram. Apri Claude da smartphone o web, nella chat/progetto con il connector coach attivo, e digita:
 
 ```
 fai la weekly review
 ```
 
-L'agente segue il protocollo in 7 fasi:
+L'agente segue il protocollo in 7 fasi senza usare API LLM backend:
 
-0. **Sync dati** — se l'ultimo sync Garmin è > 1 ora fa, forza un aggiornamento automatico (tool `force_garmin_sync`). Questo garantisce che la review sia basata su dati completi anche se hai appena finito un allenamento
-1. **Raccolta dati** — chiama `get_recent_metrics(14)`, `get_activity_history('all', 7)`, `query_subjective_log(7, 'all')`
+0. **Sync dati** — chiama `get_weekly_context`; se l'ultimo sync Garmin è > 1 ora fa, forza un aggiornamento automatico con `force_garmin_sync`
+1. **Raccolta dati** — usa `get_weekly_context` per metriche, wellness, attività, log soggettivi, piano passato/futuro, analisi e modulazioni
 2. **Analisi** — confronta carico realizzato vs pianificato, trend HRV, compliance, segnali soggettivi
 3. **Diagnosi** — identifica pattern (es. "troppo volume Z3", "sonno in calo", "spalla migliorata")
 4. **Proposta** — struttura settimana successiva: schema settimanale + dettaglio sessioni per i prossimi 2-3 giorni
@@ -105,7 +105,7 @@ Quando mancano 7 giorni a una gara A o B, il sistema entra automaticamente in **
 ### Cosa cambia nel brief
 - Template ridotto: focus gara, niente sezioni normali di load/progress
 - Ogni giorno ha indicazioni specifiche (taper, richiamo, apertura, vigilia)
-- T-0: race day brief con link a Claude Code per piano gara completo
+- T-0: race day brief con link a Claude mobile/web per piano gara completo
 
 ### Timeline tipo
 
@@ -116,12 +116,12 @@ Quando mancano 7 giorni a una gara A o B, il sistema entra automaticamente in **
 | T-3 | Richiamo intensità: 10min Z2 + 5×30s allungo + 10min Z2. Check meteo/percorso. |
 | T-2 | Apertura: 20-30min Z1-Z2 + 3-4 allunghi. Check materiale completo. |
 | T-1 | Vigilia: 15-20min Z1. Cena entro 19:30, letto entro 22:00. Tutto pronto stasera. |
-| T-0 | RACE DAY. Apri Claude Code: `race day brief` per timeline completa. |
-| T+1 | Debrief post-gara in Claude Code. |
+| T-0 | RACE DAY. Apri Claude mobile/web: `race day brief` per timeline completa. |
+| T+1 | Debrief post-gara in Claude mobile/web. |
 
 ### Piano gara dettagliato
 
-Apri Claude Code e digita:
+Apri Claude mobile/web e digita:
 ```
 attiva race week protocol
 ```
@@ -148,7 +148,7 @@ Ricevi range di tempo con confidence interval basato sui tuoi dati.
 /history 7d        — log ultimi 7 giorni
 /history rpe       — solo log con RPE registrato
 /history injury    — solo log con flag infortunio
-/budget            — stato budget API Anthropic mensile
+/budget            — stato budget API AI mensile
 /status            — stato sync, ultimo dato Garmin, ultimo HRV
 ```
 
@@ -179,9 +179,9 @@ Clicca il bottone corretto — il bot salva nel modo giusto.
 
 ---
 
-## Claude Code — Interazioni utili
+## Claude mobile/web — Interazioni utili
 
-Apri Claude Code dal Mac (`cd triathlon-coach && claude`) e prova:
+Apri Claude da smartphone/web con il remote MCP connector `triathlon-coach` attivo e prova:
 
 ### Analisi stato
 
@@ -189,6 +189,13 @@ Apri Claude Code dal Mac (`cd triathlon-coach && claude`) e prova:
 Come sto andando questa settimana?
 ```
 L'agente tira i dati via MCP, analizza trend, ti dà diagnosi con numeri.
+
+### Analisi ultima sessione
+
+```
+Analizza l'ultima sessione
+```
+Claude chiama `get_session_review_context` e produce una lettura breve senza usare API backend.
 
 ### Modifica piano
 
@@ -218,19 +225,40 @@ Proponi il prossimo mesociclo di 4 settimane.
 ```
 Genera block completo con carico progressivo, settimana scarico, test fitness schedulato.
 
+### Claude Code opzionale
+
+Claude Code resta utile per modificare il repository, testare codice e fare manutenzione tecnica. Per coaching operativo quotidiano e weekly review non è più richiesto.
+
 ---
 
 ## Setup iniziale
 
-### Anthropic API Key (Requisito Obbligatorio)
+### Anthropic API Key (opzionale per LLM cloud)
 
-Dal rilascio dello Step 6, il sistema usa Claude in modo autonomo (budget limitato a €5/mese):
+Il sistema ora usa `COACH_LLM_MODE=quality`: mantiene LLM cloud per weekly review, race briefing e pattern extraction, ma disabilita automazioni non essenziali. Per la policy completa vedi `docs/LLM_USAGE_POLICY.md`.
+
+Se vuoi usare Claude API per queste funzioni:
 1. Vai su https://console.anthropic.com e carica almeno $10 di credito.
 2. Vai su https://console.anthropic.com/settings/limits e imposta il limite di spesa mensile a **$5.50**.
 3. Genera una API key da https://console.anthropic.com/settings/keys.
 4. Aggiungila nei secret di GitHub come `ANTHROPIC_API_KEY`.
-5. Aggiungila nei secret di Cloudflare Worker (`telegram-bot` e `mcp-server`) via `wrangler secret put ANTHROPIC_API_KEY`.
-6. Mettila nel tuo file `.env` locale.
+5. Mettila nel tuo file `.env` locale se vuoi lanciare review AI da macchina locale.
+
+### Claude mobile/web connector
+
+Per usare l'abbonamento Claude invece delle API:
+
+1. Vai su Claude web/desktop → Settings → Connectors.
+2. Aggiungi il remote MCP server `mcp-server` con URL `/mcp`.
+3. Usa `Authorization: Bearer <MCP_BEARER_TOKEN>`.
+4. Verifica da Claude mobile chiedendo: `dammi il piano dei prossimi 7 giorni`.
+
+Tool principali:
+- `get_weekly_context` — weekly review completa in una chiamata.
+- `get_race_context` — race briefing.
+- `get_session_review_context` — analisi sessione su richiesta.
+- `get_upcoming_plan` — controllo rapido del piano.
+- `commit_plan_change` — scrittura DB solo dopo conferma esplicita.
 
 ### Google Calendar (opzionale ma consigliato)
 
@@ -239,7 +267,7 @@ L'agente può creare automaticamente gli eventi delle sessioni pianificate nel t
 1. Vai su https://claude.com/settings/connectors
 2. Cerca "Google Calendar" e attivalo
 3. Autorizza l'account Google con cui vuoi sincronizzare
-4. Verifica in Claude Code con `claude mcp list` che il connector sia ✓ Connected
+4. Verifica in Claude web/mobile che il connector Google Calendar sia attivo
 
 Dopo il setup, la weekly review e l'adjust_week creeranno/aggiorneranno gli eventi automaticamente.
 Mapping: ogni sessione diventa un evento con emoji sport (🏊/🚴/🏃/💪), orario default 06:30, durata e descrizione completa.

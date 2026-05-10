@@ -24,7 +24,6 @@ def check_env():
     required = [
         "SUPABASE_URL", "SUPABASE_SERVICE_KEY",
         "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-        "ANTHROPIC_API_KEY",
     ]
     missing = [v for v in required if not os.environ.get(v)]
     if missing:

@@ -12,7 +12,7 @@ Setup iniziale completo: ~90 minuti la prima volta. Poi è autonomo.
 - Garmin Connect attivo
 - Strava attivo (raccomandato, backup di Garmin)
 - Claude Pro attivo (€20/mese)
-- Mac/Linux per Claude Code
+- Claude web/mobile con connector MCP; Claude Code opzionale per manutenzione repo
 
 ## Step 1 — Repo
 
@@ -113,12 +113,13 @@ HEALTHCHECKS_PING_URL
 DR_ENCRYPTION_KEY  # genera: openssl rand -base64 32
 ```
 
-## Step 8 — MCP custom connector in Claude.ai
+## Step 8 — MCP custom connector in Claude.ai/mobile
 
 1. https://claude.ai/settings/connectors
 2. Add custom connector
 3. URL: `https://mcp-server.<account>.workers.dev/mcp`
 4. Auth: Bearer token (configurato come secret nel Worker)
+5. Test rapido da Claude mobile: `dammi il piano dei prossimi 7 giorni`
 5. Test in chat: "che dati hai su di me?"
 
 ## Step 9 — Backfill storico
@@ -135,7 +136,7 @@ Verifica su Supabase Studio che `activities`, `daily_wellness` siano popolate.
 Apri `CLAUDE.md` § Profilo atleta. Compila tutti i campi. Più sei accurato qui, più
 l'agente sarà utile dal giorno 1.
 
-Apri Claude Code:
+Opzionale, per manutenzione tecnica del repository apri Claude Code:
 ```bash
 cd triathlon-coach
 claude  # avvia Claude Code

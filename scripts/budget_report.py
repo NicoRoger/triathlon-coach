@@ -1,4 +1,4 @@
-"""Report CLI del budget Anthropic API mensile."""
+"""Report CLI del budget API AI cloud mensile."""
 from __future__ import annotations
 
 import logging

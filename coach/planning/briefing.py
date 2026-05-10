@@ -176,8 +176,8 @@ def _build_session_section(planned: Optional[dict]) -> str:
 
     lines.append("Nessuna sessione pianificata.")
     lines.append("<i>Il sistema di pianificazione automatica non è ancora attivo. "
-                 "Per ora gestisci tu la sessione, oppure apri una conversazione "
-                 "col coach in Claude Code per discutere cosa fare.</i>")
+                 "Per ora gestisci tu la sessione, oppure apri Claude web/mobile "
+                 "con il connector coach per discutere cosa fare.</i>")
     return "\n".join(lines)
 
 
@@ -331,17 +331,17 @@ def _build_race_week_section(race: dict, today: date) -> str:
         lines.append("Tutto pronto stasera, NIENTE preparazione domattina.")
     
     lines.append("")
-    lines.append("<i>Per il piano gara dettagliato apri Claude Code: 'attiva race week protocol'</i>")
+    lines.append("<i>Per il piano gara dettagliato apri Claude web/mobile: 'attiva race week protocol'</i>")
     
     return "\n".join(lines)
 
 
 def _build_race_day_section(race: dict) -> str:
-    """T-0: il giorno della gara. Ricorda di aprire Claude Code per il race brief."""
+    """T-0: il giorno della gara. Ricorda di aprire Claude mobile/web per il race brief."""
     return (
         f"<b>🏆 {race['name']} — RACE DAY</b>\n"
         f"\n"
-        f"Oggi è il giorno. Apri Claude Code ORA per ricevere il race day brief "
+        f"Oggi è il giorno. Apri Claude web/mobile ORA per ricevere il race day brief "
         f"completo (timeline, colazione, warm-up, pace plan, mental checkpoints).\n"
         f"\n"
         f"<i>Comando: 'race day brief'</i>\n"

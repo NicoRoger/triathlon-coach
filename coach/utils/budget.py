@@ -1,4 +1,4 @@
-"""Budget tracking e protezione costi API Anthropic.
+"""Budget tracking e protezione costi API AI cloud.
 
 Step 6: 3 livelli di protezione budget €5/mese.
 Livello 2 — soft cap con tracking persistente su Supabase (tabella api_usage).
@@ -221,9 +221,10 @@ def log_api_call(
 ) -> float:
     """Logga una chiamata API su Supabase. Ritorna costo stimato."""
     cost = estimate_cost(model, input_tokens, output_tokens)
+    provider = infer_provider(model)
     sb = get_supabase()
     sb.table("api_usage").insert({
-        "provider": "anthropic",
+        "provider": provider,
         "model": model,
         "purpose": purpose,
         "input_tokens": input_tokens,
@@ -237,6 +238,18 @@ def log_api_call(
         model, purpose, input_tokens, output_tokens, cost, success,
     )
     return cost
+
+
+def infer_provider(model: str) -> str:
+    """Inferisce il provider dal model id per accounting api_usage."""
+    model_lower = model.lower()
+    if model_lower.startswith("claude"):
+        return "anthropic"
+    if model_lower.startswith("gemini"):
+        return "google"
+    if model_lower.startswith(("gpt", "o1", "o3", "o4")):
+        return "openai"
+    return "unknown"
 
 
 def _send_budget_alert(message: str) -> None:

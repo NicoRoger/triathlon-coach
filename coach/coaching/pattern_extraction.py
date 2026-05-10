@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.llm_policy import LLMDisabledError
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,9 @@ def extract_patterns(days: int = 28) -> Optional[str]:
         logger.info("Pattern extraction completed and saved")
         return new_obs
         
+    except LLMDisabledError as e:
+        logger.info("Skipping pattern extraction: %s", e)
+        return None
     except BudgetExceededError:
         logger.warning("Budget exceeded, skipping pattern extraction")
         return None

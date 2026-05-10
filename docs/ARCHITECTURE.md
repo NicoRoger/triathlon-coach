@@ -29,7 +29,7 @@
             └─────────┬───────────┘
                       ▼
    ┌──────────────────────────────────────┐
-   │  Claude.ai (Pro) + Claude Code       │
+   │  Claude.ai/mobile + Claude Code opt  │
    │  via custom MCP connector            │
    └──────────────────────────────────────┘
             ▲                     ▲
@@ -51,7 +51,7 @@
 | Cron jobs | GitHub Actions | 2000min/mese gratis, log integrati, niente VM |
 | Workers | Cloudflare Workers | 100k req/giorno gratis, no cold start, webhook nativo |
 | Bot | Telegram Bot API | Coda offline nativa, dictation iOS gratis, push affidabile |
-| Agente | Claude.ai Pro + Claude Code | Già pagato (€20/mo), MCP custom connector incluso |
+| Agente | Claude.ai/mobile Pro + remote MCP; Claude Code opzionale | Già pagato, accessibile da smartphone, niente API LLM per review manuali |
 | Fonti dati | `python-garminconnect`, `stravalib` | Stabili, attivamente manutenute |
 | Lang | Python 3.11 (analytics/ingest) + TypeScript (Workers) | Uno per dominio, niente compromessi |
 
@@ -114,9 +114,11 @@ contestualizzata.
 
 ### F) Pianificazione mesociclo (manuale settimanale)
 
-**Flusso:** Macbook → `git pull` → Claude Code legge CLAUDE.md + skills + journal
-→ analizza → propone piano → review → commit → push → Action sincronizza
-`plans/*.yaml` → tabella `plans` Supabase.
+**Flusso preferito:** Claude mobile/web → `get_weekly_context` via MCP → analizza
+→ propone piano → conferma esplicita → `commit_plan_change` → Supabase.
+
+**Flusso tecnico opzionale:** Macbook → Claude Code → modifica repository, test,
+documentazione e manutenzione.
 
 **Failure mode:**
 - Divergenza git ↔ DB → **DB è proiezione di git** per la tabella `plans`. Single
