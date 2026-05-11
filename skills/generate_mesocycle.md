@@ -18,17 +18,18 @@ description: Pianifica un blocco di 4 settimane (3 carico + 1 scarico) con sessi
 
 ## Procedura
 1. Leggi `CLAUDE.md` §Profilo, §Stato corrente
-2. Leggi `docs/training_journal.md` ultime 4-6 settimane
-3. Leggi `get_recent_metrics(28)` per CTL trend
-4. Leggi `physiology_zones` per zone correnti
-5. Calcola CTL target per ogni settimana:
+2. Leggi `docs/elite_training_reference.md` per volume/HR/struttura target elite
+3. Leggi `docs/training_journal.md` ultime 4-6 settimane
+4. Leggi `get_recent_metrics(28)` per CTL trend
+5. Leggi `physiology_zones` per zone correnti
+6. Calcola CTL target per ogni settimana:
    - Carico: +3-7 TSS/d/settimana sopra CTL corrente
    - Scarico: -30/-40% volume, intensità preservata in micro-dosi
 6. Distribuisci sessioni con regola 80/20:
    - 80% Z1-Z2 (volume)
    - 20% Z4-Z5 (qualità)
    - Z3 minimizzato
-7. Inserisci 1 test schedulato a fine settimana 3 o 4 se non c'è da almeno 6 settimane
+8. Inserisci 1 test schedulato a fine settimana 3 o 4 se non c'è da almeno 6 settimane
 
 ## Output template
 ```

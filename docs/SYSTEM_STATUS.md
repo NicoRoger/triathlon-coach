@@ -143,3 +143,9 @@ Il sistema è operativo per uso quotidiano. Tutti i flussi (ingest → analytics
 ## Stato complessivo
 
 Il sistema è operativo per uso quotidiano con capacità coach elite. Tutti i flussi (ingest → analytics → briefing → debrief → weekly review → adaptive planning) sono implementati e testati. Il sistema apprende automaticamente dai dati (pattern extraction biometrica + LLM), si auto-aggiusta (adaptive planner), accetta video per analisi tecnica, e personalizza la comunicazione (briefing inserts, modelli situazionali). Step 8 aggiunge 6 nuovi moduli Python, 1 skill, 1 MCP tool, e 15 regression test.
+
+## Changelog Step 8.1 (12 maggio 2026) — Archivio Elite
+
+- **Analisi archivio FIT**: `scripts/analyze_elite_archive.py` — parser ZIP/FIT, HR zones, weekly patterns
+- **Riferimento elite**: `docs/elite_training_reference.md` — 114 sessioni (set 2021 – mag 2022), volume/HR/struttura + allenamenti nuoto dettagliati
+- **Integrazione coach**: CLAUDE.md §3, skills weekly_review e generate_mesocycle aggiornate per usare il riferimento elite come target a lungo termine

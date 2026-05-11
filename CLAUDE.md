@@ -42,6 +42,7 @@ storico:
     - 1° Campionati Italiani Cross Sprint (Sestri Levante)
   - anni_pausa: 2023-2025
   - motivo_pausa: borsite spalla destra + tendinopatia CLB
+  - archivio_elite: docs/elite_training_reference.md (114 sessioni set 2021 – mag 2022, volume/HR/pattern)
 
 stato_attuale:
   - ripresa: settembre 2025
@@ -105,6 +106,10 @@ struttura_settimanale_fissa:
 **Approccio adottato: Block periodization polarizzata** (Seiler/Laursen) con
 distribuzione 80/20 su intensità. Validato per atleti endurance esperti in fase
 di ritorno.
+
+> **Riferimento elite**: `docs/elite_training_reference.md` contiene volume, distribuzione sport,
+> zone HR e allenamenti nuoto dal periodo elite (2021-2022). Usalo come target a lungo termine,
+> NON come punto di partenza. Partire dal 40-50% e salire max +10%/settimana.
 
 ### Struttura mesociclo standard
 - **3 settimane carico crescente** (es. CTL +3/+5/+7 TSS/d cumulativo)

@@ -39,6 +39,7 @@ Leggi inoltre:
 - `docs/injury_log.md` (stato infortuni in corso)
 - `docs/coaching_observations.md` (pattern longitudinali — leggi SEMPRE)
 - `docs/progress_tracker.md` (compliance e trend)
+- `docs/elite_training_reference.md` (volume/HR/struttura target dal periodo elite — per calibrare i volumi proposti)
 
 ### Fase 2 — Analisi della settimana conclusa e Diagnosi (via AI)
 
