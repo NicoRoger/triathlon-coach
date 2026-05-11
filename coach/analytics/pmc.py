@@ -204,6 +204,12 @@ def aggregate_daily_tss(activities: list[dict]) -> list[DailyTSS]:
         if tss is None:
             continue
 
-        d = a["started_at"].date() if hasattr(a["started_at"], "date") else a["started_at"]
+        raw_dt = a["started_at"]
+        if hasattr(raw_dt, "date"):
+            d = raw_dt.date()
+        elif isinstance(raw_dt, str):
+            d = date.fromisoformat(raw_dt[:10])
+        else:
+            d = raw_dt
         bucket[d] += float(tss)
     return [DailyTSS(day=d, tss=v) for d, v in sorted(bucket.items())]
