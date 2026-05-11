@@ -159,12 +159,15 @@ L'agente le **applica**, non le interpreta.
 | `illness_flag` (T° o sintomi) | STOP intensità finché baseline non recupera 48h+ |
 | `injury_flag` (RPE muscolare > 6/10 in zona vulnerabile) | Stop disciplina coinvolta, alt cross-training |
 
-### 5.3 Test fitness
+### 5.3 Test fitness e zone fisiologiche
 Schedulati dall'agente ogni **4-6 settimane**, mai durante settimana di carico
 massimo, sempre dopo 1-2 giorni Z2/recovery.
 - FTP test (20-min o ramp) in bici
 - Threshold pace test in corsa
 - CSS test in nuoto (400+200 protocollo)
+
+I risultati sono salvati in `physiology_zones` e accessibili via MCP tool `get_physiology_zones(discipline)`.
+Usalo per calibrare target di intensità nelle sessioni proposte.
 
 ### 5.4 Approvazione modifiche
 **Mai modificare `planned_sessions` su DB senza conferma esplicita dell'atleta.**

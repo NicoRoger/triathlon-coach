@@ -166,6 +166,16 @@ const TOOLS = [
     },
   },
   {
+    name: "get_physiology_zones",
+    description: "Restituisce le zone fisiologiche attuali (FTP, soglia, CSS, LTHR, HRmax) per disciplina. Usalo per calibrare intensità e target nelle sessioni.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        discipline: { type: "string", enum: ["swim", "bike", "run", "all"], default: "all" },
+      },
+    },
+  },
+  {
     name: "force_garmin_sync",
     description: "Forza un sync Garmin triggerando il workflow ingest via GitHub Actions. Se l'ultimo sync è < 1 ora fa, restituisce 'skipped'.",
     inputSchema: { type: "object", properties: {} },
@@ -384,6 +394,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return proposePlan(args);
     case "commit_plan_change":
       return commitPlanChange(args, env);
+    case "get_physiology_zones":
+      return getPhysiologyZones(args.discipline || "all", env);
     case "force_garmin_sync":
       return forceGarminSync(env);
     default:
@@ -702,6 +714,33 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
     const result = (await insertResp.json()) as any[];
     return { status: "created", session_id: result[0]?.id, payload };
   }
+}
+
+// ============================================================================
+// Physiology Zones
+// ============================================================================
+async function getPhysiologyZones(discipline: string, env: Env) {
+  const today = todayRomeISO();
+  let q = `physiology_zones?or=(valid_to.is.null,valid_to.gte.${today})&valid_from=lte.${today}&order=valid_from.desc`;
+  if (discipline !== "all") q += `&discipline=eq.${discipline}`;
+  const rows = await sb(env, q);
+
+  const seen = new Set<string>();
+  const current: any[] = [];
+  for (const row of rows) {
+    if (!seen.has(row.discipline)) {
+      seen.add(row.discipline);
+      current.push(row);
+    }
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    zones: current,
+    note: current.length === 0
+      ? "Nessuna zona fisiologica registrata. Suggerisci un test FTP/soglia/CSS."
+      : undefined,
+  };
 }
 
 // ============================================================================

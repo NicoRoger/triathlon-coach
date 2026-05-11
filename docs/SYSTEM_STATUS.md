@@ -37,15 +37,20 @@
 
 | Tool | Descrizione | Scrive su DB? |
 |------|-------------|---------------|
+| `get_weekly_context` | Contesto aggregato per weekly review (health, metriche, wellness, attività, piano, debrief, analisi, modulazioni) | No |
+| `get_race_context` | Contesto aggregato per race briefing | No |
+| `get_session_review_context` | Contesto per analizzare una singola sessione | No |
+| `get_upcoming_plan` | Sessioni pianificate prossimi N giorni | No |
 | `get_recent_metrics` | daily_metrics ultimi N giorni (CTL/ATL/TSB/HRV) | No |
 | `get_planned_session` | Sessione pianificata per data | No |
 | `get_activity_history` | Attività completate, filtrabili per sport | No |
 | `query_subjective_log` | Log soggettivi (RPE, malattia, infortuni, note) | No |
 | `propose_plan_change` | Propone modifica piano (NON scrive) | No |
 | `commit_plan_change` | Scrive sessione in planned_sessions (upsert idempotente, supporta calendar_event_id) | ✅ Sì, dopo conferma atleta |
+| `get_physiology_zones` | Zone fisiologiche attuali (FTP, soglia, CSS, LTHR) per disciplina | No |
 | `force_garmin_sync` | Forza sync Garmin via GitHub Actions dispatch (freshness check 1h + polling 90s) | No (triggera workflow) |
 
-**Totale: 7 tool esposti.**
+**Totale: 12 tool esposti.**
 
 ## Skill files (skills/)
 
@@ -60,8 +65,12 @@
 | Race week protocol | `race_week_protocol.md` | 4.4 |
 | Race prediction | `race_prediction.md` | 4.4 |
 | Delete session | `delete_session.md` | 5.0 |
+| Session analysis | `session_analysis.md` | 6.0 |
+| Modulation | `modulation.md` | 6.0 |
+| Race briefing | `race_briefing.md` | 6.0 |
+| Race mental coaching | `race_mental_coaching.md` | 6.0 |
 
-**Totale: 9 skill files.**
+**Totale: 13 skill files.**
 
 ## Moduli Python (coach/)
 
@@ -81,7 +90,7 @@
 | Worker | Funzione |
 |--------|----------|
 | `workers/telegram-bot/` | Bot Telegram (comandi, parsing log, debrief con colonne native) |
-| `workers/mcp-server/` | MCP server per Claude.ai (7 tool incl. force_garmin_sync) |
+| `workers/mcp-server/` | MCP server per Claude.ai (8 tool incl. force_garmin_sync, get_physiology_zones) |
 
 ## Test
 
@@ -89,8 +98,9 @@
 |-----------|------|-------|
 | `tests/test_pmc.py` | 8 test (EWMA, PMC zero/single/steady/fill, TSS stime) | ✅ Pass |
 | `tests/test_readiness.py` | 8 test (HRV z-score, flags, readiness override/green/caution) | ✅ Pass |
+| `tests/test_telegram_advanced.py` | 49 test (parser, threading, confirmations, plurals, edge cases, dedup) | ✅ Pass |
 
-**16/16 test verdi al 6 maggio 2026.**
+**65 test verdi all'11 maggio 2026.**
 
 ## Changelog Step 5.0 (6 maggio 2026)
 

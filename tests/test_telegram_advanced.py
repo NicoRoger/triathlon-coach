@@ -70,10 +70,17 @@ def parse_log(body: str) -> dict:
     no_pain = re.search(r'\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b', lower)
     if not no_pain and re.search(r'\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b', lower):
         fields["injury_flag"] = True
-        m_loc = re.search(r'\b(ginocchio|caviglia|polpaccio|achille|coscia|spalla|schiena|piede|tallone)\b', body, re.IGNORECASE)
+        fields["injury_details"] = body[:200]
+        m_loc = re.search(r"\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei])\b", body, re.IGNORECASE)
         if m_loc:
             fields["injury_location"] = m_loc.group(1)
         return {"kind": "injury", "fields": fields, "summary": "infortunio"}
+
+    m = re.search(r'motivazione\s*(\d{1,2})', body, re.IGNORECASE)
+    if m:
+        v = int(m.group(1))
+        if 1 <= v <= 10:
+            fields["motivation"] = v
 
     kind = "post_session" if "rpe" in fields else "free_note"
     return {"kind": kind, "fields": fields, "summary": ", ".join(summary)}
@@ -111,7 +118,8 @@ def parse_debrief(body: str) -> dict:
     no_pain = re.search(r'\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b', lower)
     if not no_pain and re.search(r'\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b', lower):
         fields["injury_flag"] = True
-        m_loc = re.search(r'\b(ginocchio|caviglia|polpaccio|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone|anca|quadricipite|gluteo)\b', body, re.IGNORECASE)
+        fields["injury_details"] = body[:200]
+        m_loc = re.search(r"\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io])\b", body, re.IGNORECASE)
         if m_loc:
             fields["injury_location"] = m_loc.group(1)
         summary.append("infortunio")
@@ -123,6 +131,8 @@ def parse_debrief(body: str) -> dict:
 
     if re.search(r'\b(energia alta|fresco|riposato)\b', lower):
         parsed["energy"] = "high"
+    elif re.search(r'\b(energia media|normale)\b', lower):
+        parsed["energy"] = "medium"
     elif re.search(r'\b(energia bassa|stanco|scarico|distrutto|cotto)\b', lower):
         parsed["energy"] = "low"
 
@@ -476,6 +486,132 @@ class TestTelegramLogger(unittest.TestCase):
         tl.send_and_log_message("Test", purpose="debrief_reminder")
 
         mock_sb.table.assert_called_with("bot_messages")
+
+
+# ===========================================================================
+# Test 17–33: Nuovi test Blocco 0 (17 aggiuntivi)
+# ===========================================================================
+
+class TestPluralBodyParts(unittest.TestCase):
+
+    def test_ginocchia_plural(self):
+        """Plural 'ginocchia' riconosciuto"""
+        r = parse_log("dolore alle ginocchia dopo la corsa")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertEqual(r["fields"].get("injury_location"), "ginocchia")
+
+    def test_spalle_plural(self):
+        """Plural 'spalle' riconosciuto"""
+        r = parse_debrief("RPE 6, dolore alle spalle in acqua")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertEqual(r["fields"].get("injury_location"), "spalle")
+
+    def test_caviglie_plural(self):
+        """Plural 'caviglie' riconosciuto"""
+        r = parse_log("male alle caviglie dopo il lungo")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertEqual(r["fields"].get("injury_location"), "caviglie")
+
+    def test_polpacci_plural(self):
+        """Plural 'polpacci' riconosciuto"""
+        r = parse_log("contrattura ai polpacci")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertIn(r["fields"].get("injury_location"), ("polpacci", "polpaccio"))
+
+    def test_talloni_plural(self):
+        """Plural 'talloni' riconosciuto"""
+        r = parse_log("dolore ai talloni, fascite bilaterale")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertEqual(r["fields"].get("injury_location"), "talloni")
+
+    def test_piedi_plural(self):
+        """Plural 'piedi' riconosciuto"""
+        r = parse_log("male ai piedi dopo la gara")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertEqual(r["fields"].get("injury_location"), "piedi")
+
+
+class TestDebriefEnergyMedium(unittest.TestCase):
+
+    def test_energy_medium(self):
+        """'energia media' → energy=medium"""
+        r = parse_debrief("RPE 5, energia media, sessione ok")
+        self.assertEqual(r["fields"]["parsed_data"].get("energy"), "medium")
+
+    def test_energy_normale(self):
+        """'normale' → energy=medium"""
+        r = parse_debrief("RPE 6, energia normale, tutto regolare")
+        self.assertEqual(r["fields"]["parsed_data"].get("energy"), "medium")
+
+
+class TestAdvancedInjuryLocations(unittest.TestCase):
+
+    def test_tendine_achille(self):
+        """Tendine d'achille riconosciuto"""
+        r = parse_log("dolore al tendine d'achille sinistro")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertEqual(r["fields"].get("injury_location"), "tendine d'achille")
+
+    def test_lombare(self):
+        """'lombare' riconosciuto in debrief"""
+        r = parse_debrief("RPE 7, dolore lombare post bici")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertIn(r["fields"].get("injury_location"), ("lombare", "lombari"))
+
+    def test_anca_debrief(self):
+        """'anca' riconosciuta in debrief"""
+        r = parse_debrief("RPE 5, dolore all'anca destra, stanco")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertIn(r["fields"].get("injury_location"), ("anca", "anche"))
+
+    def test_quadricipiti_debrief(self):
+        """'quadricipiti' (plural) riconosciuto in debrief"""
+        r = parse_debrief("RPE 8, dolore ai quadricipiti, distrutto")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertEqual(r["fields"].get("injury_location"), "quadricipiti")
+
+    def test_gluteo_debrief(self):
+        """'gluteo' riconosciuto in debrief"""
+        r = parse_debrief("RPE 6, contrattura al gluteo sinistro")
+        self.assertTrue(r["fields"].get("injury_flag"))
+        self.assertIn(r["fields"].get("injury_location"), ("gluteo", "glutei"))
+
+
+class TestSorenessExtraction(unittest.TestCase):
+
+    def test_soreness_number(self):
+        """'soreness 4' estratto correttamente"""
+        r = parse_log("RPE 6, soreness 4, gambe pesanti")
+        self.assertEqual(r["fields"].get("rpe"), 6)
+        self.assertEqual(r["fields"].get("soreness"), 4)
+
+    def test_dolore_muscolare_number(self):
+        """'dolore muscolare 3' estratto correttamente"""
+        r = parse_debrief("RPE 5, dolore muscolare 3, tutto ok")
+        self.assertEqual(r["fields"].get("soreness"), 3)
+
+
+class TestMotivationInLog(unittest.TestCase):
+
+    def test_motivation_in_log(self):
+        """'motivazione 8' estratto da parseLog"""
+        r = parse_log("motivazione 8, voglia di allenarmi")
+        self.assertEqual(r["fields"].get("motivation"), 8)
+
+
+class TestMultipleFlags(unittest.TestCase):
+
+    def test_illness_takes_priority_over_injury(self):
+        """In parseLog, illness overrides injury detection"""
+        r = parse_log("ho la febbre e male alla spalla")
+        self.assertTrue(r["fields"].get("illness_flag"))
+        self.assertEqual(r["kind"], "illness")
+
+    def test_debrief_both_flags(self):
+        """In parseDebrief, entrambi i flag possono coesistere"""
+        r = parse_debrief("RPE 4, mi sento malato, dolore al ginocchio")
+        self.assertTrue(r["fields"].get("illness_flag"))
+        self.assertTrue(r["fields"].get("injury_flag"))
 
 
 if __name__ == "__main__":
