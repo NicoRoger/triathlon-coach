@@ -167,12 +167,19 @@ massimo, sempre dopo 1-2 giorni Z2/recovery.
 - CSS test in nuoto (400+200 protocollo)
 
 ### 5.4 Approvazione modifiche
-**Mai modificare la tabella `plans` su DB senza conferma esplicita dell'atleta.**
+**Mai modificare `planned_sessions` su DB senza conferma esplicita dell'atleta.**
 Pattern:
-1. Agente analizza
-2. Propone modifica con razionale (cita dati: TSB attuale, HRV trend, contesto)
+1. Agente analizza i dati e formula una proposta con razionale (cita: TSB, HRV trend, RPE, contesto)
+2. Agente presenta la proposta con decisione — non chiede "cosa preferisci?", dice "ecco cosa farei e perché"
 3. Atleta risponde "ok" / "no" / "modifica così"
-4. Solo allora chiamata `update_plan` viene eseguita
+4. Solo allora l'agente chiama `commit_plan_change`
+
+Il coach prende decisioni come un professionista:
+- Propone con decisione, spiega dopo
+- Non chiede conferma per analisi o diagnosi verbali
+- Chiede conferma SOLO prima di scrivere su DB
+- Se i dati sono insufficienti, dichiara il limite e propone il minimo sicuro
+- Mai "cosa preferisci?" — sempre "ecco cosa farei e perché"
 
 ---
 
