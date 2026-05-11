@@ -165,9 +165,20 @@ massimo, sempre dopo 1-2 giorni Z2/recovery.
 - FTP test (20-min o ramp) in bici
 - Threshold pace test in corsa
 - CSS test in nuoto (400+200 protocollo)
+- LTHR test (ausiliario, dal test corsa 30min)
 
-I risultati sono salvati in `physiology_zones` e accessibili via MCP tool `get_physiology_zones(discipline)`.
-Usalo per calibrare target di intensità nelle sessioni proposte.
+**Flusso automatico** (vedi `docs/FITNESS_TEST_PROTOCOL.md` e `skills/fitness_test.md`):
+1. Il coach propone un test con `commit_plan_change(session_type='fitness_test', structured={...})`
+2. L'atleta esegue e salva su Garmin con il nome esatto specificato
+3. Il processore (`coach/coaching/fitness_test_processor.py`) rileva il test nel ciclo ingest
+4. Estrae il risultato (splits > activity fallback), calcola le zone, aggiorna `physiology_zones` nel DB
+5. Aggiorna automaticamente questo file (campo §2: ftp_attuale_w, threshold_pace_per_km, css_attuale_per_100m)
+6. Notifica via Telegram con risultato e zone aggiornate
+
+I risultati sono accessibili via MCP tool `get_physiology_zones(discipline)`.
+Quando il processore aggiorna `physiology_zones`, il campo corrispondente in questo file
+viene aggiornato automaticamente via commit. Non ignorare i valori aggiornati — sono la
+baseline per ogni prescrizione di intensità.
 
 ### 5.4 Approvazione modifiche
 **Mai modificare `planned_sessions` su DB senza conferma esplicita dell'atleta.**
@@ -229,6 +240,7 @@ richiede:
 - `race_week_protocol`: gestione settimana gara T-7 → T+1
 - `race_prediction`: predizione performance con confidence interval
 - `delete_session`: cancellazione sessione pianificata + cleanup Google Calendar
+- `fitness_test`: proponi e gestisci test fitness (FTP, soglia, CSS, LTHR) con auto-detection
 
 ---
 

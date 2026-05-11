@@ -55,6 +55,13 @@ jobs:
         if: success()
         run: python -m coach.coaching.post_session_analysis --recent
 
+      - name: Detect and process fitness tests
+        if: success()
+        run: python -m coach.coaching.fitness_test_processor --check-recent
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
       - name: ETL health check
         if: always()
         run: python scripts/etl_health_check.py

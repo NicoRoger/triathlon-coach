@@ -69,8 +69,9 @@
 | Modulation | `modulation.md` | 6.0 |
 | Race briefing | `race_briefing.md` | 6.0 |
 | Race mental coaching | `race_mental_coaching.md` | 6.0 |
+| Fitness test | `fitness_test.md` | 7.1 |
 
-**Totale: 13 skill files.**
+**Totale: 14 skill files.**
 
 ## Moduli Python (coach/)
 
@@ -81,6 +82,7 @@
 | `coach/analytics/pmc.py` | PMC (CTL/ATL/TSB), stime TSS per sport |
 | `coach/analytics/readiness.py` | Readiness score composito, flag deterministici |
 | `coach/analytics/daily.py` | Pipeline daily metrics post-ingest |
+| `coach/coaching/fitness_test_processor.py` | Auto-detect fitness test da Garmin, calcolo zone, aggiornamento DB e CLAUDE.md |
 | `coach/planning/briefing.py` | Brief mattutino rule-based (v2 narrativo, race week mode) |
 | `coach/utils/supabase_client.py` | Client Supabase singleton |
 | `coach/utils/health.py` | Record health check |
@@ -99,8 +101,9 @@
 | `tests/test_pmc.py` | 8 test (EWMA, PMC zero/single/steady/fill, TSS stime) | ✅ Pass |
 | `tests/test_readiness.py` | 8 test (HRV z-score, flags, readiness override/green/caution) | ✅ Pass |
 | `tests/test_telegram_advanced.py` | 49 test (parser, threading, confirmations, plurals, edge cases, dedup) | ✅ Pass |
+| `tests/test_fitness_test.py` | 16 test (extractors, zone calculators, idempotency, fallback, CLAUDE.md update) | ✅ Pass |
 
-**65 test verdi all'11 maggio 2026.**
+**81 test verdi all'11 maggio 2026.**
 
 ## Changelog Step 5.0 (6 maggio 2026)
 

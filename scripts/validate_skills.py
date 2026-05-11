@@ -43,7 +43,7 @@ SUPABASE_TABLES = {
     "plan_modulations",
 }
 
-TOOL_RE = re.compile(r"`?(get_\w+|query_\w+|propose_\w+|commit_\w+|force_\w+)`?")
+TOOL_RE = re.compile(r"`(get_\w+|query_\w+|propose_\w+|commit_\w+|force_\w+)`")
 TABLE_RE = re.compile(r"`(activities|daily_\w+|subjective_log|planned_sessions|mesocycles|races|physiology_zones|health|bot_messages|pending_confirmations|api_usage|session_analyses|plan_modulations)`")
 SCRIPT_RE = re.compile(r"python\s+(?:-m\s+)?([\w.]+)")
 FILE_RE = re.compile(r"`((?:docs|coach|workers|scripts)/[\w/._-]+)`")
@@ -88,14 +88,16 @@ def validate() -> list[str]:
 
 
 def main() -> None:
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     errors = validate()
     if errors:
-        print(f"❌ {len(errors)} validation errors:\n")
+        print(f"FAIL: {len(errors)} validation errors:\n")
         for e in errors:
             print(f"  - {e}")
         sys.exit(1)
     else:
-        print("✅ All skill references valid")
+        print("OK: All skill references valid")
 
 
 if __name__ == "__main__":
