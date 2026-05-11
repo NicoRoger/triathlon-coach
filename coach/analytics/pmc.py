@@ -175,12 +175,35 @@ def estimate_tss_from_hr(
 # Helper per aggregazione da activities
 # ============================================================================
 def aggregate_daily_tss(activities: list[dict]) -> list[DailyTSS]:
-    """Da lista di activity dict (con `started_at` e `tss`) → DailyTSS sommati per giorno."""
+    """Da lista di activity dict (con `started_at` e `tss`) → DailyTSS sommati per giorno.
+
+    Fallback chain se `tss` è null:
+    1. `training_load` Garmin (scala simile al TSS)
+    2. hrTSS stimato da `duration_s` + `avg_hr` con LTHR da env ATHLETE_LTHR (default 160)
+    """
+    import os
     from collections import defaultdict
+
     bucket: dict[date, float] = defaultdict(float)
     for a in activities:
-        if a.get("tss") is None:
+        tss = a.get("tss")
+
+        if tss is None:
+            tss = a.get("training_load")  # fallback 1: Garmin proprietary load
+
+        if tss is None:
+            dur = a.get("duration_s")
+            avg_hr = a.get("avg_hr")
+            if dur and avg_hr:
+                lthr = int(os.environ.get("ATHLETE_LTHR", "160"))
+                try:
+                    tss = estimate_tss_from_hr(int(dur), int(avg_hr), lthr)
+                except (ValueError, ZeroDivisionError):
+                    pass
+
+        if tss is None:
             continue
+
         d = a["started_at"].date() if hasattr(a["started_at"], "date") else a["started_at"]
-        bucket[d] += float(a["tss"])
+        bucket[d] += float(tss)
     return [DailyTSS(day=d, tss=v) for d, v in sorted(bucket.items())]

@@ -160,6 +160,8 @@ def _score_tsb(training: TrainingState) -> int:
     Troppo positivo = decondizionato; troppo negativo = sovraccarico.
     """
     tsb = training.tsb
+    if tsb is None:
+        return 50  # neutral: nessun dato PMC disponibile
     if -10 <= tsb <= 5:
         return 100
     elif -20 <= tsb < -10:

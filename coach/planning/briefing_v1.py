@@ -80,6 +80,7 @@ def build_brief() -> str:
     wellness = _today_wellness(sb)
     session = _planned_session_today(sb)
 
+    flags = (metrics or {}).get("flags") or []
     lines = [f"<b>🏊 Brief {today.strftime('%a %d %b')}</b>"]
 
     # Freshness warning
@@ -125,15 +126,16 @@ def build_brief() -> str:
         lines.append(f"{sport_emoji} <b>Oggi:</b> {type_str} · {dur_min}min")
         if session.get("description"):
             desc = session["description"]
-            # Clip a 4 righe
             desc_lines = desc.strip().split("\n")[:4]
             lines.append(f"<i>{chr(10).join(desc_lines)}</i>")
+        # Avviso infortuni attivi (da daily_metrics.flags, propagato da subjective_log)
+        if "injury_flag" in flags:
+            lines.append("🩹 <b>Infortunio attivo</b>: solo Z1-Z2, nessuna intensità fino a nuovo log.")
     else:
         lines.append("")
         lines.append("📋 <i>Nessuna sessione pianificata.</i>")
 
     # Flags
-    flags = (metrics or {}).get("flags") or []
     if flags:
         lines.append("")
         for f in flags:

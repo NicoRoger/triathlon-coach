@@ -39,12 +39,14 @@ def _get_planned_session(sb, activity_date: str, sport: str) -> Optional[dict]:
     return res.data[0] if res.data else None
 
 
-def _get_historical(sb, sport: str, limit: int = 4) -> list[dict]:
-    """Ultime N attività dello stesso sport."""
+def _get_historical(sb, sport: str, current_id: str, limit: int = 4) -> list[dict]:
+    """Ultime N attività dello stesso sport, esclusa quella corrente."""
     res = sb.table("activities").select(
         "started_at,duration_s,distance_m,avg_hr,max_hr,avg_pace_s_per_km,avg_power_w,tss,splits"
-    ).eq("sport", sport).order("started_at", desc=True).limit(limit + 1).execute()
-    return (res.data or [])[1:]  # Skip la corrente
+    ).eq("sport", sport).neq("external_id", current_id).order(
+        "started_at", desc=True
+    ).limit(limit).execute()
+    return res.data or []
 
 
 def _get_recent_debrief(sb, days: int = 3) -> list[dict]:
@@ -90,7 +92,7 @@ def analyze_session(activity_id: str) -> Optional[dict]:
 
     # Raccolta contesto
     planned = _get_planned_session(sb, activity_date, sport)
-    historical = _get_historical(sb, sport)
+    historical = _get_historical(sb, sport, activity_id)
     debrief = _get_recent_debrief(sb)
     metrics = _get_daily_metrics(sb, activity_date)
 
@@ -197,7 +199,7 @@ def _send_analysis_telegram(activity: dict, analysis: str) -> None:
     sport_emoji = {"swim": "🏊", "bike": "🚴", "run": "🏃", "strength": "💪"}.get(
         activity.get("sport", ""), "🏋️"
     )
-    duration_min = int(activity.get("duration_s", 0)) // 60
+    duration_min = int(activity.get("duration_s") or 0) // 60
 
     msg = (
         f"{sport_emoji} <b>Analisi sessione</b> — {activity.get('sport', '?')} {duration_min}min\n\n"

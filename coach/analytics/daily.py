@@ -27,9 +27,9 @@ logger = logging.getLogger(__name__)
 
 
 def _fetch_activities_window(sb, start: date) -> list[dict]:
-    res = sb.table("activities").select("id,started_at,sport,tss").gte(
-        "started_at", start.isoformat()
-    ).execute()
+    res = sb.table("activities").select(
+        "id,started_at,sport,tss,training_load,duration_s,avg_hr"
+    ).gte("started_at", start.isoformat()).execute()
     return res.data or []
 
 

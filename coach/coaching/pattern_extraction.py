@@ -11,6 +11,7 @@ import json
 import logging
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
 from coach.utils.supabase_client import get_supabase
@@ -20,11 +21,21 @@ logger = logging.getLogger(__name__)
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
 OBSERVATIONS_FILE = DOCS_DIR / "coaching_observations.md"
 
+# Limite per evitare saturazione della context window dopo mesi di accumulo
+MAX_OBSERVATIONS_CHARS = 6_000  # ~1500 token: sufficiente per i pattern rilevanti
+
 
 def get_current_observations() -> str:
-    if OBSERVATIONS_FILE.exists():
-        return OBSERVATIONS_FILE.read_text(encoding="utf-8")
-    return "# Coaching Observations\n\nNessun pattern identificato ancora.\n"
+    if not OBSERVATIONS_FILE.exists():
+        return "# Coaching Observations\n\nNessun pattern identificato ancora.\n"
+    content = OBSERVATIONS_FILE.read_text(encoding="utf-8")
+    if len(content) <= MAX_OBSERVATIONS_CHARS:
+        return content
+    # Tieni la coda più recente, allineata al primo newline per non spezzare una riga
+    tail = content[-MAX_OBSERVATIONS_CHARS:]
+    cut = tail.find("\n")
+    tail = tail[cut + 1:] if cut >= 0 else tail
+    return f"[...osservazioni precedenti troncate ({len(content)} → {MAX_OBSERVATIONS_CHARS} chars)...]\n\n{tail}"
 
 
 def extract_patterns(days: int = 28) -> Optional[str]:

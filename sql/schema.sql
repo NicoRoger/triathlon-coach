@@ -260,6 +260,48 @@ CREATE TABLE races (
 );
 
 -- ============================================================================
+-- COACHING AI (aggiunto con migration 2026-05-08-step6-tables)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS api_usage (
+    id                  BIGSERIAL PRIMARY KEY,
+    timestamp           TIMESTAMPTZ DEFAULT NOW(),
+    provider            TEXT NOT NULL,
+    model               TEXT NOT NULL,
+    purpose             TEXT NOT NULL,
+    input_tokens        INTEGER NOT NULL,
+    output_tokens       INTEGER NOT NULL,
+    cost_usd_estimated  NUMERIC(8,4) NOT NULL,
+    success             BOOLEAN NOT NULL,
+    metadata            JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_api_usage_timestamp ON api_usage(timestamp);
+CREATE INDEX IF NOT EXISTS idx_api_usage_purpose   ON api_usage(purpose);
+
+CREATE TABLE IF NOT EXISTS session_analyses (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    activity_id     TEXT NOT NULL,
+    analysis_text   TEXT NOT NULL,
+    suggested_actions JSONB,
+    model_used      TEXT,
+    cost_usd        NUMERIC(8,4),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_session_analyses_activity ON session_analyses(activity_id);
+
+CREATE TABLE IF NOT EXISTS plan_modulations (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    proposed_at     TIMESTAMPTZ DEFAULT NOW(),
+    trigger_event   TEXT NOT NULL,
+    trigger_data    JSONB,
+    proposed_changes JSONB NOT NULL,
+    status          TEXT DEFAULT 'proposed',
+    resolved_at     TIMESTAMPTZ,
+    telegram_message_id BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_plan_modulations_status ON plan_modulations(status);
+
+-- ============================================================================
 -- HEALTH (system status per watchdog)
 -- ============================================================================
 CREATE TABLE health (
@@ -310,6 +352,9 @@ ALTER TABLE mesocycles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE planned_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE races ENABLE ROW LEVEL SECURITY;
 ALTER TABLE health ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api_usage ENABLE ROW LEVEL SECURITY;
+ALTER TABLE session_analyses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_modulations ENABLE ROW LEVEL SECURITY;
 
 -- Per single-user: nessuna policy = solo service_role accede.
 -- Se in futuro vorrai accesso autenticato lato Worker, aggiungi policy specifica.

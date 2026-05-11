@@ -160,18 +160,20 @@ def _build_load_section(metrics: dict) -> str:
     return "\n".join(lines)
 
 
-def _build_session_section(planned: Optional[dict]) -> str:
+def _build_session_section(planned_sessions: list[dict]) -> str:
     lines = ["<b>🎯 Cosa fare oggi</b>"]
-    if planned:
-        sport_emoji = {"swim": "🏊", "bike": "🚴", "run": "🏃",
-                       "brick": "🚴🏃", "strength": "💪"}.get(planned.get("sport"), "🏋️")
-        dur_min = (planned.get("duration_s") or 0) // 60
-        type_str = planned.get("session_type") or ""
-        lines.append(f"{sport_emoji} {type_str} · {dur_min}min")
-        if planned.get("description"):
-            from html import escape as _esc
-            desc = [_esc(line) for line in planned["description"].strip().split("\n")[:4]]
-            lines.append(f"<i>{chr(10).join(desc)}</i>")
+    if planned_sessions:
+        sport_emoji_map = {"swim": "🏊", "bike": "🚴", "run": "🏃",
+                           "brick": "🚴🏃", "strength": "💪"}
+        for planned in planned_sessions:
+            sport_emoji = sport_emoji_map.get(planned.get("sport"), "🏋️")
+            dur_min = (planned.get("duration_s") or 0) // 60
+            type_str = planned.get("session_type") or ""
+            lines.append(f"{sport_emoji} {type_str} · {dur_min}min")
+            if planned.get("description"):
+                from html import escape as _esc
+                desc = [_esc(line) for line in planned["description"].strip().split("\n")[:4]]
+                lines.append(f"<i>{chr(10).join(desc)}</i>")
         return "\n".join(lines)
 
     lines.append("Nessuna sessione pianificata.")
@@ -219,21 +221,27 @@ def _build_warnings_section(metrics: dict) -> str:
     return "\n".join(lines)
 
 def _build_race_progress_section(today: date) -> str:
-    """Sezione progresso verso la gara A.
-    
-    Hardcoded per Lavarone Cross Sprint settembre 2026.
-    Quando avremo la tabella race_targets popolata, leggerà da DB.
-    """
-    # Lavarone Cross Sprint — data approssimativa inizio settembre 2026
-    race_date = date(2026, 9, 6)  # da raffinare quando data ufficiale
+    """Sezione progresso verso la prossima gara A dalla tabella races."""
+    sb = get_supabase()
+    res = sb.table("races").select(
+        "name,race_date"
+    ).gte("race_date", today.isoformat()).eq(
+        "priority", "A"
+    ).order("race_date").limit(1).execute()
+
+    if not res.data:
+        return ""
+
+    r = res.data[0]
+    race_date = date.fromisoformat(r["race_date"])
+    race_name = r["name"]
     days_left = (race_date - today).days
-    
+
     if days_left < 0:
-        return ""  # gara passata, sezione skippata
-    
+        return ""
+
     weeks_left = days_left // 7
-    
-    # Fase corrente sulla base di weeks_left (logica del macro-piano in CLAUDE.md §3)
+
     if weeks_left >= 14:
         phase = "Ricostruzione"
         focus = "Base aerobica, tecnica, recupero infortuni. NO intensità ancora."
@@ -252,9 +260,9 @@ def _build_race_progress_section(today: date) -> str:
     else:
         phase = "Race week"
         focus = "Modalità gara attiva — vedi race week protocol."
-    
+
     lines = [
-        "<b>📅 Verso Lavarone Cross Sprint</b>",
+        f"<b>📅 Verso {race_name}</b>",
         f"Mancano <b>{days_left} giorni</b> ({weeks_left} settimane).",
         f"Fase: {phase}",
         f"<i>{focus}</i>",
@@ -262,27 +270,27 @@ def _build_race_progress_section(today: date) -> str:
     return "\n".join(lines)
 
 def _get_upcoming_race(today: date) -> Optional[dict]:
-    """Trova la prossima gara A o B entro 7 giorni.
-    
-    Restituisce None se non c'è gara imminente.
-    Per ora hardcoded sulla sola Lavarone 2026, in futuro leggerà da DB races.
-    """
-    # Hardcoded race calendar (TBD: leggi da tabella races quando popolata)
-    races = [
-        {
-            "name": "Lavarone Cross Sprint",
-            "date": date(2026, 9, 6),
-            "priority": "A",
-            "distance": "750m + 16-17km MTB + 5km trail",
-        }
-    ]
-    
-    for race in races:
-        days_to_race = (race["date"] - today).days
-        if 0 <= days_to_race <= 7 and race["priority"] in ("A", "B"):
-            race["days_to_race"] = days_to_race
-            return race
-    return None
+    """Trova la prossima gara A o B entro 7 giorni dalla tabella races."""
+    sb = get_supabase()
+    window_end = (today + timedelta(days=7)).isoformat()
+    res = sb.table("races").select(
+        "name,race_date,priority,distance"
+    ).gte("race_date", today.isoformat()).lte(
+        "race_date", window_end
+    ).in_("priority", ["A", "B"]).order("race_date").limit(1).execute()
+
+    if not res.data:
+        return None
+
+    r = res.data[0]
+    race_dt = date.fromisoformat(r["race_date"])
+    return {
+        "name": r["name"],
+        "date": race_dt,
+        "priority": r["priority"],
+        "distance": r.get("distance") or "",
+        "days_to_race": (race_dt - today).days,
+    }
 
 
 def _build_race_week_section(race: dict, today: date) -> str:
@@ -381,7 +389,7 @@ def build_brief() -> str:
     planned_res = sb.table("planned_sessions").select("*").eq(
         "planned_date", today_iso
     ).eq("status", "planned").execute()
-    planned = planned_res.data[0] if planned_res.data else None
+    planned_sessions = planned_res.data or []
 
     # Controlla se siamo in race week (T-7 a T-0 di una gara A/B)
     upcoming_race = _get_upcoming_race(today)
@@ -403,7 +411,7 @@ def build_brief() -> str:
             _build_freshness_warning(age),
             _build_wellness_section(wellness, metrics),
             _build_load_section(metrics),
-            _build_session_section(planned),
+            _build_session_section(planned_sessions),
             _build_race_progress_section(today),
             _build_warnings_section(metrics),
             _build_footer(),

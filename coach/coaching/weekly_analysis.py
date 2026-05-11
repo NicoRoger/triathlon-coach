@@ -21,7 +21,7 @@ def generate_weekly_analysis(days: int = 7) -> str:
     since = (date.today() - timedelta(days=days)).isoformat()
 
     metrics = sb.table("daily_metrics").select("*").gte("date", since).order("date").execute().data or []
-    activities = sb.table("activities").select("started_at,sport,duration_s,distance_m,avg_hr,avg_power_w,tss,splits").gte("started_at", since).execute().data or []
+    activities = sb.table("activities").select("started_at,sport,duration_s,distance_m,avg_hr,avg_power_w,tss").gte("started_at", since).execute().data or []
     analyses = sb.table("session_analyses").select("analysis_text,created_at").gte("created_at", since).execute().data or []
     debrief = sb.table("subjective_log").select("kind,raw_text,rpe,soreness,motivation,logged_at").gte("logged_at", since).execute().data or []
 
