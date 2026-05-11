@@ -20,6 +20,7 @@ from coach.analytics.readiness import (
     compute_readiness,
     hrv_z_score,
 )
+from coach.utils.dt import today_rome
 from coach.utils.health import record_health
 from coach.utils.supabase_client import get_supabase
 
@@ -169,7 +170,7 @@ def compute_for(day: date, history_days: int = 90) -> dict:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        m = compute_for(date.today())
+        m = compute_for(today_rome())
         logger.info("daily_metrics: %s", m)
         record_health("analytics_daily", success=True)
     except Exception as e:  # noqa: BLE001

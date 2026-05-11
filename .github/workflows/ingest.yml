@@ -54,3 +54,16 @@ jobs:
       - name: Post-session analysis
         if: success()
         run: python -m coach.coaching.post_session_analysis --recent
+
+      - name: Trigger morning brief (solo run mattutino 05-07 UTC)
+        if: success()
+        run: |
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" -ge "5" ] && [ "$HOUR" -le "7" ]; then
+            echo "Morning ingest: triggering briefing"
+            gh workflow run morning-briefing.yml --ref "$GITHUB_REF_NAME"
+          else
+            echo "Not morning run (hour=$HOUR), skipping brief trigger"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

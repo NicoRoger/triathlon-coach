@@ -2,8 +2,16 @@ name: morning-briefing
 
 on:
   schedule:
-    - cron: '30 5 * * *'  # 06:30 Europe/Rome (UTC+1) — adjust for DST manually if needed
+    # Fallback: si attiva solo se l'ingest mattutino non l'ha già triggerato.
+    # L'ingest gira alle 06:00 UTC e chiama `gh workflow run` dopo il successo;
+    # questo schedule a 06:20 è il safety net per ingest lento o fallito.
+    - cron: '20 6 * * *'
   workflow_dispatch:
+
+# Previene duplicate se sia il trigger da ingest che il fallback schedule partono
+concurrency:
+  group: morning-briefing
+  cancel-in-progress: true
 
 jobs:
   brief:

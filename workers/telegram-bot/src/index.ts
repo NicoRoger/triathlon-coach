@@ -196,6 +196,8 @@ async function handleContextualReply(
   switch (botMsg.purpose) {
     case "debrief_reminder": {
       // Risposta al reminder → parser debrief
+      // Pulisce il KV state così i messaggi successivi non vengono ri-parsati come debrief
+      await env.PROCESSED_UPDATES.delete(`debrief:${chatId}`);
       const parsed = parseDebrief(text);
       if (parsed.fields.injury_flag || parsed.fields.illness_flag) {
         return createPendingAndAsk(env, chatId, message.message_id, parsed.fields.injury_flag ? "log_injury" : "log_illness", {
@@ -462,40 +464,14 @@ async function createPendingAndAsk(
   action: string,
   parsedData: any,
 ): Promise<void> {
+  // UUID generato lato Worker: i bottoni hanno subito l'ID definitivo,
+  // niente PLACEHOLDER né doppia editMessageReplyMarkup.
+  const pendingId = crypto.randomUUID();
   const actionLabel = action === "log_injury" ? "infortunio" : "malattia";
   const location = parsedData.injury_location ? ` alla ${parsedData.injury_location}` : "";
   const text = `Ho capito che hai un <b>${actionLabel}${location}</b>.\n\nSalvo con flag attivo e attivo il monitoraggio?`;
 
   const keyboard = {
-    inline_keyboard: [[
-      { text: "✅ Sì", callback_data: `confirm_action_PLACEHOLDER` },
-      { text: "✏️ Correggi", callback_data: `correct_action_PLACEHOLDER` },
-      { text: "❌ Era altro", callback_data: `reject_action_PLACEHOLDER` },
-    ]],
-  };
-
-  // Prima manda il messaggio per ottenere il message_id
-  const confMsgId = await sendMessageGetId(env, chatId, text, keyboard);
-  if (!confMsgId) return;
-
-  // Ora salva pending_confirmation con i veri message_id
-  const record = {
-    chat_id: chatId,
-    original_message_id: originalMsgId,
-    confirmation_message_id: confMsgId,
-    parsed_action: action,
-    parsed_data: parsedData,
-    status: "pending",
-  };
-
-  const res = await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=representation" });
-  if (!res.ok) return;
-  const data = await res.json() as any[];
-  const pendingId = data[0]?.id;
-  if (!pendingId) return;
-
-  // Aggiorna i bottoni con il vero pending_id
-  const realKeyboard = {
     inline_keyboard: [[
       { text: "✅ Sì", callback_data: `confirm_action_${pendingId}` },
       { text: "✏️ Correggi", callback_data: `correct_action_${pendingId}` },
@@ -503,7 +479,19 @@ async function createPendingAndAsk(
     ]],
   };
 
-  await editMessageReplyMarkup(env, chatId, confMsgId, realKeyboard);
+  const confMsgId = await sendMessageGetId(env, chatId, text, keyboard);
+  if (!confMsgId) return;
+
+  const record = {
+    id: pendingId,
+    chat_id: chatId,
+    original_message_id: originalMsgId,
+    confirmation_message_id: confMsgId,
+    parsed_action: action,
+    parsed_data: parsedData,
+    status: "pending",
+  };
+  await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=minimal" });
 }
 
 // ============================================================================
@@ -516,34 +504,9 @@ async function askClassification(
   originalMsgId: number,
   rawText: string,
 ): Promise<void> {
+  const pendingId = crypto.randomUUID();
   const text = "Non sono sicuro di aver capito. Vuoi che salvi come:";
   const keyboard = {
-    inline_keyboard: [[
-      { text: "📝 Nota libera", callback_data: "classify_note_PLACEHOLDER" },
-      { text: "🩹 Sintomo/dolore", callback_data: "classify_symptom_PLACEHOLDER" },
-      { text: "🎯 RPE post-sessione", callback_data: "classify_rpe_PLACEHOLDER" },
-    ]],
-  };
-
-  const confMsgId = await sendMessageGetId(env, chatId, text, keyboard);
-  if (!confMsgId) return;
-
-  const record = {
-    chat_id: chatId,
-    original_message_id: originalMsgId,
-    confirmation_message_id: confMsgId,
-    parsed_action: "classify",
-    parsed_data: { raw_text: rawText },
-    status: "pending",
-  };
-
-  const res = await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=representation" });
-  if (!res.ok) return;
-  const data = await res.json() as any[];
-  const pendingId = data[0]?.id;
-  if (!pendingId) return;
-
-  const realKeyboard = {
     inline_keyboard: [[
       { text: "📝 Nota libera", callback_data: `classify_note_${pendingId}` },
       { text: "🩹 Sintomo/dolore", callback_data: `classify_symptom_${pendingId}` },
@@ -551,7 +514,19 @@ async function askClassification(
     ]],
   };
 
-  await editMessageReplyMarkup(env, chatId, confMsgId, realKeyboard);
+  const confMsgId = await sendMessageGetId(env, chatId, text, keyboard);
+  if (!confMsgId) return;
+
+  const record = {
+    id: pendingId,
+    chat_id: chatId,
+    original_message_id: originalMsgId,
+    confirmation_message_id: confMsgId,
+    parsed_action: "classify",
+    parsed_data: { raw_text: rawText },
+    status: "pending",
+  };
+  await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=minimal" });
 }
 
 // ============================================================================
@@ -722,7 +697,7 @@ function parseLog(body: string): { kind: string; fields: any; summary: string } 
   if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
-    const locMatch = body.match(/\b(ginocchio|caviglia|polpaccio|tendine d'achille|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone)\b/i);
+    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei])\b/i);
     if (locMatch) fields.injury_location = locMatch[1];
     summary.push("infortunio");
     return { kind: "injury", fields, summary: summary.join(", ") };
@@ -775,7 +750,7 @@ function parseDebrief(body: string): { fields: any; summary: string } {
   if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
-    const locMatch = body.match(/\b(ginocchio|caviglia|polpaccio|tendine d'achille|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone|anca|quadricipite|gluteo)\b/i);
+    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io])\b/i);
     if (locMatch) fields.injury_location = locMatch[1];
     summary.push("infortunio");
   }
@@ -784,7 +759,7 @@ function parseDebrief(body: string): { fields: any; summary: string } {
     parsed.pain_reported = false;
   } else if (/\b(dolore|dolori|male|fastidio)\b/i.test(lower)) {
     parsed.pain_reported = true;
-    const locMatch = body.match(/\b(ginocchio|caviglia|polpaccio|tendine d'achille|achille|coscia|adduttore|spalla|schiena|lombare|piede|tallone|anca|quadricipite|gluteo)\b/i);
+    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io])\b/i);
     if (locMatch) parsed.pain_location = locMatch[1];
   }
 

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from coach.models import Activity, DailyWellness, Source, Sport
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 from coach.utils.health import record_health
 
@@ -332,7 +333,7 @@ def sync_activities(days_back: int = 7) -> int:
         Numero attività sincronizzate (insert + update).
     """
     g = _login()
-    end = date.today()
+    end = today_rome()
     start = end - timedelta(days=days_back)
 
     activities_raw = g.get_activities_by_date(
@@ -351,21 +352,30 @@ def sync_activities(days_back: int = 7) -> int:
             if activity_id:
                 try:
                     splits_raw = g.get_activity_splits(activity_id)
+                    logger.debug("Splits raw type=%s keys=%s for %s",
+                                 type(splits_raw).__name__,
+                                 list(splits_raw.keys()) if isinstance(splits_raw, dict) else "n/a",
+                                 activity_id)
                     if isinstance(splits_raw, dict):
-                        splits = splits_raw.get("lapDTOs") or splits_raw.get("splits")
+                        # Usa 'is not None' per non scartare liste vuote valide
+                        splits = splits_raw.get("lapDTOs")
+                        if splits is None:
+                            splits = splits_raw.get("splits")
                     elif isinstance(splits_raw, list):
                         splits = splits_raw
                     time.sleep(0.3)  # Rate limiting
-                except Exception:
-                    logger.debug("Splits non disponibili per %s", activity_id)
+                except Exception as e:
+                    logger.warning("Splits non disponibili per %s: %s", activity_id, e)
 
                 try:
                     weather = g.get_activity_weather(activity_id)
+                    logger.debug("Weather raw type=%s for %s", type(weather).__name__, activity_id)
                     if weather and not isinstance(weather, dict):
+                        logger.warning("Weather formato inatteso per %s: %s", activity_id, type(weather).__name__)
                         weather = None
                     time.sleep(0.3)  # Rate limiting
-                except Exception:
-                    logger.debug("Weather non disponibile per %s", activity_id)
+                except Exception as e:
+                    logger.warning("Weather non disponibile per %s: %s", activity_id, e)
 
             act = _normalize_activity(raw, splits=splits, weather=weather)
             sb.table("activities").upsert(
@@ -383,8 +393,9 @@ def sync_wellness(days_back: int = 7) -> int:
     g = _login()
     sb = get_supabase()
     count = 0
+    _today = today_rome()
     for offset in range(days_back, -1, -1):
-        day = date.today() - timedelta(days=offset)
+        day = _today - timedelta(days=offset)
         try:
             user_summary = g.get_user_summary(day.isoformat())
             sleep = g.get_sleep_data(day.isoformat())

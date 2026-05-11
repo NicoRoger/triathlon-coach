@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -65,14 +66,24 @@ def select_question(context: dict) -> tuple[str, str]:
     elif any(f in flags for f in ("fatigue_critical", "hrv_crash")):
         category = "recovery"
     else:
-        day = date.today().weekday()
+        day = today_rome().weekday()
         category = ["motivation", "general", "technique", "recovery", "general", "motivation", "general"][day]
     return category, random.choice(QUESTIONS[category])
 
 
 def select_and_send_question() -> Optional[str]:
     sb = get_supabase()
-    today = date.today()
+    today = today_rome()
+
+    # Cooldown: non mandare se già inviata nelle ultime 24h (evita spam se l'utente non risponde)
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    recent = sb.table("bot_messages").select("id").eq(
+        "purpose", "proactive_question"
+    ).gte("sent_at", cutoff_24h).limit(1).execute()
+    if recent.data:
+        logger.info("Proactive question skipped: already sent in last 24h")
+        return None
+
     metrics_res = sb.table("daily_metrics").select("flags,readiness_label").eq("date", today.isoformat()).limit(1).execute()
     metrics = metrics_res.data[0] if metrics_res.data else {}
     race_res = sb.table("planned_sessions").select("planned_date").eq("session_type", "race").gte("planned_date", today.isoformat()).order("planned_date").limit(1).execute()

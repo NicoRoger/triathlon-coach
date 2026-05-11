@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -41,16 +42,17 @@ def get_current_observations() -> str:
 def extract_patterns(days: int = 28) -> Optional[str]:
     """Analizza le ultime N settimane e aggiorna le observations."""
     sb = get_supabase()
-    since = (date.today() - timedelta(days=days)).isoformat()
+    today = today_rome()
+    since = (today - timedelta(days=days)).isoformat()
 
     # Raccogli dati
     analyses = sb.table("session_analyses").select("activity_id,analysis_text,created_at").gte("created_at", since).execute().data or []
     debrief = sb.table("subjective_log").select("kind,raw_text,logged_at").gte("logged_at", since).execute().data or []
-    
+
     current_obs = get_current_observations()
 
     context = json.dumps({
-        "periodo_analizzato": f"{since} a {date.today().isoformat()}",
+        "periodo_analizzato": f"{since} a {today.isoformat()}",
         "osservazioni_attuali": current_obs,
         "analisi_recenti": [a.get("analysis_text") for a in analyses],
         "debrief_recenti": [d.get("raw_text") for d in debrief if d.get("raw_text")],

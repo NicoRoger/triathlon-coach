@@ -12,6 +12,7 @@ from typing import Optional
 
 import requests
 
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 from coach.utils.health import record_health
 
@@ -43,7 +44,7 @@ def _fmt_pace(s_per_km: Optional[float]) -> str:
 
 
 def _planned_session_today(supabase) -> Optional[dict]:
-    today = date.today().isoformat()
+    today = today_rome().isoformat()
     res = supabase.table("planned_sessions").select("*").eq(
         "planned_date", today
     ).eq("status", "planned").execute()
@@ -61,20 +62,20 @@ def _last_sync_age_hours(supabase) -> Optional[float]:
 
 
 def _today_metrics(supabase) -> Optional[dict]:
-    today = date.today().isoformat()
+    today = today_rome().isoformat()
     res = supabase.table("daily_metrics").select("*").eq("date", today).execute()
     return res.data[0] if res.data else None
 
 
 def _today_wellness(supabase) -> Optional[dict]:
-    today = date.today().isoformat()
+    today = today_rome().isoformat()
     res = supabase.table("daily_wellness").select("*").eq("date", today).execute()
     return res.data[0] if res.data else None
 
 
 def build_brief() -> str:
     sb = get_supabase()
-    today = date.today()
+    today = today_rome()
     age = _last_sync_age_hours(sb)
     metrics = _today_metrics(sb)
     wellness = _today_wellness(sb)

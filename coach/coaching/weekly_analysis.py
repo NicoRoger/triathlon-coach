@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 def generate_weekly_analysis(days: int = 7) -> str:
     sb = get_supabase()
-    since = (date.today() - timedelta(days=days)).isoformat()
+    today = today_rome()
+    since = (today - timedelta(days=days)).isoformat()
 
     metrics = sb.table("daily_metrics").select("*").gte("date", since).order("date").execute().data or []
     activities = sb.table("activities").select("started_at,sport,duration_s,distance_m,avg_hr,avg_power_w,tss").gte("started_at", since).execute().data or []
@@ -26,7 +28,7 @@ def generate_weekly_analysis(days: int = 7) -> str:
     debrief = sb.table("subjective_log").select("kind,raw_text,rpe,soreness,motivation,logged_at").gte("logged_at", since).execute().data or []
 
     context = json.dumps({
-        "periodo": f"{since} → {date.today().isoformat()}",
+        "periodo": f"{since} → {today.isoformat()}",
         "metriche_giornaliere": [{k: v for k, v in m.items() if v is not None and k not in ("id", "created_at", "updated_at")} for m in metrics],
         "attivita": [{k: v for k, v in a.items() if v is not None} for a in activities],
         "analisi_sessioni": [a.get("analysis_text", "") for a in analyses],
@@ -63,7 +65,7 @@ def generate_weekly_lesson() -> str:
         result = client.call(
             purpose="weekly_review_lesson",
             system="Sei un coach di triathlon esperto. Genera una breve lezione settimanale (5-8 righe) su un aspetto dell'allenamento triathlon. Scrivi in italiano, tono diretto e pratico.",
-            messages=[{"role": "user", "content": f"Genera la lezione della settimana. Data: {date.today().isoformat()}. Argomento: scegli tra nutrizione gara, gestione fatica, periodizzazione, tecnica, recupero, mental training."}],
+            messages=[{"role": "user", "content": f"Genera la lezione della settimana. Data: {today_rome().isoformat()}. Argomento: scegli tra nutrizione gara, gestione fatica, periodizzazione, tecnica, recupero, mental training."}],
             prefer_model="haiku",
             max_tokens=400,
             temperature=0.7,
