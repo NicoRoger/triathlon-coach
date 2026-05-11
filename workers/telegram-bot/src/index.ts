@@ -31,6 +31,10 @@ interface TelegramMessage {
   from: { id: number; first_name: string };
   text?: string;
   voice?: { file_id: string; duration: number };
+  video?: { file_id: string; duration: number; file_size?: number };
+  video_note?: { file_id: string; duration: number; file_size?: number };
+  document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+  caption?: string;
   date: number;
   reply_to_message?: {
     message_id: number;
@@ -148,7 +152,21 @@ export default {
       return new Response("OK");
     }
 
-    const text = update.message.text || "";
+    // Blocco 2.1: Video upload handling
+    const videoFile = update.message.video || update.message.video_note;
+    const docFile = update.message.document;
+    const isVideoDoc = docFile?.mime_type?.startsWith("video/");
+
+    if (videoFile || isVideoDoc) {
+      try {
+        await handleVideoUpload(env, chatId, update.message);
+      } catch (e: any) {
+        await sendMessage(env, chatId, `Errore video: ${e.message || e}`);
+      }
+      return new Response("OK");
+    }
+
+    const text = update.message.text || update.message.caption || "";
     if (!text) return new Response("OK");
 
     try {
@@ -376,6 +394,12 @@ async function handleStandalone(env: Env, message: TelegramMessage): Promise<voi
     return;
   }
 
+  // Blocco 4.2: detect planning-relevant free messages
+  if (isPlanningRelevant(t)) {
+    await insertSubjective(env, { kind: "free_note", raw_text: t });
+    return askRouting(env, chatId, message.message_id, t);
+  }
+
   // Feature 5: help contestuale — il parser non ha capito nulla
   return askClassification(env, chatId, message.message_id, t);
 }
@@ -530,6 +554,116 @@ async function askClassification(
 }
 
 // ============================================================================
+// Blocco 2.1: Video upload + analysis
+// ============================================================================
+
+const MAX_VIDEO_MB = 20; // Telegram API getFile supporta fino a 20MB
+
+async function handleVideoUpload(env: Env, chatId: number, message: TelegramMessage): Promise<void> {
+  const videoFile = message.video || message.video_note;
+  const docFile = message.document;
+  const fileId = videoFile?.file_id || docFile?.file_id;
+  const fileSize = videoFile?.file_size || docFile?.file_size || 0;
+  const caption = message.caption || message.text || "";
+
+  if (!fileId) {
+    await sendMessage(env, chatId, "Non riesco a leggere il file video.");
+    return;
+  }
+
+  if (fileSize > MAX_VIDEO_MB * 1024 * 1024) {
+    await sendMessage(env, chatId,
+      `📹 Video troppo grande (${(fileSize / 1024 / 1024).toFixed(1)}MB). Max ${MAX_VIDEO_MB}MB.\n` +
+      `<i>Taglia il video alla clip rilevante (10-30 secondi) e riprova.</i>`);
+    return;
+  }
+
+  await sendMessage(env, chatId, "📹 Video ricevuto, lo salvo per l'analisi...");
+
+  // Detect sport from caption
+  let sport = "unknown";
+  const captionLower = caption.toLowerCase();
+  if (/\b(nuot[oa]|swim|vasca|stile|dorso|crawl|piscina)\b/.test(captionLower)) sport = "swim";
+  else if (/\b(cors[ae]|run|correr[eo]|trail|pista)\b/.test(captionLower)) sport = "run";
+  else if (/\b(bici|bike|ciclism[oa]|pedalat[ae]|rullo)\b/.test(captionLower)) sport = "bike";
+
+  // Save metadata to subjective_log
+  await insertSubjective(env, {
+    kind: "video_analysis",
+    raw_text: caption || `Video ${sport} caricato`,
+    parsed_data: {
+      file_id: fileId,
+      sport,
+      file_size: fileSize,
+      duration: videoFile?.duration || 0,
+      caption,
+    },
+  });
+
+  // Determine sport if not clear
+  if (sport === "unknown") {
+    const keyboard = {
+      inline_keyboard: [[
+        { text: "🏊 Nuoto", callback_data: `video_sport_swim_${fileId.slice(0, 30)}` },
+        { text: "🏃 Corsa", callback_data: `video_sport_run_${fileId.slice(0, 30)}` },
+        { text: "🚴 Bici", callback_data: `video_sport_bike_${fileId.slice(0, 30)}` },
+      ]],
+    };
+    await sendAndLogMessage(env, chatId,
+      "📹 Video salvato. Di quale disciplina è?\n\n<i>L'analisi tecnica completa sarà disponibile in Claude Code: 'analizza ultimo video tecnica'</i>",
+      "video_upload", { file_id: fileId, sport }, keyboard);
+  } else {
+    await sendAndLogMessage(env, chatId,
+      `📹 Video ${sport} salvato.\n\n` +
+      `Per l'analisi tecnica dettagliata apri Claude Code:\n` +
+      `<i>'analizza ultimo video tecnica ${sport}'</i>`,
+      "video_upload", { file_id: fileId, sport });
+  }
+}
+
+// ============================================================================
+// Blocco 4.2: planning-relevant free message routing
+// ============================================================================
+
+function isPlanningRelevant(text: string): boolean {
+  const lower = text.toLowerCase();
+  return /\b(trasferta|viaggio|vacanz[ae]|ferie|assente|non ci sono|settimana prossima|cambio turno|turno|ufficio|evento|impegno|fuori|fuori sede)\b/i.test(lower) ||
+    /\b(forma|mi sento|sento forte|sento stanco|gamba|gambe|sensazioni|sono pronto|pronta?)\b/i.test(lower) ||
+    /\b(obiettivo|gara|programma|piano|allenam[ei]nto|sessione|intensit[aà]|volume|carico|scarico)\b/i.test(lower) ||
+    /\b(spalla|fascite|infortunio|dolore cronico|fastidio persistente|recupero da)\b/i.test(lower);
+}
+
+async function askRouting(
+  env: Env,
+  chatId: number,
+  originalMsgId: number,
+  rawText: string,
+): Promise<void> {
+  const pendingId = crypto.randomUUID();
+  const text = "📋 Ho salvato la nota. Vuoi che la porto all'attenzione del coach?";
+  const keyboard = {
+    inline_keyboard: [[
+      { text: "📋 Weekly review", callback_data: `route_weekly_${pendingId}` },
+      { text: "⚡ Modifica ora", callback_data: `route_urgent_${pendingId}` },
+      { text: "📝 Solo nota", callback_data: `route_note_${pendingId}` },
+    ]],
+  };
+
+  const confMsgId = await sendMessageGetId(env, chatId, text, keyboard);
+  if (!confMsgId) return;
+
+  await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", {
+    id: pendingId,
+    chat_id: chatId,
+    original_message_id: originalMsgId,
+    confirmation_message_id: confMsgId,
+    parsed_action: "route_message",
+    parsed_data: { raw_text: rawText },
+    status: "pending",
+  }, { Prefer: "return=minimal" });
+}
+
+// ============================================================================
 // Callback query handler
 // ============================================================================
 
@@ -621,6 +755,38 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     await insertSubjective(env, { kind, raw_text: rawText, ...extraFields });
     await resolvePendingConfirmation(env, pendingId, "confirmed");
     await sendMessage(env, chatId, `✅ Salvato come <b>${label}</b>.`);
+    if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
+    return;
+  }
+
+  // --- Blocco 2.1: video sport selection ---
+  if (data.startsWith("video_sport_")) {
+    const parts = data.split("_");
+    const sport = parts[2]; // swim | run | bike
+    await sendMessage(env, chatId,
+      `📹 Sport: ${sport}. Per l'analisi tecnica dettagliata apri Claude Code:\n` +
+      `<i>'analizza ultimo video tecnica ${sport}'</i>`);
+    if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
+    return;
+  }
+
+  // --- Blocco 4.2: message routing ---
+  if (data.startsWith("route_weekly_") || data.startsWith("route_urgent_") || data.startsWith("route_note_")) {
+    const parts = data.split("_");
+    const routeType = parts[1]; // weekly | urgent | note
+    const pendingId = parts.slice(2).join("_");
+    const pending = await getPendingConfirmation(env, pendingId);
+    if (!pending || pending.status !== "pending") return;
+
+    await resolvePendingConfirmation(env, pendingId, `routed_${routeType}`);
+
+    if (routeType === "weekly") {
+      await sendMessage(env, chatId, "📋 Nota taggata per la prossima weekly review. Il coach la vedrà domenica.");
+    } else if (routeType === "urgent") {
+      await sendMessage(env, chatId, "⚡ Nota urgente registrata. Apri Claude Code per discutere: 'guarda la mia ultima nota'.");
+    } else {
+      await sendMessage(env, chatId, "📝 Nota salvata.");
+    }
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
   }
@@ -766,6 +932,28 @@ function parseDebrief(body: string): { fields: any; summary: string } {
   if (/\b(energia alta|fresco|riposato)\b/i.test(lower)) parsed.energy = "high";
   else if (/\b(energia media|normale)\b/i.test(lower)) parsed.energy = "medium";
   else if (/\b(energia bassa|stanco|scarico|distrutto|cotto)\b/i.test(lower)) parsed.energy = "low";
+
+  // Blocco 4.1: session quality
+  if (/\b(ottima sessione|sessione perfetta|tutto bene|fluidit[aà]|gir(ava|o) bene|eccellente)\b/i.test(lower)) parsed.session_quality = "high";
+  else if (/\b(sessione ok|nella media|decente|niente di speciale)\b/i.test(lower)) parsed.session_quality = "medium";
+  else if (/\b(sessione brutta|fatica|pesante|non girava|bloccato|pessim[ao])\b/i.test(lower)) parsed.session_quality = "low";
+
+  // Blocco 4.1: nutrition issues
+  if (/\b(crampi?|stomaco|nausea|vomito|digestione|nutrizione|gel|barretta|disidratat[oa]|sete)\b/i.test(lower)) {
+    parsed.nutrition_issue = true;
+  }
+
+  // Blocco 4.1: mental state
+  if (/\b(concentrato|presente|determinato|carico|motivato|grinta|flow)\b/i.test(lower)) parsed.mental_state = "high";
+  else if (/\b(distratto|assente|svogliat[oa]|demotivat[oa]|ment[ae] altrove|annoiato)\b/i.test(lower)) parsed.mental_state = "low";
+
+  // Blocco 4.1: sleep quality
+  const sleepMatch = body.match(/(?:dormi(?:to|re)?|sonno|ore di sonno|ore sonno)\s*(\d{1,2})\s*(?:ore|h)?/i);
+  if (sleepMatch) {
+    parsed.sleep_hours_reported = parseInt(sleepMatch[1], 10);
+  }
+  if (/\b(dormito bene|sonno buono|riposato bene|sonno profondo)\b/i.test(lower)) parsed.sleep_quality = "good";
+  else if (/\b(dormito male|insonnia|sonno pessimo|svegliato|nottata|poco sonno)\b/i.test(lower)) parsed.sleep_quality = "poor";
 
   parsed.sensations = body.slice(0, 500);
   fields.parsed_data = parsed;

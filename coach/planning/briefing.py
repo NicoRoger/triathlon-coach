@@ -394,18 +394,25 @@ def build_brief() -> str:
     # Controlla se siamo in race week (T-7 a T-0 di una gara A/B)
     upcoming_race = _get_upcoming_race(today)
     
+    # Blocco 5.3: personalized insert from coaching_observations
+    pattern_line = ""
+    try:
+        from coach.planning.personalized_insert import get_personalized_insert
+        pattern_line = get_personalized_insert(today) or ""
+    except Exception:
+        pass
+
     if upcoming_race:
-        # Race week: il brief è ridotto e race-focused
         sections = [
             _build_header(today),
             _build_freshness_warning(age),
             _build_wellness_section(wellness, metrics),
-            _build_race_week_section(upcoming_race, today),  # sostituisce progress + load
+            _build_race_week_section(upcoming_race, today),
             _build_warnings_section(metrics),
+            pattern_line,
             _build_footer(),
         ]
     else:
-        # Brief standard
         sections = [
             _build_header(today),
             _build_freshness_warning(age),
@@ -414,6 +421,7 @@ def build_brief() -> str:
             _build_session_section(planned_sessions),
             _build_race_progress_section(today),
             _build_warnings_section(metrics),
+            pattern_line,
             _build_footer(),
         ]
     # Join non-empty con doppia newline

@@ -1,4 +1,4 @@
-# System Status — Snapshot 10 maggio 2026 (Step 6.6 Completato)
+# System Status — Snapshot 11 maggio 2026 (Step 8 — Coach Elite Completato)
 
 ## Tabelle DB (Supabase Postgres)
 
@@ -28,7 +28,7 @@
 | `keepalive` | `keepalive.yml` | 12:00 UTC (`0 12 * * *`) | Ping Supabase anti-pause |
 | `weekly-review` | `weekly-review.yml` | Domenica 19:00 Rome (`0 17 * * 0`) | Reminder weekly review → Telegram |
 | `proactive-check-in` | `proactive-check-in.yml` | Mar, Gio, Sab 18:00 Rome | Domande proattive + bottoni (later/skip/disable) |
-| `pattern-extraction` | `pattern-extraction.yml` | Domenica 23:00 Rome | Estrae pattern su coaching_observations.md |
+| `pattern-extraction` | `pattern-extraction.yml` | Domenica 23:00 Rome | Adaptive planner + pattern extraction + CLAUDE.md update + progress tracker |
 | `db-cleanup` | `db_cleanup.yml` | Domenica 03:00 UTC | Pulizia bot_messages (>90d) e pending_confirmations scadute |
 
 **Totale: 10 workflow attivi.**
@@ -48,9 +48,10 @@
 | `propose_plan_change` | Propone modifica piano (NON scrive) | No |
 | `commit_plan_change` | Scrive sessione in planned_sessions (upsert idempotente, supporta calendar_event_id) | ✅ Sì, dopo conferma atleta |
 | `get_physiology_zones` | Zone fisiologiche attuali (FTP, soglia, CSS, LTHR) per disciplina | No |
+| `get_technique_history` | Storico analisi video tecniche per disciplina | No |
 | `force_garmin_sync` | Forza sync Garmin via GitHub Actions dispatch (freshness check 1h + polling 90s) | No (triggera workflow) |
 
-**Totale: 12 tool esposti.**
+**Totale: 13 tool esposti.**
 
 ## Skill files (skills/)
 
@@ -70,8 +71,9 @@
 | Race briefing | `race_briefing.md` | 6.0 |
 | Race mental coaching | `race_mental_coaching.md` | 6.0 |
 | Fitness test | `fitness_test.md` | 7.1 |
+| Video analysis | `video_analysis.md` | 8.0 |
 
-**Totale: 14 skill files.**
+**Totale: 15 skill files.**
 
 ## Moduli Python (coach/)
 
@@ -83,7 +85,9 @@
 | `coach/analytics/readiness.py` | Readiness score composito, flag deterministici |
 | `coach/analytics/daily.py` | Pipeline daily metrics post-ingest |
 | `coach/coaching/fitness_test_processor.py` | Auto-detect fitness test da Garmin, calcolo zone, aggiornamento DB e CLAUDE.md |
-| `coach/planning/briefing.py` | Brief mattutino rule-based (v2 narrativo, race week mode) |
+| `coach/coaching/adaptive_planner.py` | Compliance settimanale + aggiustamenti automatici (Step 8) |
+| `coach/planning/briefing.py` | Brief mattutino rule-based (v2 narrativo, race week mode, personalized inserts) |
+| `coach/planning/personalized_insert.py` | Pattern-based inserts per brief mattutino (zero LLM) |
 | `coach/utils/supabase_client.py` | Client Supabase singleton |
 | `coach/utils/health.py` | Record health check |
 
@@ -102,8 +106,9 @@
 | `tests/test_readiness.py` | 8 test (HRV z-score, flags, readiness override/green/caution) | ✅ Pass |
 | `tests/test_telegram_advanced.py` | 49 test (parser, threading, confirmations, plurals, edge cases, dedup) | ✅ Pass |
 | `tests/test_fitness_test.py` | 16 test (extractors, zone calculators, idempotency, fallback, CLAUDE.md update) | ✅ Pass |
+| `tests/test_regressions.py` | 15 test (ISO string parsing, training_load removal, TSB None, duration None, falsy list, hrTSS fallback) | ✅ Pass |
 
-**81 test verdi all'11 maggio 2026.**
+**96 test verdi all'11 maggio 2026.**
 
 ## Changelog Step 5.0 (6 maggio 2026)
 
@@ -125,4 +130,16 @@
 
 Il sistema è operativo per uso quotidiano. Tutti i flussi (ingest → analytics → briefing → debrief → weekly review) sono implementati e testati. Il ciclo di pianificazione settimanale (4.1-4.5) è completo con tool MCP, skill files, workflow e brief race week. Step 5.0 aggiunge sync forzato pre-review, integrazione Google Calendar e fix parser debrief. Step 5.1 aggiunge audit completezza Garmin con 3 nuovi endpoint e 5 nuovi campi DB per dati ad alto valore (readiness, sleep stress, splits, weather).
 
-**Prossimo step:** Step 5.1 Task 1-5 — Test & Hardening (12 test, runbook esteso, smoke test migliorato).
+## Changelog Step 8 (11 maggio 2026) — Coach Elite
+
+- **Blocco 0**: Audit & hardening (ETL health check, skills validator, expanded Telegram tests, MCP get_physiology_zones)
+- **Blocco 1**: Fitness test auto-detection (processor, 5 extractors, 4 zone calculators, skill, protocol doc, 16 tests)
+- **Blocco 2**: Analisi video tecnica (Telegram video handler, skill video_analysis.md, MCP get_technique_history, sport detection)
+- **Blocco 3**: Auto-apprendimento (biometric pattern extraction rule-based, adaptive planner compliance, CLAUDE.md §4 auto-update, progress tracker)
+- **Blocco 4**: Feedback loop (enhanced debrief parser: session_quality, nutrition_issue, mental_state, sleep_quality; free message routing con bottoni)
+- **Blocco 5**: Personalizzazione (CLAUDE.md §6 modelli risposta situazionali, coaching_observations struttura espansa, personalized_insert nel brief mattutino)
+- **Regression tests**: 15 test per bugfix production (ISO string parsing, training_load column, TSB None, duration None, empty list falsy, hrTSS fallback)
+
+## Stato complessivo
+
+Il sistema è operativo per uso quotidiano con capacità coach elite. Tutti i flussi (ingest → analytics → briefing → debrief → weekly review → adaptive planning) sono implementati e testati. Il sistema apprende automaticamente dai dati (pattern extraction biometrica + LLM), si auto-aggiusta (adaptive planner), accetta video per analisi tecnica, e personalizza la comunicazione (briefing inserts, modelli situazionali). Step 8 aggiunge 6 nuovi moduli Python, 1 skill, 1 MCP tool, e 15 regression test.

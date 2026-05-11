@@ -31,11 +31,14 @@ Recupera dal DB tramite MCP:
 2. `get_recent_metrics(days=14)` — daily_metrics ultime 2 settimane
 3. `query_subjective_log(days=7, kind='all')` — RPE, debrief, flag, malattie, infortuni
 4. `get_planned_session(date)` per ogni giorno della settimana scorsa — confronta pianificato vs eseguito
+5. `get_technique_history(sport='all', days=7)` — video tecnici caricati durante la settimana
 
 Leggi inoltre:
 - `CLAUDE.md` §3 (stato corrente) e §8.5 (calendario gare)
 - `docs/training_journal.md` (ultime decisioni)
 - `docs/injury_log.md` (stato infortuni in corso)
+- `docs/coaching_observations.md` (pattern longitudinali — leggi SEMPRE)
+- `docs/progress_tracker.md` (compliance e trend)
 
 ### Fase 2 — Analisi della settimana conclusa e Diagnosi (via AI)
 

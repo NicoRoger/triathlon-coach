@@ -176,6 +176,17 @@ const TOOLS = [
     },
   },
   {
+    name: "get_technique_history",
+    description: "Storico analisi video tecniche per disciplina. Restituisce gli ultimi video caricati con analisi, sport, punti chiave e drill suggeriti.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sport: { type: "string", enum: ["swim", "bike", "run", "all"], default: "all" },
+        days: { type: "integer", default: 90, minimum: 1, maximum: 365 },
+      },
+    },
+  },
+  {
     name: "force_garmin_sync",
     description: "Forza un sync Garmin triggerando il workflow ingest via GitHub Actions. Se l'ultimo sync è < 1 ora fa, restituisce 'skipped'.",
     inputSchema: { type: "object", properties: {} },
@@ -396,6 +407,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return commitPlanChange(args, env);
     case "get_physiology_zones":
       return getPhysiologyZones(args.discipline || "all", env);
+    case "get_technique_history":
+      return getTechniqueHistory(args.sport || "all", args.days || 90, env);
     case "force_garmin_sync":
       return forceGarminSync(env);
     default:
@@ -739,6 +752,38 @@ async function getPhysiologyZones(discipline: string, env: Env) {
     zones: current,
     note: current.length === 0
       ? "Nessuna zona fisiologica registrata. Suggerisci un test FTP/soglia/CSS."
+      : undefined,
+  };
+}
+
+// ============================================================================
+// Technique History (Blocco 2.3)
+// ============================================================================
+async function getTechniqueHistory(sport: string, days: number, env: Env) {
+  const since = daysAgoISO(days);
+  let q = `subjective_log?kind=eq.video_analysis&logged_at=gte.${since}&order=logged_at.desc&limit=20`;
+  const rows = await sb(env, q);
+
+  let filtered = rows;
+  if (sport !== "all") {
+    filtered = rows.filter((r: any) => r.parsed_data?.sport === sport);
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    sport_filter: sport,
+    days,
+    analyses: filtered.map((r: any) => ({
+      date: r.logged_at?.slice(0, 10),
+      sport: r.parsed_data?.sport || "unknown",
+      raw_text: r.raw_text?.slice(0, 500),
+      file_id: r.parsed_data?.file_id,
+      analysis: r.parsed_data?.analysis,
+      drill_suggestions: r.parsed_data?.drill_suggestions,
+    })),
+    count: filtered.length,
+    note: filtered.length === 0
+      ? `Nessuna analisi video trovata${sport !== "all" ? ` per ${sport}` : ""} negli ultimi ${days} giorni.`
       : undefined,
   };
 }

@@ -23,6 +23,7 @@ MCP_TOOLS = {
     "propose_plan_change",
     "commit_plan_change",
     "get_physiology_zones",
+    "get_technique_history",
     "force_garmin_sync",
 }
 
