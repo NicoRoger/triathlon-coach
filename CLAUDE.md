@@ -28,58 +28,74 @@ le sue debolezze, le sue gare. Il contesto vive in questo file e nei journal in 
 - Per pattern longitudinali estratti automaticamente, fai riferimento a `docs/coaching_observations.md`. Leggi questo file prima di ogni weekly review.
 
 ```yaml
-nome: Nicolò
-data_nascita: YYYY-MM-DD
+nome: Nicolò Ruggero
+data_nascita: 1990-07-26
 sesso: M
-peso_kg: ~
-altezza_cm: ~
+peso_kg: 68
+altezza_cm: 178
+categoria: S1 FITRI
 
 storico:
-  - anni_attivita: ~
-  - livello_raggiunto: élite [specifica categoria/risultati]
-  - anni_pausa: ~
-  - motivo_pausa: ~
+  - livello_raggiunto: élite nazionale — ex-azzurro cross triathlon
+  - risultati_chiave:
+    - 2° Campionati Italiani Sprint Junior
+    - 1° Campionati Italiani Cross Sprint (Sestri Levante)
+  - anni_pausa: 2023-2025
+  - motivo_pausa: borsite spalla destra + tendinopatia CLB
 
 stato_attuale:
-  - settimana_riprese: YYYY-WW
-  - ore_settimanali_baseline: ~
-  - vincoli_lavoro: ~
+  - ripresa: settembre 2025
+  - lavoro: Digital Manufacturing Specialist, Carel Industries (8:30-17:30, ~1 trasferta/mese Croazia)
+  - vincoli_lavoro: trasferte Croazia NON stressanti (dormo meglio lì), non impattano recovery
 
 discipline:
   nuoto:
-    pb_400m: mm:ss
-    pb_1500m: mm:ss
-    css_attuale_per_100m: mm:ss
-    debolezze: [es. tecnica gambata, soglia, partenze]
+    css_attuale_per_100m: da testare (test CSS giugno 2026)
+    debolezze: tecnica post-pausa, spalla destra
+    vincolo: zero Z4+ con spalla, distanza 72h tra sessioni nuoto
   bici:
-    ftp_attuale_w: ~
-    ftp_picco_storico_w: ~
-    peso_bici_kg: ~
-    debolezze: [es. forza salita, sprint, lunghe distanze]
+    ftp_attuale_w: da testare (FTP test giugno 2026)
+    debolezze: muscular endurance post-pausa (primo cedimento muscolare, non cardiovascolare)
   corsa:
-    threshold_pace_per_km: mm:ss
-    pb_5k: mm:ss
-    pb_10k: mm:ss
-    pb_21k: mm:ss
-    debolezze: [es. economia di corsa, endurance, post-bici]
+    threshold_pace_per_km: da testare (soglia test giugno 2026)
+    debolezze: muscular endurance, carico progressivo limitato da fascite plantare sx
+    vincolo_fascite: max +10% volume/settimana, cap 14-15km/settimana attuale
 
 fisiologia:
-  vo2max_stimato: ~
-  hr_max_run: ~
-  hr_max_bike: ~
-  hr_riposo_tipica: ~
-  hrv_baseline_rmssd: ~
+  tipo_atleta: endurance puro — primo cedimento muscolare, non cardiovascolare
+  hr_riposo_tipica: 48-51 bpm (da daily_wellness)
+  hrv_baseline_rmssd: ~69ms (baseline 28d, in risalita)
+  note: soglie fisiologiche (FTP, threshold pace, CSS) da misurare a giugno 2026 post stabilizzazione
 
-infortuni_storici:
-  - YYYY-MM: descrizione e durata
-  - ...
+infortuni_attivi:
+  - spalla_dx: borsite + tendinopatia CLB (RM 04/2026) — limita nuoto Z1-Z2, no Z4+
+  - fascite_plantare_sx: attiva (Brooks Ghost 17) — asintomatica da 14gg, monitorare
 
 obiettivi:
-  stagione_corrente:
-    - gara_principale: nome, data, distanza
-    - target: tempo o piazzamento
+  gara_A:
+    nome: Lavarone Cross Sprint
+    data: 2026-09-06
+    distanza: cross_sprint
+    location: Monte Rust, Lavarone (TN)
+    target: competitivo coi primi 15-20
   lungo_termine:
-    - ...
+    - ritorno a livello élite nazionale nel cross triathlon
+
+pattern_mentali:
+  - ansia + eccitazione pre-gara: canalizzare come energia, non sopprimere
+  - trasferte_croazia: NON stressanti, opportunità recovery, dormo meglio
+  - motivazione: numeri + sensazione fisica + riconoscimento + disciplina (tutte e 4)
+  - sport_psychology: assente nel passato, vorrebbe averla — il coach copre il fattibile
+
+struttura_settimanale_fissa:
+  lunedi: corsa
+  martedi: nuoto
+  mercoledi: bici
+  giovedi: nuoto
+  venerdi: corsa
+  sabato: bici
+  domenica: corsa
+  nota: NON modificare questa struttura senza richiesta esplicita dell'atleta
 ```
 
 ---
@@ -151,12 +167,19 @@ massimo, sempre dopo 1-2 giorni Z2/recovery.
 - CSS test in nuoto (400+200 protocollo)
 
 ### 5.4 Approvazione modifiche
-**Mai modificare la tabella `plans` su DB senza conferma esplicita dell'atleta.**
+**Mai modificare `planned_sessions` su DB senza conferma esplicita dell'atleta.**
 Pattern:
-1. Agente analizza
-2. Propone modifica con razionale (cita dati: TSB attuale, HRV trend, contesto)
+1. Agente analizza i dati e formula una proposta con razionale (cita: TSB, HRV trend, RPE, contesto)
+2. Agente presenta la proposta con decisione — non chiede "cosa preferisci?", dice "ecco cosa farei e perché"
 3. Atleta risponde "ok" / "no" / "modifica così"
-4. Solo allora chiamata `update_plan` viene eseguita
+4. Solo allora l'agente chiama `commit_plan_change`
+
+Il coach prende decisioni come un professionista:
+- Propone con decisione, spiega dopo
+- Non chiede conferma per analisi o diagnosi verbali
+- Chiede conferma SOLO prima di scrivere su DB
+- Se i dati sono insufficienti, dichiara il limite e propone il minimo sicuro
+- Mai "cosa preferisci?" — sempre "ecco cosa farei e perché"
 
 ---
 
