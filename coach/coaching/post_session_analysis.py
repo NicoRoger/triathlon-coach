@@ -64,6 +64,54 @@ def _get_daily_metrics(sb, day: str) -> Optional[dict]:
     return res.data[0] if res.data else None
 
 
+def _get_upcoming_sessions(sb, from_date: str, days: int = 3) -> list[dict]:
+    """Prossime sessioni pianificate (per proposta modulazione)."""
+    from datetime import date, timedelta
+    until = (date.fromisoformat(from_date) + timedelta(days=days)).isoformat()
+    res = sb.table("planned_sessions").select(
+        "planned_date,sport,session_type,duration_s,description"
+    ).gt("planned_date", from_date).lte("planned_date", until).order(
+        "planned_date"
+    ).execute()
+    return res.data or []
+
+
+def _compute_zone_compliance(planned: dict, activity: dict) -> Optional[dict]:
+    """Confronta target_zones del piano con hr_zones_s effettivi.
+
+    target_zones: {"z2": 0.8, "z4": 0.2}  — proporzioni (somma <= 1)
+    hr_zones_s:   {"z1": 300, "z2": 3600, "z4": 120}  — secondi per zona
+    """
+    target = planned.get("target_zones")
+    actual_raw = activity.get("hr_zones_s")
+    if not target or not actual_raw:
+        return None
+
+    total_s = sum(actual_raw.values())
+    if total_s == 0:
+        return None
+
+    actual = {z: round(s / total_s, 3) for z, s in actual_raw.items()}
+
+    deviations = {}
+    for zone, tgt in target.items():
+        act = actual.get(zone, 0.0)
+        deviations[zone] = round(act - tgt, 3)
+
+    # Compliance score: fraction of prescribed intensity actually hit
+    overlap = sum(min(actual.get(z, 0), tgt) for z, tgt in target.items())
+    target_sum = sum(target.values())
+    score = round(overlap / target_sum * 100) if target_sum > 0 else None
+
+    return {
+        "score": score,
+        "target": target,
+        "actual": actual,
+        "deviations": deviations,
+        "total_duration_s": total_s,
+    }
+
+
 def analyze_session(activity_id: str) -> Optional[dict]:
     """Analizza una singola attività con AI.
 
@@ -95,6 +143,7 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     historical = _get_historical(sb, sport, activity_id)
     debrief = _get_recent_debrief(sb)
     metrics = _get_daily_metrics(sb, activity_date)
+    zone_compliance = _compute_zone_compliance(planned, activity) if planned else None
 
     # Costruisci prompt
     context_parts = [
@@ -102,6 +151,13 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     ]
     if planned:
         context_parts.append(f"## Sessione pianificata\n{json.dumps(_clean_for_prompt(planned), indent=2, default=str)}")
+    if zone_compliance:
+        context_parts.append(
+            f"## Compliance zone (confronto piano vs eseguito)\n"
+            f"Score: {zone_compliance['score']}% — "
+            f"target {zone_compliance['target']} / effettivo {zone_compliance['actual']}\n"
+            f"Deviazioni per zona: {zone_compliance['deviations']}"
+        )
     if historical:
         context_parts.append(f"## Storico ultime {len(historical)} sessioni {sport}\n{json.dumps([_clean_for_prompt(h) for h in historical], indent=2, default=str)}")
     if metrics:
@@ -133,10 +189,13 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     analysis_text = result["text"]
 
     # Salva su DB
+    actions = _extract_actions(analysis_text)
+    if zone_compliance:
+        actions.append({"zone_compliance": zone_compliance})
     record = {
         "activity_id": activity_id,
         "analysis_text": analysis_text,
-        "suggested_actions": _extract_actions(analysis_text),
+        "suggested_actions": actions,
         "model_used": result["model"],
         "cost_usd": result["cost_usd"],
     }
@@ -144,6 +203,30 @@ def analyze_session(activity_id: str) -> Optional[dict]:
 
     # Manda Telegram
     _send_analysis_telegram(activity, analysis_text)
+
+    # Valuta se serve modulazione mid-week
+    try:
+        from coach.coaching.modulation import (
+            should_trigger_modulation,
+            propose_modulation,
+            generate_modulation_proposal,
+        )
+        if should_trigger_modulation(analysis_text, metrics):
+            upcoming = _get_upcoming_sessions(sb, activity_date)
+            changes = generate_modulation_proposal(analysis_text, metrics or {}, upcoming)
+            if changes:
+                flags = (metrics or {}).get("flags") or []
+                propose_modulation(
+                    trigger_event="post_session_critical",
+                    trigger_data={
+                        "analysis_excerpt": analysis_text[:300],
+                        "flags": flags,
+                        "hrv_z": (metrics or {}).get("hrv_z_score"),
+                    },
+                    proposed_changes=changes,
+                )
+    except Exception:
+        logger.warning("Modulation check failed for %s", activity_id, exc_info=True)
 
     logger.info("Session analysis saved for %s (cost: $%.4f)", activity_id, result["cost_usd"])
     return record
