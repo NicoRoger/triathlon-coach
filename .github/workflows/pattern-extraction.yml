@@ -1,4 +1,4 @@
-﻿name: pattern-extraction
+name: pattern-extraction
 
 on:
   schedule:
@@ -25,6 +25,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
 
       - uses: actions/setup-python@v5
         with:
