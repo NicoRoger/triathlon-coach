@@ -123,20 +123,21 @@ def get_client() -> LLMClient:
 
 
 class GeminiClient:
-    """Google Gemini client (free tier via AI Studio). Same interface as LLMClient."""
+    """Google Gemini client via google-genai SDK. Same interface as LLMClient."""
 
     MODEL = "gemini-2.0-flash"
 
     def __init__(self):
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types as genai_types
         except ImportError:
-            raise ImportError("pip install google-generativeai — required for Gemini support")
+            raise ImportError("pip install google-genai — required for Gemini support")
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY not set")
-        genai.configure(api_key=api_key)
-        self._genai = genai
+        self._client = genai.Client(api_key=api_key)
+        self._types = genai_types
 
     def call(
         self,
@@ -148,21 +149,20 @@ class GeminiClient:
         temperature: float = 0.3,
     ) -> dict:
         """Chiama Gemini. Stessa interfaccia di LLMClient.call()."""
-        model = self._genai.GenerativeModel(
-            model_name=self.MODEL,
-            system_instruction=system,
-            generation_config=self._genai.types.GenerationConfig(
-                max_output_tokens=max_tokens,
-                temperature=temperature,
-            ),
-        )
-
         user_content = messages[-1]["content"] if messages else ""
 
         try:
-            response = model.generate_content(user_content)
+            response = self._client.models.generate_content(
+                model=self.MODEL,
+                contents=user_content,
+                config=self._types.GenerateContentConfig(
+                    system_instruction=system,
+                    max_output_tokens=max_tokens,
+                    temperature=temperature,
+                ),
+            )
             text = response.text
-            usage = getattr(response, "usage_metadata", None)
+            usage = response.usage_metadata
             input_tokens = getattr(usage, "prompt_token_count", 0) or 0
             output_tokens = getattr(usage, "candidates_token_count", 0) or 0
 
@@ -177,7 +177,7 @@ class GeminiClient:
             )
 
             logger.info(
-                "Gemini call OK: purpose=%s tokens=%d/%d cost=$0.0000 (free tier)",
+                "Gemini call OK: purpose=%s tokens=%d/%d",
                 purpose, input_tokens, output_tokens,
             )
 
