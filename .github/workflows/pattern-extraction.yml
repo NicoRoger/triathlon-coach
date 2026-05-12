@@ -1,10 +1,13 @@
-name: pattern-extraction
+﻿name: pattern-extraction
 
 on:
   schedule:
     # Domenica notte alle 23:00 (Europe/Rome = 21:00 UTC in estate)
     - cron: '0 21 * * 0'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: pattern-extraction
@@ -22,8 +25,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT_TRIGGER }} # Needed to commit back to repo
 
       - uses: actions/setup-python@v5
         with:
