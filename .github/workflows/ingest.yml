@@ -1,9 +1,13 @@
-name: ingest
+﻿name: ingest
 
 on:
   schedule:
     - cron: '0 */3 * * *'  # ogni 3 ore
   workflow_dispatch:        # trigger manuale
+
+permissions:
+  actions: write
+  contents: read
 
 concurrency:
   group: ingest
