@@ -25,6 +25,7 @@ MCP_TOOLS = {
     "get_physiology_zones",
     "get_technique_history",
     "force_garmin_sync",
+    "commit_mesocycle",
 }
 
 SUPABASE_TABLES = {

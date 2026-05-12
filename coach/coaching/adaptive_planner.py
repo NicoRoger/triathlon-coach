@@ -107,9 +107,25 @@ def compute_weekly_compliance(week_start: Optional[date] = None) -> WeeklyCompli
     )
 
 
+def _get_active_mesocycle_phase() -> Optional[str]:
+    """Restituisce la fase del mesociclo attivo oggi, o None se nessuno."""
+    try:
+        sb = get_supabase()
+        today = today_rome().isoformat()
+        res = sb.table("mesocycles").select("phase").lte(
+            "start_date", today
+        ).gte("end_date", today).limit(1).execute()
+        rows = res.data or []
+        return rows[0]["phase"] if rows else None
+    except Exception:
+        logger.warning("Could not fetch active mesocycle phase")
+        return None
+
+
 def generate_adjustments(compliance: WeeklyCompliance) -> list[Adjustment]:
     """Genera aggiustamenti basati sulla compliance settimanale."""
     adjustments: list[Adjustment] = []
+    active_phase = _get_active_mesocycle_phase()
 
     # Auto: RPE troppo alto
     if compliance.avg_rpe is not None and compliance.avg_rpe > 7.5:
@@ -120,14 +136,19 @@ def generate_adjustments(compliance: WeeklyCompliance) -> list[Adjustment]:
             details={"avg_rpe": compliance.avg_rpe},
         ))
 
-    # Auto: compliance < 70%
+    # Auto: compliance < 70% — skip durante peak/taper (volume intenzionalmente ridotto/invariato)
     if compliance.compliance_pct < 70 and compliance.planned_count >= 3:
-        adjustments.append(Adjustment(
-            kind="auto",
-            action="reduce_volume_10pct",
-            reason=f"Compliance {compliance.compliance_pct}% < 70% — ridurre volume 10%",
-            details={"compliance_pct": compliance.compliance_pct},
-        ))
+        if active_phase in ("peak", "taper"):
+            logger.info(
+                "Skipping reduce_volume_10pct: active phase is %s", active_phase
+            )
+        else:
+            adjustments.append(Adjustment(
+                kind="auto",
+                action="reduce_volume_10pct",
+                reason=f"Compliance {compliance.compliance_pct}% < 70% — ridurre volume 10%",
+                details={"compliance_pct": compliance.compliance_pct},
+            ))
 
     # Auto: nuoto saltato (probabilmente per spalla)
     swim_missed = compliance.missed_sports.count("swim")

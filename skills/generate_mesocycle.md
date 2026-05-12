@@ -68,6 +68,13 @@ NOTE:
 - Riconferma alla domenica della settimana 2
 ```
 
+## Commit in DB
+Dopo approvazione dell'atleta:
+1. Chiama `commit_mesocycle` con `name`, `phase`, `start_date`, `end_date` (e `target_race_id` se applicabile)
+   - Restituisce `mesocycle_id`
+2. Chiama `commit_plan_change` per ogni sessione, passando il `mesocycle_id` ricevuto
+3. Conferma: "Mesociclo {name} salvato — {n} sessioni pianificate fino al {end_date}"
+
 ## Output strutturato
 Genera anche `plans/{start_date}_{phase}.yaml` per commit in repo. Format:
 ```yaml

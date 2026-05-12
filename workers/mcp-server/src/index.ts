@@ -191,6 +191,23 @@ const TOOLS = [
     description: "Forza un sync Garmin triggerando il workflow ingest via GitHub Actions. Se l'ultimo sync è < 1 ora fa, restituisce 'skipped'.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "commit_mesocycle",
+    description: "Crea o aggiorna un mesociclo nel DB. Upsert per start_date: se esiste già un mesociclo con quella data di inizio, lo aggiorna. Da chiamare SOLO dopo conferma esplicita dell'atleta.",
+    inputSchema: {
+      type: "object",
+      required: ["name", "phase", "start_date", "end_date"],
+      properties: {
+        name: { type: "string" },
+        phase: { type: "string", enum: ["base", "build", "specific", "peak", "taper", "recovery"] },
+        start_date: { type: "string", format: "date" },
+        end_date: { type: "string", format: "date" },
+        target_race_id: { type: "string" },
+        weekly_pattern: { type: "object" },
+        notes: { type: "string" },
+      },
+    },
+  },
 ];
 
 // ============================================================================
@@ -411,6 +428,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return getTechniqueHistory(args.sport || "all", args.days || 90, env);
     case "force_garmin_sync":
       return forceGarminSync(env);
+    case "commit_mesocycle":
+      return commitMesocycle(args, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -509,7 +528,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   const metricsSince = daysAgoISO(Math.max(days * 2, 14));
   const until = daysFromISO(includeNextDays);
 
-  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations] =
+  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles] =
     await Promise.all([
       getHealth(env),
       sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc`),
@@ -520,6 +539,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`),
       sb(env, `session_analyses?created_at=gte.${since}T00:00:00Z&order=created_at.desc&select=activity_id,analysis_text,suggested_actions,created_at`),
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at`),
+      sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
     ]);
 
   return {
@@ -537,6 +557,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     planned_upcoming: plannedUpcoming,
     session_analyses: sessionAnalyses,
     open_modulations: modulations,
+    active_mesocycle: mesocycles?.[0] || null,
     review_instructions: [
       "Confronta planned_past vs completed_activities.",
       "Apri con HRV/readiness/carico e dati soggettivi rilevanti.",
@@ -786,6 +807,67 @@ async function getTechniqueHistory(sport: string, days: number, env: Env) {
       ? `Nessuna analisi video trovata${sport !== "all" ? ` per ${sport}` : ""} negli ultimi ${days} giorni.`
       : undefined,
   };
+}
+
+// ============================================================================
+// Mesocycles
+// ============================================================================
+async function commitMesocycle(args: any, env: Env): Promise<any> {
+  const required = ["name", "phase", "start_date", "end_date"];
+  for (const k of required) {
+    if (args[k] === undefined || args[k] === null) throw new Error(`Missing required field: ${k}`);
+  }
+
+  const validPhases = ["base", "build", "specific", "peak", "taper", "recovery"];
+  if (!validPhases.includes(args.phase)) {
+    throw new Error(`Invalid phase: ${args.phase}. Must be one of ${validPhases.join(", ")}`);
+  }
+
+  const payload: any = {
+    name: args.name,
+    phase: args.phase,
+    start_date: args.start_date,
+    end_date: args.end_date,
+  };
+  if (args.target_race_id !== undefined) payload.target_race_id = args.target_race_id;
+  if (args.weekly_pattern !== undefined) payload.weekly_pattern = args.weekly_pattern;
+  if (args.notes !== undefined) payload.notes = args.notes;
+
+  const existingResp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/mesocycles?start_date=eq.${args.start_date}`,
+    { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
+  );
+  const existing = (await existingResp.json()) as any[];
+
+  if (existing.length > 0) {
+    const id = existing[0].id;
+    const updateResp = await fetch(`${env.SUPABASE_URL}/rest/v1/mesocycles?id=eq.${id}`, {
+      method: "PATCH",
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!updateResp.ok) throw new Error(`Update failed: ${updateResp.status} ${await updateResp.text()}`);
+    return { status: "updated", mesocycle_id: id, payload };
+  } else {
+    const insertResp = await fetch(`${env.SUPABASE_URL}/rest/v1/mesocycles`, {
+      method: "POST",
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!insertResp.ok) throw new Error(`Insert failed: ${insertResp.status} ${await insertResp.text()}`);
+    const result = (await insertResp.json()) as any[];
+    return { status: "created", mesocycle_id: result[0]?.id, payload };
+  }
 }
 
 // ============================================================================

@@ -144,6 +144,33 @@ def build_tracker() -> str:
         lines.append(f"- Sett. {ws.strftime('%d/%m')}: {bar} {pct:.0f}% ({a_count}/{p_count})")
     lines.append("")
 
+    # --- Mesociclo corrente ---
+    lines.append("## Mesociclo Corrente")
+    lines.append("")
+    try:
+        meso = sb.table("mesocycles").select(
+            "name,phase,start_date,end_date,notes"
+        ).lte("start_date", today.isoformat()).gte(
+            "end_date", today.isoformat()
+        ).limit(1).execute().data or []
+    except Exception:
+        meso = []
+
+    if meso:
+        m = meso[0]
+        days_elapsed = (today - date.fromisoformat(m["start_date"])).days + 1
+        days_total = (date.fromisoformat(m["end_date"]) - date.fromisoformat(m["start_date"])).days + 1
+        week_num = (days_elapsed - 1) // 7 + 1
+        bar = "█" * days_elapsed + "░" * (days_total - days_elapsed)
+        lines.append(f"- **{m['name']}** — fase `{m['phase']}`")
+        lines.append(f"- Settimana {week_num} di {days_total // 7} ({m['start_date']} → {m['end_date']})")
+        lines.append(f"- Avanzamento: {bar[:20]} {days_elapsed}/{days_total}gg")
+        if m.get("notes"):
+            lines.append(f"- Note: {m['notes']}")
+    else:
+        lines.append("- Nessun mesociclo attivo — pianifica con `/generate_mesocycle`")
+    lines.append("")
+
     # --- Prossima gara ---
     lines.append("## Prossimo Obiettivo")
     lines.append("")
