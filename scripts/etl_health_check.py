@@ -1,4 +1,4 @@
-"""ETL Health Check — verifica copertura colonne e gap nelle tabelle critiche.
+﻿"""ETL Health Check — verifica copertura colonne e gap nelle tabelle critiche.
 
 Uso: python -m scripts.etl_health_check
 Integrato in ingest.yml come step post-sync.
@@ -15,8 +15,10 @@ from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 
-ACTIVITY_COLUMNS = ["avg_hr", "tss", "splits", "weather"]
-WELLNESS_COLUMNS = ["hrv_rmssd", "sleep_score", "training_readiness_score"]
+ACTIVITY_REQUIRED = ["avg_hr"]
+ACTIVITY_OPTIONAL = ["tss", "splits", "weather"]
+WELLNESS_REQUIRED = ["hrv_rmssd", "sleep_score"]
+WELLNESS_OPTIONAL = ["training_readiness_score"]
 COVERAGE_THRESHOLD = 0.70
 
 
@@ -40,12 +42,14 @@ def run_check() -> dict:
     since_30 = (today - timedelta(days=30)).isoformat()
     since_90 = (today - timedelta(days=90)).isoformat()
 
-    select_act = "id," + ",".join(ACTIVITY_COLUMNS)
+    all_act_cols = ACTIVITY_REQUIRED + ACTIVITY_OPTIONAL
+    select_act = "id," + ",".join(all_act_cols)
     activities = sb.table("activities").select(select_act).gte(
         "started_at", f"{since_30}T00:00:00Z"
     ).order("started_at", desc=True).limit(100).execute().data or []
 
-    select_well = "id,date," + ",".join(WELLNESS_COLUMNS)
+    all_well_cols = WELLNESS_REQUIRED + WELLNESS_OPTIONAL
+    select_well = "id,date," + ",".join(all_well_cols)
     wellness = sb.table("daily_wellness").select(select_well).gte(
         "date", since_30
     ).order("date", desc=True).limit(100).execute().data or []
@@ -54,17 +58,17 @@ def run_check() -> dict:
         "date", since_90
     ).order("date", desc=True).limit(200).execute().data or []
 
-    act_cov = _coverage(activities, ACTIVITY_COLUMNS)
-    well_cov = _coverage(wellness, WELLNESS_COLUMNS)
+    act_cov = _coverage(activities, all_act_cols)
+    well_cov = _coverage(wellness, all_well_cols)
     gaps = _metrics_gap_days(metrics, 90)
 
     critical = []
-    for col, pct in act_cov.items():
-        if pct < COVERAGE_THRESHOLD:
-            critical.append(f"activities.{col}: {pct:.0%}")
-    for col, pct in well_cov.items():
-        if pct < COVERAGE_THRESHOLD:
-            critical.append(f"daily_wellness.{col}: {pct:.0%}")
+    for col in ACTIVITY_REQUIRED:
+        if act_cov.get(col, 0) < COVERAGE_THRESHOLD:
+            critical.append(f"activities.{col}: {act_cov[col]:.0%}")
+    for col in WELLNESS_REQUIRED:
+        if well_cov.get(col, 0) < COVERAGE_THRESHOLD:
+            critical.append(f"daily_wellness.{col}: {well_cov[col]:.0%}")
     if len(gaps) > 7:
         critical.append(f"daily_metrics: {len(gaps)} giorni mancanti su 90")
 
@@ -91,12 +95,20 @@ def main() -> None:
     print("\n=== ETL Health Check ===")
     print(f"\nActivities (last 30d): {report['activities_count']}")
     for col, pct in report["activities_coverage"].items():
-        flag = " ⚠️" if pct < COVERAGE_THRESHOLD else " ✓"
+        is_required = col in ACTIVITY_REQUIRED
+        if pct < COVERAGE_THRESHOLD:
+            flag = " ⚠️" if is_required else " ℹ️ (optional)"
+        else:
+            flag = " ✓"
         print(f"  {col}: {pct:.0%}{flag}")
 
     print(f"\nWellness (last 30d): {report['wellness_count']}")
     for col, pct in report["wellness_coverage"].items():
-        flag = " ⚠️" if pct < COVERAGE_THRESHOLD else " ✓"
+        is_required = col in WELLNESS_REQUIRED
+        if pct < COVERAGE_THRESHOLD:
+            flag = " ⚠️" if is_required else " ℹ️ (optional)"
+        else:
+            flag = " ✓"
         print(f"  {col}: {pct:.0%}{flag}")
 
     print(f"\nMetrics gaps (90d): {report['metrics_gap_days']} days missing")
