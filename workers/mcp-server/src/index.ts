@@ -342,6 +342,16 @@ export default {
       });
     }
 
+    // ── Dashboard data endpoint ────────────────────────────────────────────
+    if (url.pathname === "/dashboard-data" && req.method === "GET") {
+      const auth = req.headers.get("authorization") || "";
+      if (auth !== `Bearer ${env.MCP_BEARER_TOKEN}`) {
+        return new Response("Unauthorized", { status: 401, headers: corsHeaders() });
+      }
+      const data = await getDashboardData(env);
+      return jsonResponse(data);
+    }
+
     // Auth: accetta sia bearer token diretto (Claude Code) sia richieste OAuth (Claude.ai)
     const auth = req.headers.get("authorization") || "";
     const isBearerValid = auth === `Bearer ${env.MCP_BEARER_TOKEN}`;
@@ -916,6 +926,49 @@ async function forceGarminSync(env: Env): Promise<any> {
   }
 
   return { status: "timeout", warning: "sync triggered but not yet visible" };
+}
+
+// ============================================================================
+// Dashboard Data
+// ============================================================================
+async function getDashboardData(env: Env) {
+  const today = todayRomeISO();
+  const days30ago = daysAgoISO(30);
+  const days90ago = daysAgoISO(90);
+  const weeks4ago = daysAgoISO(28);
+  const weeks16ahead = daysFromISO(112);
+
+  const [metrics, wellness, plannedSessions, activities, mesocycles, races, zonesRaw] =
+    await Promise.all([
+      sb(env, `daily_metrics?date=gte.${days90ago}&order=date.asc&select=date,ctl,atl,tsb,daily_tss,hrv_z_score,readiness_score,readiness_label,flags`),
+      sb(env, `daily_wellness?date=gte.${days30ago}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_max,resting_hr`),
+      sb(env, `planned_sessions?planned_date=gte.${weeks4ago}&planned_date=lte.${weeks16ahead}&order=planned_date.asc&select=planned_date,sport,session_type,duration_s,target_tss,description`),
+      sb(env, `activities?started_at=gte.${weeks4ago}T00:00:00Z&order=started_at.asc&select=started_at,sport`),
+      sb(env, `mesocycles?order=start_date.asc&select=id,name,phase,start_date,end_date,notes`),
+      sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=name,race_date,priority,distance`),
+      sb(env, `physiology_zones?valid_to=is.null&order=valid_from.desc&select=discipline,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr`),
+    ]);
+
+  // Deduplicate zones: one per discipline (most recent)
+  const seen = new Set<string>();
+  const zones = (zonesRaw || []).filter((z: any) => {
+    if (seen.has(z.discipline)) return false;
+    seen.add(z.discipline);
+    return true;
+  });
+
+  return {
+    generated_at: new Date().toISOString(),
+    today,
+    metrics: metrics || [],
+    wellness: wellness || [],
+    planned_sessions: plannedSessions || [],
+    activities: activities || [],
+    mesocycles: mesocycles || [],
+    races: races || [],
+    zones,
+    latest_metrics: (metrics || []).at(-1) || null,
+  };
 }
 
 function sleep(ms: number): Promise<void> {
