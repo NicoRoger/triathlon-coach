@@ -218,12 +218,13 @@ def log_api_call(
     output_tokens: int,
     success: bool,
     metadata: Optional[dict] = None,
+    provider: str = "anthropic",
 ) -> float:
     """Logga una chiamata API su Supabase. Ritorna costo stimato."""
     cost = estimate_cost(model, input_tokens, output_tokens)
     sb = get_supabase()
     sb.table("api_usage").insert({
-        "provider": "anthropic",
+        "provider": provider,
         "model": model,
         "purpose": purpose,
         "input_tokens": input_tokens,

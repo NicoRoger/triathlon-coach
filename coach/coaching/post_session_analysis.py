@@ -167,15 +167,14 @@ def analyze_session(activity_id: str) -> Optional[dict]:
 
     user_message = "\n\n".join(context_parts)
 
-    # Chiamata AI
+    # Chiamata AI — preferisce Gemini free tier se GEMINI_API_KEY è disponibile
     try:
-        from coach.utils.llm_client import get_client
-        client = get_client()
+        from coach.utils.llm_client import get_analysis_client
+        client = get_analysis_client()
         result = client.call(
             purpose="session_analysis",
             system=_load_skill(),
             messages=[{"role": "user", "content": user_message}],
-            prefer_model="haiku",
             max_tokens=800,
             temperature=0.3,
         )

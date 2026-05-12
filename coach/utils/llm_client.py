@@ -120,3 +120,96 @@ class LLMClient:
 def get_client() -> LLMClient:
     """Factory per LLMClient (singleton-like)."""
     return LLMClient()
+
+
+class GeminiClient:
+    """Google Gemini client (free tier via AI Studio). Same interface as LLMClient."""
+
+    MODEL = "gemini-2.0-flash"
+
+    def __init__(self):
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise ImportError("pip install google-generativeai — required for Gemini support")
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY not set")
+        genai.configure(api_key=api_key)
+        self._genai = genai
+
+    def call(
+        self,
+        purpose: str,
+        system: str,
+        messages: list[dict[str, str]],
+        prefer_model: str = "gemini-2.0-flash",
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+    ) -> dict:
+        """Chiama Gemini. Stessa interfaccia di LLMClient.call()."""
+        model = self._genai.GenerativeModel(
+            model_name=self.MODEL,
+            system_instruction=system,
+            generation_config=self._genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=temperature,
+            ),
+        )
+
+        user_content = messages[-1]["content"] if messages else ""
+
+        try:
+            response = model.generate_content(user_content)
+            text = response.text
+            usage = getattr(response, "usage_metadata", None)
+            input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+            output_tokens = getattr(usage, "candidates_token_count", 0) or 0
+
+            budget.log_api_call(
+                model=self.MODEL,
+                purpose=purpose,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                success=True,
+                metadata={"temperature": temperature},
+                provider="gemini",
+            )
+
+            logger.info(
+                "Gemini call OK: purpose=%s tokens=%d/%d cost=$0.0000 (free tier)",
+                purpose, input_tokens, output_tokens,
+            )
+
+            return {
+                "text": text,
+                "model": self.MODEL,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": 0.0,
+            }
+
+        except Exception as e:
+            budget.log_api_call(
+                model=self.MODEL,
+                purpose=purpose,
+                input_tokens=0,
+                output_tokens=0,
+                success=False,
+                metadata={"error": str(e)},
+                provider="gemini",
+            )
+            logger.exception("Gemini call failed: purpose=%s", purpose)
+            raise
+
+
+def get_gemini_client() -> GeminiClient:
+    """Factory per GeminiClient."""
+    return GeminiClient()
+
+
+def get_analysis_client():
+    """Ritorna GeminiClient se GEMINI_API_KEY è disponibile, altrimenti LLMClient (Haiku fallback)."""
+    if os.environ.get("GEMINI_API_KEY"):
+        return GeminiClient()
+    return LLMClient()
