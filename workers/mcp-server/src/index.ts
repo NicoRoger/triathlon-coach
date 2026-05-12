@@ -325,6 +325,16 @@ export default {
       });
     }
 
+    // ── Dashboard data endpoint ────────────────────────────────────────────
+    if (url.pathname === "/dashboard-data" && req.method === "GET") {
+      const auth = req.headers.get("authorization") || "";
+      if (auth !== `Bearer ${env.MCP_BEARER_TOKEN}`) {
+        return new Response("Unauthorized", { status: 401, headers: corsHeaders() });
+      }
+      const data = await getDashboardData(env);
+      return jsonResponse(data);
+    }
+
     // ── MCP endpoint (root / oppure /mcp) ─────────────────────────────────
     const isMcpPath = url.pathname === "/" || url.pathname === "/mcp" || url.pathname === "";
 
@@ -340,16 +350,6 @@ export default {
         protocol: "MCP/2024-11-05",
         status: "ok",
       });
-    }
-
-    // ── Dashboard data endpoint ────────────────────────────────────────────
-    if (url.pathname === "/dashboard-data" && req.method === "GET") {
-      const auth = req.headers.get("authorization") || "";
-      if (auth !== `Bearer ${env.MCP_BEARER_TOKEN}`) {
-        return new Response("Unauthorized", { status: 401, headers: corsHeaders() });
-      }
-      const data = await getDashboardData(env);
-      return jsonResponse(data);
     }
 
     // Auth: accetta sia bearer token diretto (Claude Code) sia richieste OAuth (Claude.ai)
