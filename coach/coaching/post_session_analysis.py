@@ -232,14 +232,17 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     return record
 
 
-def analyze_recent() -> int:
+def analyze_recent(days: int = 2) -> int:
     """Analizza attività recenti non ancora analizzate.
+
+    Args:
+        days: quanti giorni indietro guardare (default 2, usare >2 per backfill)
 
     Returns:
         Numero di attività analizzate.
     """
     sb = get_supabase()
-    since = (date.today() - timedelta(days=2)).isoformat()
+    since = (date.today() - timedelta(days=days)).isoformat()
 
     # Attività recenti
     activities = sb.table("activities").select("external_id").gte(
@@ -303,6 +306,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser()
     parser.add_argument("--recent", action="store_true", help="Analizza attività recenti non analizzate")
+    parser.add_argument("--days", type=int, default=2, help="Giorni indietro per --recent (default 2, usa 90+ per backfill)")
     parser.add_argument("--activity-id", type=str, help="Analizza una attività specifica")
     args = parser.parse_args()
 
@@ -311,7 +315,7 @@ def main() -> None:
         if result:
             print(result["analysis_text"])
     elif args.recent:
-        n = analyze_recent()
+        n = analyze_recent(days=args.days)
         print(f"Analizzate {n} sessioni")
     else:
         parser.print_help()
