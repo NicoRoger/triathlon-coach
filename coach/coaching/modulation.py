@@ -231,7 +231,7 @@ def generate_modulation_proposal(
             purpose="modulation_proposal",
             system=system,
             messages=[{"role": "user", "content": context}],
-            prefer_model="sonnet",
+            prefer_model="haiku",
             max_tokens=600,
         )
 

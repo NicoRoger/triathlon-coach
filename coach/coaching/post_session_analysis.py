@@ -175,7 +175,7 @@ def analyze_session(activity_id: str) -> Optional[dict]:
             purpose="session_analysis",
             system=_load_skill(),
             messages=[{"role": "user", "content": user_message}],
-            prefer_model="sonnet",
+            prefer_model="haiku",
             max_tokens=800,
             temperature=0.3,
         )
