@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 */3 * * *'  # ogni 3 ore
   workflow_dispatch:        # trigger manuale
+    inputs:
+      analysis_days:
+        description: 'Days back for post-session analysis (default 2)'
+        required: false
+        default: '2'
 
 permissions:
   actions: write
@@ -58,7 +63,7 @@ jobs:
 
       - name: Post-session analysis
         if: success()
-        run: python -m coach.coaching.post_session_analysis --recent
+        run: python -m coach.coaching.post_session_analysis --recent --days ${{ github.event.inputs.analysis_days || '2' }}
 
       - name: Detect and process fitness tests
         if: success()
