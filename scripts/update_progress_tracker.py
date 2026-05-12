@@ -73,9 +73,12 @@ def build_tracker() -> str:
     # --- Zone fisiologiche ---
     lines.append("## Zone Fisiologiche")
     lines.append("")
-    zones = sb.table("physiology_zones").select(
-        "discipline,valid_from,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr,method"
-    ).order("valid_from", desc=True).limit(10).execute().data or []
+    try:
+        zones = sb.table("physiology_zones").select(
+            "discipline,valid_from,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr,method"
+        ).order("valid_from", desc=True).limit(10).execute().data or []
+    except Exception:
+        zones = []
 
     if zones:
         seen = set()
