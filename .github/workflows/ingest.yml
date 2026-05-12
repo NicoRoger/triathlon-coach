@@ -75,6 +75,7 @@ jobs:
 
       - name: Trigger morning brief (solo run mattutino 05-07 UTC)
         if: success()
+        continue-on-error: true
         run: |
           HOUR=$(date -u +%H)
           if [ "$HOUR" -ge "5" ] && [ "$HOUR" -le "7" ]; then
