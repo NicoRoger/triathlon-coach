@@ -47,6 +47,13 @@ jobs:
       - name: Update CLAUDE.md status
         run: python scripts/update_claude_md_status.py
 
+      - name: Debug — verify checkout
+        run: |
+          echo "=== git log ==="
+          git log --oneline -3
+          echo "=== lines 74-82 of update_progress_tracker.py ==="
+          sed -n '74,82p' scripts/update_progress_tracker.py
+
       - name: Update progress tracker
         run: python scripts/update_progress_tracker.py
 
