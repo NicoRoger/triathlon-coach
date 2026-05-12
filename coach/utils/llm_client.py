@@ -125,7 +125,7 @@ def get_client() -> LLMClient:
 class GeminiClient:
     """Google Gemini client via google-genai SDK. Same interface as LLMClient."""
 
-    MODEL = "gemini-2.0-flash"
+    MODEL = "gemini-2.5-flash"
 
     def __init__(self):
         try:
@@ -159,6 +159,7 @@ class GeminiClient:
                     system_instruction=system,
                     max_output_tokens=max_tokens,
                     temperature=temperature,
+                    thinking_config=self._types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             text = response.text
