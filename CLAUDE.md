@@ -29,7 +29,7 @@ le sue debolezze, le sue gare. Il contesto vive in questo file e nei journal in 
 
 ```yaml
 nome: Nicolò Ruggero
-data_nascita: 1990-07-26
+data_nascita: 2000-07-26
 sesso: M
 peso_kg: 68
 altezza_cm: 178
