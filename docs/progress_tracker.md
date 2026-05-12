@@ -1,19 +1,29 @@
 # Progress Tracker
 
-*Aggiornato automaticamente ogni domenica notte da `scripts/update_progress_tracker.py`.*
+*Aggiornato automaticamente il 2026-05-12*
 
 ## Forma Fisica (CTL Trend)
-- Dati insufficienti — in attesa del primo ciclo completo
+
+- **CTL attuale**: 24.8
+- **Delta 90gg**: +1.0 (+4%)
+- **TSB oggi**: -33.9
+- **Readiness**: 62/100
 
 ## Zone Fisiologiche
+
 - Nessun test registrato — primo ciclo test previsto giugno 2026
 
 ## Infortuni Attivi
-- Spalla dx: borsite + tendinopatia CLB (attivo)
-- Fascite plantare sx: in monitoraggio
+
+- [2026-05-09] None: RPE 2, sensazioni molto buone in bici oggi. Nessun dolore, energia alta sonno pe
 
 ## Compliance Piano
-- (In attesa di dati pianificati)
+
+- Sett. 04/05: ███████████████ 150% (6/4)
+- Sett. 27/04: ░░░░░░░░░░ 0% (5/0)
+- Sett. 20/04: ░░░░░░░░░░ 0% (2/0)
+- Sett. 13/04: ░░░░░░░░░░ 0% (0/0)
 
 ## Prossimo Obiettivo
-- Lavarone Cross Sprint (A): 2026-09-06
+
+- **Lavarone Cross Sprint** (A): 2026-09-06 — 117 giorni
