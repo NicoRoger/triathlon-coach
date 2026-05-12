@@ -1,4 +1,4 @@
-"""Blocco 4.3 — Progress Tracker auto-generated.
+﻿"""Blocco 4.3 — Progress Tracker auto-generated.
 
 Crea/aggiorna docs/progress_tracker.md con:
 - Forma fisica (CTL trend)
@@ -74,8 +74,8 @@ def build_tracker() -> str:
     lines.append("## Zone Fisiologiche")
     lines.append("")
     zones = sb.table("physiology_zones").select(
-        "discipline,test_type,test_date,primary_value,primary_unit"
-    ).order("test_date", desc=True).limit(10).execute().data or []
+        "discipline,valid_from,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr,method"
+    ).order("valid_from", desc=True).limit(10).execute().data or []
 
     if zones:
         seen = set()
@@ -84,10 +84,21 @@ def build_tracker() -> str:
             if disc in seen:
                 continue
             seen.add(disc)
-            val = z.get("primary_value")
-            unit = z.get("primary_unit", "")
-            test_date = z.get("test_date", "?")
-            lines.append(f"- **{disc}**: {val} {unit} (test {test_date})")
+            test_date = z.get("valid_from", "?")
+            method = z.get("method") or ""
+            parts = []
+            if z.get("ftp_w"):
+                parts.append(f"FTP {z['ftp_w']}W")
+            if z.get("threshold_pace_s_per_km"):
+                s = int(z["threshold_pace_s_per_km"])
+                parts.append(f"soglia {s//60}:{s%60:02d}/km")
+            if z.get("css_pace_s_per_100m"):
+                s = int(z["css_pace_s_per_100m"])
+                parts.append(f"CSS {s//60}:{s%60:02d}/100m")
+            if z.get("lthr"):
+                parts.append(f"LTHR {z['lthr']}bpm")
+            val_str = ", ".join(parts) if parts else "da testare"
+            lines.append(f"- **{disc}**: {val_str} (test {test_date}{', ' + method if method else ''})")
     else:
         lines.append("- Nessun test registrato — primo ciclo test previsto giugno 2026")
     lines.append("")
