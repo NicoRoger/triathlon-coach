@@ -538,7 +538,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   const metricsSince = daysAgoISO(Math.max(days * 2, 14));
   const until = daysFromISO(includeNextDays);
 
-  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles] =
+  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races] =
     await Promise.all([
       getHealth(env),
       sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc`),
@@ -550,6 +550,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `session_analyses?created_at=gte.${since}T00:00:00Z&order=created_at.desc&select=activity_id,analysis_text,suggested_actions,created_at`),
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at`),
       sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
+      sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
     ]);
 
   return {
@@ -568,6 +569,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     session_analyses: sessionAnalyses,
     open_modulations: modulations,
     active_mesocycle: mesocycles?.[0] || null,
+    upcoming_races: races || [],
     review_instructions: [
       "Confronta planned_past vs completed_activities.",
       "Apri con HRV/readiness/carico e dati soggettivi rilevanti.",
