@@ -112,7 +112,8 @@ CREATE TABLE subjective_log (
 
     kind            TEXT NOT NULL CHECK (kind IN (
         'post_session', 'morning', 'evening_debrief',
-        'illness', 'injury', 'free_note'
+        'illness', 'injury', 'free_note',
+        'proactive_response', 'brief_response', 'video_analysis'
     )),
 
     rpe             SMALLINT CHECK (rpe BETWEEN 1 AND 10),
