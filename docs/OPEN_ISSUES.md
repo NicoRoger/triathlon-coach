@@ -88,9 +88,42 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 
 ## Pending migrations — run in Supabase SQL editor
 
-| Migration file | Bug | Status |
-|----------------|-----|--------|
+| Migration file | Bug / Feature | Status |
+|----------------|---------------|--------|
 | `migrations/2026-05-11-seed-lavarone-race.sql` | BUG-006 | ⏳ Run if races table is empty |
 | `migrations/2026-05-12-mesocycles-unique.sql` | — | ⏳ Run once |
 | `migrations/2026-05-13-subjective-log-kinds.sql` | BUG-004 | ⏳ Run once |
 | `migrations/2026-05-13-fix-lavarone-date.sql` | BUG-006 | ⏳ Run if seed was already applied with wrong date |
+| `migrations/2026-05-14-subjective-log-severity.sql` | Phase 1.5 | ⏳ Run once (adds severity/expected_duration_days/body_location) |
+| `migrations/2026-05-14-sent-reminders.sql` | Phase 1.6 | ⏳ Run once (proactive reminders dedup table) |
+
+---
+
+## Cognitive MVP Plan — Progress
+
+Piano completo in `~/.claude/plans/spicy-weaving-twilight.md`.
+
+### Phase 1 — Quick wins ✅ COMPLETED (2026-05-14)
+
+| Modulo | Status | Commit |
+|--------|--------|--------|
+| 1.1 Hybrid LLM routing (Gemini/Anthropic/Claude Pro) | ✅ | cb68357 |
+| 1.2 Anthropic prompt caching (ephemeral) | ✅ | cb68357 |
+| 1.3 `/manual_activity` Telegram handler | ✅ | 8c30eb3 |
+| 1.4 Outlier validation (HR/pace/duration/cross-field) | ✅ | c5000b6 |
+| 1.5 Injury/illness severity end-to-end | ✅ | d7b339d |
+| 1.6 Proactive Telegram reminders | ✅ | f82791e |
+
+**Risparmio costi atteso**: €1.50/mese → €0.30/mese (-80%).
+
+### Phase 2 — Adaptive architecture (next)
+
+To start: outcome tracking, prescriptive patterns, beliefs, training principles dynamic.
+
+### Phase 3 — Professional coach (after Phase 2)
+
+Hypothesis testing, multi-horizon planning, sport-specific modules.
+
+### Phase 4 — Cognitive MVP (final)
+
+Outcome engine + decision priority + uncertainty + Bayesian beliefs.
