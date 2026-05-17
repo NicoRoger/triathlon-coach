@@ -73,6 +73,16 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+      - name: Pre-test prediction (Phase 2.6)
+        # 24-48h prima del test pianificato, registra una prediction nel DB
+        # (calibrazione modello via outcome_verification).
+        if: success()
+        continue-on-error: true
+        run: python -m coach.coaching.test_prediction
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
       - name: ETL health check
         if: always()
         run: python scripts/etl_health_check.py

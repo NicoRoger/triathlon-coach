@@ -47,6 +47,11 @@ jobs:
         # aggiorna docs/athlete_beliefs.md con bias longitudinali.
         run: python -m coach.coaching.outcome_verification
 
+      - name: Schedule fitness tests (Phase 2.6)
+        # Se ultimo test > 42gg (bike/run) o > 56gg (swim) e non race week,
+        # pianifica nuovo test in planned_sessions per la prossima settimana.
+        run: python -m coach.coaching.test_scheduler
+
       - name: Extract Patterns
         run: python -m coach.coaching.pattern_extraction
 
