@@ -89,6 +89,7 @@ const HELP = `<b>Comandi</b>:
 /brief — brief on-demand
 /log &lt;testo&gt; — log libero (RPE, sensazioni, malattia, dolori)
 /rpe &lt;1-10&gt; — RPE rapido ultima sessione
+/manual_activity &lt;sport&gt; &lt;min&gt; &lt;rpe&gt; [km] — attività manuale (fallback Garmin)
 /debrief — avvia debrief serale
 /undo — annulla ultimo log (ultimi 30 min)
 /history [7d|rpe|injury] — lista log recenti
@@ -345,6 +346,11 @@ async function handleStandalone(env: Env, message: TelegramMessage): Promise<voi
     return sendMessage(env, chatId, `✅ Log salvato${parsed.summary ? ` (${parsed.summary})` : ""}.`);
   }
 
+  // Fase 1.3 — Manual activity entry (fallback quando Garmin sync è fermo)
+  if (t.startsWith("/manual_activity")) {
+    return handleManualActivity(env, chatId, t);
+  }
+
   if (t === "/debrief") {
     await env.PROCESSED_UPDATES.put(debriefKey, "1", { expirationTtl: 3600 });
     return sendAndLogMessage(env, chatId,
@@ -407,6 +413,95 @@ async function handleStandalone(env: Env, message: TelegramMessage): Promise<voi
 // ============================================================================
 // Feature 3: /undo
 // ============================================================================
+
+// ============================================================================
+// Fase 1.3 — /manual_activity (fallback quando Garmin sync è fermo)
+// ============================================================================
+
+const MANUAL_ACTIVITY_HELP =
+  "<b>/manual_activity</b> — log attività manuale (quando Garmin non sincronizza).\n\n" +
+  "<b>Uso:</b> <code>/manual_activity SPORT DURATA_MIN RPE [DISTANZA_KM]</code>\n\n" +
+  "<b>Esempi:</b>\n" +
+  "• <code>/manual_activity run 45 6 8.5</code>\n" +
+  "• <code>/manual_activity bike 90 7 35</code>\n" +
+  "• <code>/manual_activity swim 30 5 1.8</code>\n" +
+  "• <code>/manual_activity strength 60 5</code>\n\n" +
+  "<b>Sport ammessi:</b> run, bike, swim, brick, strength\n" +
+  "RPE: 1-10 · Durata: minuti · Distanza: km (opzionale, default 0)";
+
+async function handleManualActivity(env: Env, chatId: number, t: string): Promise<void> {
+  const parts = t.split(/\s+/).slice(1);  // rimuovi "/manual_activity"
+  if (parts.length < 3) {
+    return sendMessage(env, chatId, MANUAL_ACTIVITY_HELP);
+  }
+
+  const sport = parts[0].toLowerCase();
+  const allowedSports = ["run", "bike", "swim", "brick", "strength"];
+  if (!allowedSports.includes(sport)) {
+    return sendMessage(env, chatId,
+      `❌ Sport non valido: <code>${sport}</code>.\n\n` + MANUAL_ACTIVITY_HELP);
+  }
+
+  const durationMin = parseInt(parts[1], 10);
+  if (isNaN(durationMin) || durationMin < 1 || durationMin > 18 * 60) {
+    return sendMessage(env, chatId, "❌ Durata deve essere tra 1 e 1080 minuti.");
+  }
+  const durationS = durationMin * 60;
+
+  const rpe = parseInt(parts[2], 10);
+  if (isNaN(rpe) || rpe < 1 || rpe > 10) {
+    return sendMessage(env, chatId, "❌ RPE deve essere tra 1 e 10.");
+  }
+
+  let distanceM: number | null = null;
+  if (parts.length >= 4) {
+    const dKm = parseFloat(parts[3]);
+    if (isNaN(dKm) || dKm < 0 || dKm > 500) {
+      return sendMessage(env, chatId, "❌ Distanza deve essere tra 0 e 500 km.");
+    }
+    distanceM = Math.round(dKm * 1000);
+  }
+
+  // Stima TSS rule-based dal RPE (formula approssimata: TSS = RPE/10 * duration_h * 100)
+  const estimatedTss = Math.round((rpe / 10) * (durationS / 3600) * 100);
+
+  const nowIso = new Date().toISOString();
+  const externalId = `manual_${nowIso.replace(/[:.]/g, "")}`;
+
+  // Insert in activities table
+  const activityRow: any = {
+    external_id: externalId,
+    source: "manual",
+    sport,
+    started_at: nowIso,
+    duration_s: durationS,
+    tss: estimatedTss,
+  };
+  if (distanceM !== null) activityRow.distance_m = distanceM;
+
+  const actResp = await supabaseFetch(env, "/rest/v1/activities", "POST", activityRow,
+    { Prefer: "return=representation" });
+
+  if (!actResp.ok) {
+    const errText = await actResp.text();
+    return sendMessage(env, chatId,
+      `❌ Errore inserimento attività:\n<code>${errText.slice(0, 200)}</code>`);
+  }
+
+  // Insert RPE in subjective_log linkata all'attività
+  await insertSubjective(env, {
+    kind: "post_session",
+    rpe,
+    raw_text: t,
+  });
+
+  const distLabel = distanceM ? ` · ${(distanceM / 1000).toFixed(1)}km` : "";
+  await sendMessage(env, chatId,
+    `✅ <b>Attività manuale salvata</b>\n` +
+    `${sport} · ${durationMin}min${distLabel} · RPE ${rpe}\n` +
+    `TSS stimato: ~${estimatedTss}\n\n` +
+    `<i>Il sistema ricalcolerà CTL/ATL/TSB al prossimo run di daily metrics.</i>`);
+}
 
 async function handleUndo(env: Env, chatId: number): Promise<void> {
   const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
