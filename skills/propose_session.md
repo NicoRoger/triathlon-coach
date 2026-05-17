@@ -14,7 +14,8 @@ description: Dettaglia la sessione del giorno (o di una data specifica) con zone
 1. Leggi `get_planned_session(today)` via MCP
 2. Leggi `get_recent_metrics(days=7)` per capire stato corrente
 3. Leggi `physiology_zones` correnti per disciplina
-4. Adatta la prescrizione alla readiness:
+4. Leggi `docs/coaching_observations.md` e `docs/athlete_beliefs.md` per pattern/beliefs rilevanti per oggi (giorno settimana, sport, fase)
+5. Adatta la prescrizione alla readiness:
    - Se readiness ≥ 75 e nessun flag → sessione come da piano
    - Se readiness 50-74 → riduci intensità di 1 step (es. soglia → tempo, VO2 → soglia)
    - Se readiness < 50 → proponi recovery o riposo (richiede `propose_plan_change`)
@@ -45,7 +46,21 @@ Razionale: TSB -5, HRV stabile, ultima soglia 5gg fa.
 ## Zone reference (versionate in DB)
 Sempre lette da `physiology_zones` corrente. Non hardcodare valori.
 
+## Citation obbligatoria (Fase 2.4)
+
+Quando giustifichi la scelta di intensità/zone/struttura della sessione, cita la base scientifica con tag inline:
+
+`[source: <autore> <anno>]`
+
+Esempi:
+- Z2 lungo → `[source: Seiler 2010]`
+- Soglia → `[source: Coggan 2003]`
+- Recovery <50% readiness → `[source: Halson 2014 recovery monitoring]`
+
+Quando applichi una belief: `[athlete-belief: <descrizione>]`.
+
 ## Cosa NON fare
 - Mai prescrivere intensità/zone se le `physiology_zones` per quella disciplina
   sono `NULL` o oltre 12 settimane vecchie. Suggerisci test fitness invece.
 - Mai ignorare flag attivi. Se `illness_flag` o `injury_flag` → recovery, fine.
+- Mai inventare riferimenti scientifici. Se incerto, usa `[source: principio generale endurance]`.

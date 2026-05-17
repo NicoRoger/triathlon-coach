@@ -37,9 +37,12 @@ Leggi inoltre:
 - `CLAUDE.md` §3 (stato corrente) e §8.5 (calendario gare)
 - `docs/training_journal.md` (ultime decisioni)
 - `docs/injury_log.md` (stato infortuni in corso)
-- `docs/coaching_observations.md` (pattern longitudinali — leggi SEMPRE)
+- `docs/coaching_observations.md` (pattern longitudinali con prescription/confidence — leggi SEMPRE)
+- `docs/athlete_beliefs.md` (calibrazione predizioni + beliefs strutturali — leggi SEMPRE)
 - `docs/progress_tracker.md` (compliance e trend)
 - `docs/elite_training_reference.md` (volume/HR/struttura target dal periodo elite — per calibrare i volumi proposti)
+
+**Multi-race awareness**: `get_weekly_context` ritorna `upcoming_races` (tutte le gare future). Considera il calendario completo, non solo la prossima gara. Pianifica picchi multipli quando ci sono gare A successive.
 
 ### Fase 2 — Analisi della settimana conclusa e Diagnosi (via AI)
 
@@ -105,6 +108,39 @@ sulla base dei tuoi dati reali.
 Volume settimanale target: ~6h
 TSS settimanale target: ~280
 ACWR proiettato: 1.2 (zona allenante ottimale)
+
+### Fase 4.5 — Citation obbligatoria (Fase 2.4 Cognitive MVP)
+
+**Ogni proposta strutturale DEVE citare almeno 1 principio scientifico** con tag inline. Formato:
+
+`[source: <autore> <anno>]` — esempio: `[source: Seiler 2010]`, `[source: Gabbett 2016]`
+
+Principi attesi (consulta dalla tua training knowledge, non da file curati):
+- **Polarizzato 80/20** → Seiler 2010, 2019
+- **ACWR injury risk** → Gabbett 2016
+- **Tendinopatia isometric** → Cook & Purdam 2009
+- **Block periodization** → Issurin 2008
+- **Tapering response** → Mujika & Padilla 2003
+- **Heat acclimatization** → Périard 2015
+- **Cross-discipline interference** → Häkkinen 2003
+
+Le citazioni rendono auditabile la proposta. Non inventare riferimenti (anno > anno corrente, autore non esistente). Se non sei sicuro, scrivi `[source: principio generale endurance training]`.
+
+**Esempio applicato:**
+> "Mantengo Z2 al 75% del volume settimanale [source: Seiler 2010] e ACWR a 1.2 [source: Gabbett 2016] per limitare rischio infortunio dato l'aumento progressivo del CTL."
+
+Le citazioni vengono salvate automaticamente in `docs/training_journal.md` come parte del log decisionale.
+
+### Fase 4.6 — Beliefs awareness
+
+Quando proponi, **cita anche le beliefs dell'atleta** che hai usato (da `docs/athlete_beliefs.md` o pattern_extraction). Formato:
+
+`[athlete-belief: <descrizione> (n=X, conf=Y)]`
+
+Esempio:
+> "Evito sessione qualità sabato [athlete-belief: HRV basso sabato n=12, conf 0.85] e propongo invece per venerdì."
+
+Se `athlete_beliefs.md` è vuoto (sistema appena partito), nessun obbligo di citation belief — solo scientifica.
 
 ### Fase 5 — Conferma e commit
 

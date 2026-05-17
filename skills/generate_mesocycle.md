@@ -20,9 +20,12 @@ description: Pianifica un blocco di 4 settimane (3 carico + 1 scarico) con sessi
 1. Leggi `CLAUDE.md` §Profilo, §Stato corrente
 2. Leggi `docs/elite_training_reference.md` per volume/HR/struttura target elite
 3. Leggi `docs/training_journal.md` ultime 4-6 settimane
-4. Leggi `get_recent_metrics(28)` per CTL trend
-5. Leggi `physiology_zones` per zone correnti
-6. Calcola CTL target per ogni settimana:
+4. Leggi `docs/athlete_beliefs.md` per beliefs strutturali + bias correction su predizioni
+5. Leggi `docs/coaching_observations.md` per pattern prescrittivi attivi
+6. Leggi `get_recent_metrics(28)` per CTL trend
+7. Leggi `physiology_zones` per zone correnti
+8. **Multi-race awareness**: chiama `get_weekly_context` e leggi `upcoming_races` — pianifica picchi per TUTTE le gare A/B della stagione, non solo la prossima
+9. Calcola CTL target per ogni settimana:
    - Carico: +3-7 TSS/d/settimana sopra CTL corrente
    - Scarico: -30/-40% volume, intensità preservata in micro-dosi
 6. Distribuisci sessioni con regola 80/20:
@@ -101,6 +104,48 @@ mesocycle:
 - Test fitness max 1 per disciplina per mesociclo
 - Domenica: review della settimana, lunedì: nuovo carico
 
+## Citation obbligatoria (Fase 2.4 Cognitive MVP)
+
+Ogni decisione strutturale (volume, intensità, distribuzione, taper) DEVE citare almeno 1 principio scientifico:
+
+`[source: <autore> <anno>]`
+
+Principi attesi (consulta dalla tua training knowledge):
+- **Polarizzato 80/20** → Seiler 2010, 2019
+- **ACWR injury risk** → Gabbett 2016
+- **Block periodization** → Issurin 2008
+- **Tapering response** → Mujika & Padilla 2003
+- **Tendinopatia isometric** → Cook & Purdam 2009 (rilevante per fascite plantare)
+- **Heat acclimatization** → Périard 2015
+- **Cross-discipline interference** → Häkkinen 2003
+
+Quando applichi una belief dell'atleta da `athlete_beliefs.md`:
+
+`[athlete-belief: <descrizione> (n=X, conf=Y)]`
+
+Le citazioni rendono auditabile la pianificazione e si auto-loggano in `training_journal.md`.
+
+## Output prediction (Fase 2.1)
+
+Dopo aver definito CTL target per ogni settimana, registra una prediction in DB via il modulo Python:
+
+```python
+from coach.coaching.outcome_verification import record_prediction
+# Per ogni settimana del mesociclo:
+record_prediction(
+    prediction_type="ctl_weekly",
+    target_date="2026-XX-XX",  # ultimo giorno della settimana
+    predicted_value=42.5,
+    confidence=0.7,
+    model_version="mesocycle_planner_v1",
+    reasoning_summary="Settimana di build: +5 TSS/d → CTL +3",
+    source="generate_mesocycle",
+)
+```
+
+Questo permette al sistema di calibrare automaticamente le predizioni future con `outcome_verification` ogni domenica.
+
 ## Cosa NON fare
 - Non committare il YAML senza approvazione dell'atleta
 - Non ignorare consistency: se atleta è sotto 6h/settimana di media, propone meso più conservativo
+- Non inventare riferimenti scientifici (autori inesistenti, anni fuori range). Se incerto, scrivi `[source: principio generale endurance]`.

@@ -96,6 +96,8 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 | `migrations/2026-05-13-fix-lavarone-date.sql` | BUG-006 | ⏳ Run if seed was already applied with wrong date |
 | `migrations/2026-05-14-subjective-log-severity.sql` | Phase 1.5 | ⏳ Run once (adds severity/expected_duration_days/body_location) |
 | `migrations/2026-05-14-sent-reminders.sql` | Phase 1.6 | ⏳ Run once (proactive reminders dedup table) |
+| `migrations/2026-05-14-predictions-outcomes.sql` | Phase 2.1 | ⏳ Run once (outcome tracking engine) |
+| `migrations/2026-05-14-season-year.sql` | Phase 2.7 | ⏳ Run once (multi-race architecture) |
 
 ---
 
@@ -116,14 +118,28 @@ Piano completo in `~/.claude/plans/spicy-weaving-twilight.md`.
 
 **Risparmio costi atteso**: €1.50/mese → €0.30/mese (-80%).
 
-### Phase 2 — Adaptive architecture (next)
+### Phase 2 — Adaptive architecture ✅ COMPLETED (2026-05-14)
 
-To start: outcome tracking, prescriptive patterns, beliefs, training principles dynamic.
+| Modulo | Status | Commit |
+|--------|--------|--------|
+| 2.1 Outcome tracking engine (predictions + outcomes + verifier) | ✅ | 86456dd |
+| 2.5 Risk modeling (overreaching/injury/recovery) + brief integration | ✅ | 509ba55 |
+| 2.6 Fitness test lifecycle (scheduler + pre-test prediction) | ✅ | 1a35b84 |
+| 2.7 Multi-race architecture (season_year) | ✅ | 86456dd |
+| 2.2 Pattern extraction prescriptive output | ✅ | (this commit) |
+| 2.3 Athlete beliefs template + integration | ✅ | (this commit) |
+| 2.4 Citation tags obbligatorie in skill | ✅ | (this commit) |
+
+Pattern_extraction ora richiede output strutturato `[Osservazione] (n=X, conf=Y) → Prescrizione: ... Expected outcome: ...`.
+
+athlete_beliefs.md aggiornato automaticamente da outcome_verification.py ogni domenica notte.
+
+Skill weekly_review, generate_mesocycle, propose_session richiedono citation tags `[source: ...]` per ogni decisione strutturale e `[athlete-belief: ...]` quando applicano beliefs.
 
 ### Phase 3 — Professional coach (after Phase 2)
 
-Hypothesis testing, multi-horizon planning, sport-specific modules.
+Hypothesis testing, multi-horizon planning, sport-specific modules, decision provenance, pre-test/post-test calibration.
 
 ### Phase 4 — Cognitive MVP (final)
 
-Outcome engine + decision priority + uncertainty + Bayesian beliefs.
+Outcome engine (refactor cognitive layer) + decision priority + uncertainty framework + Bayesian belief engine. Vedi piano completo in `~/.claude/plans/spicy-weaving-twilight.md`.
