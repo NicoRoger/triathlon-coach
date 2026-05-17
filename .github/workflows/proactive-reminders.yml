@@ -10,6 +10,25 @@ on:
     # Ogni 30 min (offset 7 per evitare picco condivisione runner)
     - cron: "7,37 * * * *"
   workflow_dispatch:
+    inputs:
+      ignore_time_window:
+        description: "Bypass time-of-day checks (test all triggers)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      dry_run:
+        description: "Dry-run: log what would be sent without sending"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      skip_dedup:
+        description: "Ignore sent_reminders dedup (force re-send)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
 
 jobs:
   run:
@@ -33,4 +52,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IGNORE_TIME_WINDOW: ${{ github.event.inputs.ignore_time_window || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          SKIP_DEDUP: ${{ github.event.inputs.skip_dedup || 'false' }}
         run: python -m coach.coaching.proactive_reminders

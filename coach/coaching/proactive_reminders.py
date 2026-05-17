@@ -35,12 +35,13 @@ ROME_TZ = ZoneInfo("Europe/Rome")
 # Triggers (ogni funzione ritorna dict o None)
 # ============================================================================
 
-def _check_weekly_review(now: datetime, sb) -> Optional[dict]:
+def _check_weekly_review(now: datetime, sb, ignore_time_window: bool = False) -> Optional[dict]:
     """Domenica tra 18:00 e 19:30 (Europe/Rome): reminder weekly review."""
-    if now.weekday() != 6:  # 6 = sunday
-        return None
-    if not (time(18, 0) <= now.time() <= time(19, 30)):
-        return None
+    if not ignore_time_window:
+        if now.weekday() != 6:  # 6 = sunday
+            return None
+        if not (time(18, 0) <= now.time() <= time(19, 30)):
+            return None
     return {
         "trigger_type": "weekly_review",
         "text": (
@@ -54,12 +55,13 @@ def _check_weekly_review(now: datetime, sb) -> Optional[dict]:
     }
 
 
-def _check_open_modulations(now: datetime, sb) -> Optional[dict]:
+def _check_open_modulations(now: datetime, sb, ignore_time_window: bool = False) -> Optional[dict]:
     """Mercoledì o sabato mattina: se ci sono modulazioni in attesa, ricorda di rivederle."""
-    if now.weekday() not in (2, 5):  # mer, sab
-        return None
-    if not (time(8, 30) <= now.time() <= time(10, 0)):
-        return None
+    if not ignore_time_window:
+        if now.weekday() not in (2, 5):  # mer, sab
+            return None
+        if not (time(8, 30) <= now.time() <= time(10, 0)):
+            return None
     res = sb.table("plan_modulations").select("id").eq("status", "proposed").execute()
     n = len(res.data or [])
     if n == 0:
@@ -77,8 +79,12 @@ def _check_open_modulations(now: datetime, sb) -> Optional[dict]:
     }
 
 
-def _check_mesocycle_ending(now: datetime, sb) -> Optional[dict]:
-    """7gg prima della fine del mesociclo corrente: ricorda di pianificare il prossimo."""
+def _check_mesocycle_ending(now: datetime, sb, ignore_time_window: bool = False) -> Optional[dict]:
+    """7gg prima della fine del mesociclo corrente: ricorda di pianificare il prossimo.
+
+    Nota: questo trigger è già state-based (cerca mesocycle in scadenza), nessun
+    time check da bypassare. ignore_time_window è accettato per uniformità.
+    """
     today = now.date()
     target = today + timedelta(days=7)
     res = (
@@ -106,12 +112,13 @@ def _check_mesocycle_ending(now: datetime, sb) -> Optional[dict]:
     }
 
 
-def _check_test_due(now: datetime, sb) -> Optional[dict]:
+def _check_test_due(now: datetime, sb, ignore_time_window: bool = False) -> Optional[dict]:
     """Ogni lunedì: se l'ultimo test fitness > 42gg, ricorda di pianificarlo."""
-    if now.weekday() != 0:  # lun
-        return None
-    if not (time(9, 0) <= now.time() <= time(11, 0)):
-        return None
+    if not ignore_time_window:
+        if now.weekday() != 0:  # lun
+            return None
+        if not (time(9, 0) <= now.time() <= time(11, 0)):
+            return None
     res = (
         sb.table("physiology_zones")
         .select("discipline,valid_from")
@@ -154,18 +161,39 @@ def _check_test_due(now: datetime, sb) -> Optional[dict]:
     }
 
 
-def _check_race_proximity(now: datetime, sb) -> list[dict]:
-    """Per ogni gara A/B futura, controlla soglie T-14, T-7, T-2, T+1."""
+def _check_race_proximity(now: datetime, sb, ignore_time_window: bool = False) -> list[dict]:
+    """Per ogni gara A/B futura, controlla soglie T-14, T-7, T-2, T+1.
+
+    Se ignore_time_window=True, espande la finestra a tutte le gare entro 120gg
+    e produce un reminder generico per testare il flusso.
+    """
     today = now.date()
     triggers = []
+    horizon_days = 120 if ignore_time_window else 20
     res = (
         sb.table("races")
         .select("id,name,race_date,priority,distance")
         .gte("race_date", (today - timedelta(days=2)).isoformat())
-        .lte("race_date", (today + timedelta(days=20)).isoformat())
+        .lte("race_date", (today + timedelta(days=horizon_days)).isoformat())
         .in_("priority", ["A", "B"])
         .execute()
     )
+    if ignore_time_window:
+        # Modalità test: 1 reminder generico per ogni gara futura entro 120gg
+        for race in res.data or []:
+            race_date = date.fromisoformat(race["race_date"])
+            days = (race_date - today).days
+            triggers.append({
+                "trigger_type": f"race_test_{race['id']}",
+                "text": (
+                    f"🧪 <b>[TEST] Race proximity reminder</b>\n\n"
+                    f"Gara <b>{race['name']}</b> ({race['priority']}) tra {days}gg "
+                    f"({race['race_date']}).\n\n"
+                    f"In produzione, scatteranno reminder a T-14, T-7, T-2, T+1."
+                ),
+                "context": {"race_id": race["id"], "days": days, "test_mode": True},
+            })
+        return triggers
     for race in res.data or []:
         race_date = date.fromisoformat(race["race_date"])
         days = (race_date - today).days
@@ -218,8 +246,11 @@ def _check_race_proximity(now: datetime, sb) -> list[dict]:
     return triggers
 
 
-def _check_peak_mesocycle_missing(now: datetime, sb) -> list[dict]:
-    """30gg prima race A: se non esiste mesociclo peak nel range race-30 → race, warning."""
+def _check_peak_mesocycle_missing(now: datetime, sb, ignore_time_window: bool = False) -> list[dict]:
+    """30gg prima race A: se non esiste mesociclo peak nel range race-30 → race, warning.
+
+    Se ignore_time_window=True, controlla anche gare oltre i 35gg (test).
+    """
     today = now.date()
     triggers = []
     res = (
@@ -293,37 +324,61 @@ def _log_sent(sb, trigger_type: str, sent_date: str, message_id: Optional[int], 
     }).execute()
 
 
-def run_proactive_reminders() -> int:
+def run_proactive_reminders(
+    ignore_time_window: bool = False,
+    dry_run: bool = False,
+    skip_dedup: bool = False,
+) -> int:
     """Esegue tutti i trigger, invia i nuovi reminder, deduplica via sent_reminders.
 
+    Args:
+        ignore_time_window: se True bypassa i check giorno/ora dei trigger (test).
+        dry_run: se True stampa cosa farebbe senza inviare/loggare nulla.
+        skip_dedup: se True ignora sent_reminders table (test, manda anche se già fatto).
+
     Returns:
-        Numero di reminder inviati.
+        Numero di reminder inviati (o che sarebbero inviati se dry_run=True).
     """
     sb = get_supabase()
     now = datetime.now(ROME_TZ)
     today_iso = today_rome().isoformat()
     sent = 0
 
+    if ignore_time_window:
+        logger.warning("⚠️  IGNORE_TIME_WINDOW attivo — modalità TEST")
+    if dry_run:
+        logger.warning("⚠️  DRY_RUN attivo — nessun messaggio verrà effettivamente inviato")
+
     candidates: list[dict] = []
     for fn in TRIGGERS_SINGLE:
         try:
-            r = fn(now, sb)
+            r = fn(now, sb, ignore_time_window=ignore_time_window)
             if r:
                 candidates.append(r)
         except Exception:
             logger.exception("Trigger %s failed", fn.__name__)
     for fn in TRIGGERS_MULTI:
         try:
-            rs = fn(now, sb)
+            rs = fn(now, sb, ignore_time_window=ignore_time_window)
             candidates.extend(rs or [])
         except Exception:
             logger.exception("Trigger %s failed", fn.__name__)
 
+    logger.info("Trigger candidates: %d", len(candidates))
+    for c in candidates:
+        logger.info("  candidate: %s", c["trigger_type"])
+
     for r in candidates:
         trigger_type = r["trigger_type"]
-        if _already_sent_today(sb, trigger_type, today_iso):
+        if not skip_dedup and _already_sent_today(sb, trigger_type, today_iso):
             logger.info("Skip duplicate reminder: %s on %s", trigger_type, today_iso)
             continue
+
+        if dry_run:
+            logger.info("[DRY-RUN] Would send: %s\n%s", trigger_type, r["text"][:200])
+            sent += 1
+            continue
+
         try:
             from coach.utils.telegram_logger import send_and_log_message
             result = send_and_log_message(
@@ -332,7 +387,8 @@ def run_proactive_reminders() -> int:
                 context_data={"trigger_type": trigger_type, **r.get("context", {})},
             )
             msg_id = result.get("message_id") if isinstance(result, dict) else None
-            _log_sent(sb, trigger_type, today_iso, msg_id, r.get("context", {}))
+            if not skip_dedup:
+                _log_sent(sb, trigger_type, today_iso, msg_id, r.get("context", {}))
             sent += 1
             logger.info("Sent reminder: %s", trigger_type)
         except Exception:
@@ -342,9 +398,25 @@ def run_proactive_reminders() -> int:
 
 
 def main() -> None:
+    import argparse
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    n = run_proactive_reminders()
-    logger.info("Proactive reminders run: %d sent", n)
+    p = argparse.ArgumentParser()
+    p.add_argument("--ignore-time-window", action="store_true",
+                   help="Bypass time checks (test all triggers regardless of day/hour)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print what would be sent without actually sending or logging")
+    p.add_argument("--skip-dedup", action="store_true",
+                   help="Ignore sent_reminders table (force re-send)")
+    args = p.parse_args()
+
+    # Env var override (used by GitHub Actions workflow_dispatch input)
+    import os
+    ignore = args.ignore_time_window or os.environ.get("IGNORE_TIME_WINDOW", "").lower() in ("true", "1", "yes")
+    dry = args.dry_run or os.environ.get("DRY_RUN", "").lower() in ("true", "1", "yes")
+    skip_dedup = args.skip_dedup or os.environ.get("SKIP_DEDUP", "").lower() in ("true", "1", "yes")
+
+    n = run_proactive_reminders(ignore_time_window=ignore, dry_run=dry, skip_dedup=skip_dedup)
+    logger.info("Proactive reminders run: %d %s", n, "would-be-sent" if dry else "sent")
 
 
 if __name__ == "__main__":
