@@ -59,6 +59,16 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 
 ---
 
+## BUG-008 — Weekly review skip `commit_plan_change` ✅
+- **Symptom**: dopo "ok" della weekly review, le sessioni a volte non apparivano nel DB / calendario. L'atleta doveva chiedere esplicitamente "ma le hai committate?" perché venisse fatto.
+- **Root cause**: la Fase 5 della skill descriveva l'azione ma non imponeva uno step di verifica esplicito → l'agente in Claude.ai a volte saltava o eseguiva commit parziali senza accorgersene.
+- **Fix**: due correttivi in `5c98ae3`:
+  1. `skills/weekly_review.md` — Fase 5 ristrutturata in 5.A/5.B/5.C con verify-bloccante via `get_upcoming_plan(days=7)` post-commit, e anti-pattern espliciti
+  2. `coach/coaching/proactive_reminders.py` — nuovo trigger `_check_weekly_plan_empty` che il lunedì mattina (7-11) controlla se ci sono ≥3 sessioni nella settimana corrente. Se no, nudge Telegram automatico.
+- **Test**: post-weekly review domenica, lunedì in `planned_sessions` devono esserci 5-7 righe per i prossimi 7 giorni. Se mancano, il reminder lunedì 7-11 lo segnala.
+
+---
+
 ## BUG-007 — Gemini 2.0 Flash has free-tier quota = 0 ✅
 - **Symptom**: `GeminiClient` raised `429 RESOURCE_EXHAUSTED` with `limit: 0` on `gemini-2.0-flash`
 - **Root cause**: The Google Cloud project for the API key has no free-tier quota for `gemini-2.0-flash`; `gemini-2.5-flash` is available instead
