@@ -142,7 +142,7 @@ Esempio:
 
 Se `athlete_beliefs.md` è vuoto (sistema appena partito), nessun obbligo di citation belief — solo scientifica.
 
-### Fase 5 — Conferma e commit
+### Fase 5 — Conferma e commit ⚠️ STEP CRITICO
 
 Presenta la proposta. Aspetta riscontro:
 
@@ -150,17 +150,44 @@ Presenta la proposta. Aspetta riscontro:
 - "modifica X" → ridiscussione, poi commit
 - "no" / "rifaccio" → ripeti dalla Fase 4 con feedback
 
-Quando confermato, per ogni giorno della settimana chiama:
-commit_plan_change(
-planned_date="2026-05-11",
-sport="swim",
-session_type="technique",
-duration_s=3600,
-target_zones={"z1": 0.8, "z2": 0.2},
-description="..."
-)
+**Protocollo di commit obbligatorio dopo "ok":**
 
-Per i giorni con parametri ancora indefiniti (gio-dom nell'esempio), scrivi una sessione con descrizione "TBD — dettagli a metà settimana" e duration_s placeholder. Verrà aggiornata via re-commit.
+Appena ricevi conferma, **devi** eseguire questi 3 step nell'ordine, **senza chiedere ulteriori conferme intermedie**:
+
+**Step 5.A — Commit DB (BLOCCANTE)**
+
+Per ogni giorno della settimana (TUTTI i 7 giorni, anche quelli "TBD") chiama:
+
+```
+commit_plan_change(
+    planned_date="2026-05-11",
+    sport="swim",
+    session_type="technique",
+    duration_s=3600,
+    target_zones={"z1": 0.8, "z2": 0.2},
+    description="..."
+)
+```
+
+Per i giorni con parametri ancora indefiniti, scrivi una sessione con `description="TBD — dettagli a metà settimana"` e `duration_s` placeholder. Verrà aggiornata via re-commit.
+
+**Step 5.B — Verifica post-commit (BLOCCANTE)**
+
+Subito dopo aver chiamato tutti i `commit_plan_change`, **chiama `get_upcoming_plan(days=7)`** per verificare che le sessioni siano effettivamente nel DB.
+
+- Se ricevi N sessioni == numero di giorni committati → ✅ tutto OK, prosegui a 5.C
+- Se ricevi 0 o meno del previsto → ❌ qualcosa non è andato: re-chiama `commit_plan_change` per i giorni mancanti, poi ri-verifica con `get_upcoming_plan`. Se persiste, segnala all'atleta: "⚠️ Commit DB fallito per [giorni]. Riprova manualmente o controlla il MCP server."
+
+**Step 5.C — Conferma all'atleta**
+
+Dopo verifica positiva, manda 1 messaggio di chiusura: `"✅ N sessioni committate nel DB per la settimana del [start]. Procedo con Google Calendar."`
+
+Poi prosegui automaticamente a Fase 6 (Google Calendar export).
+
+**Anti-pattern da evitare:**
+- ❌ Chiamare commit_plan_change ma poi non verificare → la sessione potrebbe non essere stata salvata davvero (race condition MCP)
+- ❌ Aspettare ulteriore conferma "vuoi che committi?" dopo che l'atleta ha già detto "ok" → genera workflow stallato. "ok" è la conferma finale.
+- ❌ Committare solo i primi 3 giorni perché "i parametri sono indefiniti" → committa anche TBD con placeholder, l'atleta può sempre vedere lo schema completo nel calendar.
 
 ### Fase 6 — Esportazione su Google Calendar
 

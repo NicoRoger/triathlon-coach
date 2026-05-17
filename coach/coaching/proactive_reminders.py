@@ -112,6 +112,42 @@ def _check_mesocycle_ending(now: datetime, sb, ignore_time_window: bool = False)
     }
 
 
+def _check_weekly_plan_empty(now: datetime, sb, ignore_time_window: bool = False) -> Optional[dict]:
+    """Lunedì mattina: se la settimana corrente ha < 3 planned_sessions, il commit
+    della weekly review di domenica è probabilmente fallito. Notifica.
+
+    Safety net contro il bug "weekly review non scrive su calendario".
+    """
+    if not ignore_time_window:
+        if now.weekday() != 0:  # lun
+            return None
+        if not (time(7, 0) <= now.time() <= time(11, 0)):
+            return None
+    today = now.date()
+    sunday = today + timedelta(days=6)
+    res = (
+        sb.table("planned_sessions")
+        .select("id,planned_date")
+        .gte("planned_date", today.isoformat())
+        .lte("planned_date", sunday.isoformat())
+        .execute()
+    )
+    n = len(res.data or [])
+    if n >= 3:
+        return None
+    return {
+        "trigger_type": "weekly_plan_empty",
+        "text": (
+            f"⚠️ <b>Settimana corrente: solo {n} sessioni pianificate</b>\n\n"
+            f"La weekly review di domenica potrebbe non aver committato tutto. "
+            f"Apri Claude.ai e digita:\n"
+            f"<code>verifica e completa il piano della settimana</code>\n\n"
+            f"In alternativa: <code>fai la weekly review</code> per riproporlo da zero."
+        ),
+        "context": {"sessions_found": n, "week_start": today.isoformat()},
+    }
+
+
 def _check_test_due(now: datetime, sb, ignore_time_window: bool = False) -> Optional[dict]:
     """Ogni lunedì: se l'ultimo test fitness > 42gg, ricorda di pianificarlo."""
     if not ignore_time_window:
@@ -295,6 +331,7 @@ TRIGGERS_SINGLE: list[Callable[[datetime, object], Optional[dict]]] = [
     _check_open_modulations,
     _check_mesocycle_ending,
     _check_test_due,
+    _check_weekly_plan_empty,
 ]
 
 TRIGGERS_MULTI: list[Callable[[datetime, object], list[dict]]] = [
