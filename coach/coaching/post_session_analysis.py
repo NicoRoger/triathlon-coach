@@ -167,10 +167,10 @@ def analyze_session(activity_id: str) -> Optional[dict]:
 
     user_message = "\n\n".join(context_parts)
 
-    # Chiamata AI — preferisce Gemini free tier se GEMINI_API_KEY è disponibile
+    # Chiamata AI — routing automatico via PURPOSE_ROUTING (session_analysis → Gemini free)
     try:
-        from coach.utils.llm_client import get_analysis_client
-        client = get_analysis_client()
+        from coach.utils.llm_client import get_client_for_purpose
+        client = get_client_for_purpose("session_analysis")
         result = client.call(
             purpose="session_analysis",
             system=_load_skill(),

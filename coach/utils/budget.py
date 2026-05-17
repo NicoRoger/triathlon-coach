@@ -53,6 +53,9 @@ class BudgetExceededError(Exception):
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Stima costo di una chiamata API in USD."""
+    # Gemini free tier: cost = 0
+    if "gemini" in model.lower():
+        return 0.0
     model_id = MODEL_IDS.get(model, model)
     pricing = PRICING.get(model_id)
     if not pricing:

@@ -215,13 +215,13 @@ def extract_patterns(days: int = 28) -> Optional[str]:
     )
 
     try:
-        from coach.utils.llm_client import get_client
-        client = get_client()
+        from coach.utils.llm_client import get_client_for_purpose
+        client = get_client_for_purpose("pattern_extraction")
+        # Routing automatico → Gemini (free); failover Anthropic Haiku se Gemini down
         result = client.call(
             purpose="pattern_extraction",
             system=system,
             messages=[{"role": "user", "content": context}],
-            prefer_model="sonnet",
             max_tokens=1500,
             temperature=0.3,
         )

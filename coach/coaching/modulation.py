@@ -211,7 +211,7 @@ def generate_modulation_proposal(
 ) -> list[dict]:
     """Genera proposta di modifica AI-driven per i prossimi 3 giorni."""
     try:
-        from coach.utils.llm_client import get_client
+        from coach.utils.llm_client import get_client_for_purpose
         from pathlib import Path
 
         skill_path = Path(__file__).resolve().parent.parent.parent / "skills" / "modulation.md"
@@ -226,9 +226,10 @@ def generate_modulation_proposal(
             "upcoming": upcoming_sessions,
         }, indent=2, default=str)
 
-        client = get_client()
+        # Routing: "modulation" purpose va su Anthropic Haiku (decisione critica)
+        client = get_client_for_purpose("modulation")
         result = client.call(
-            purpose="modulation_proposal",
+            purpose="modulation",
             system=system,
             messages=[{"role": "user", "content": context}],
             prefer_model="haiku",

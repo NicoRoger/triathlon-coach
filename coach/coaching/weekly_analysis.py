@@ -39,13 +39,13 @@ def generate_weekly_analysis(days: int = 7) -> str:
     system = skill_path.read_text(encoding="utf-8") if skill_path.exists() else "Sei un coach di triathlon. Analizza la settimana."
 
     try:
-        from coach.utils.llm_client import get_client
-        client = get_client()
+        from coach.utils.llm_client import get_client_for_purpose
+        # weekly_analysis → Anthropic Sonnet (narrative settimanale serve qualità)
+        client = get_client_for_purpose("weekly_analysis")
         result = client.call(
-            purpose="weekly_review",
+            purpose="weekly_analysis",
             system=system + "\n\nGenera un'analisi narrativa di 15-20 righe in italiano della settimana appena trascorsa. Identifica pattern, trend, e punti di azione.",
             messages=[{"role": "user", "content": context}],
-            prefer_model="sonnet",
             max_tokens=1200,
             temperature=0.4,
         )
@@ -58,15 +58,15 @@ def generate_weekly_analysis(days: int = 7) -> str:
 
 
 def generate_weekly_lesson() -> str:
-    """Genera la 'lezione del giorno' settimanale con Haiku per economia."""
+    """Genera la 'lezione del giorno' settimanale — routed su Gemini (free)."""
     try:
-        from coach.utils.llm_client import get_client
-        client = get_client()
+        from coach.utils.llm_client import get_client_for_purpose
+        # weekly_lesson → Gemini (educational, semplice)
+        client = get_client_for_purpose("weekly_lesson")
         result = client.call(
-            purpose="weekly_review_lesson",
+            purpose="weekly_lesson",
             system="Sei un coach di triathlon esperto. Genera una breve lezione settimanale (5-8 righe) su un aspetto dell'allenamento triathlon. Scrivi in italiano, tono diretto e pratico.",
             messages=[{"role": "user", "content": f"Genera la lezione della settimana. Data: {today_rome().isoformat()}. Argomento: scegli tra nutrizione gara, gestione fatica, periodizzazione, tecnica, recupero, mental training."}],
-            prefer_model="haiku",
             max_tokens=400,
             temperature=0.7,
         )

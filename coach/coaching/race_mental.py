@@ -52,17 +52,17 @@ def generate_mental_check(days_to_race: int) -> str:
 def generate_race_briefing(race_info: dict) -> str:
     """Genera race briefing personalizzato T-2 via AI."""
     try:
-        from coach.utils.llm_client import get_client
+        from coach.utils.llm_client import get_client_for_purpose
         skill_path = Path(__file__).resolve().parent.parent.parent / "skills" / "race_briefing.md"
         system = skill_path.read_text(encoding="utf-8") if skill_path.exists() else "Sei un coach triathlon. Genera un race briefing."
 
         import json
-        client = get_client()
+        # race_briefing → Anthropic Sonnet (pre-gara critico)
+        client = get_client_for_purpose("race_briefing")
         result = client.call(
             purpose="race_briefing",
             system=system,
             messages=[{"role": "user", "content": json.dumps(race_info, default=str, ensure_ascii=False)}],
-            prefer_model="sonnet",
             max_tokens=1000,
         )
         return result["text"]
