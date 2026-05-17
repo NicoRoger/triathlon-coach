@@ -493,7 +493,11 @@ async function createPendingAndAsk(
   const pendingId = crypto.randomUUID();
   const actionLabel = action === "log_injury" ? "infortunio" : "malattia";
   const location = parsedData.injury_location ? ` alla ${parsedData.injury_location}` : "";
-  const text = `Ho capito che hai un <b>${actionLabel}${location}</b>.\n\nSalvo con flag attivo e attivo il monitoraggio?`;
+  const severityLabel = parsedData.severity ? ` <i>(severity: ${parsedData.severity})</i>` : "";
+  const durationLabel = parsedData.expected_duration_days
+    ? `\nDurata attesa: ${parsedData.expected_duration_days}gg`
+    : "";
+  const text = `Ho capito che hai un <b>${actionLabel}${location}</b>${severityLabel}.${durationLabel}\n\nSalvo con flag attivo e attivo il monitoraggio?`;
 
   const keyboard = {
     inline_keyboard: [[
@@ -835,6 +839,47 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
 // Parsing (deterministico, no LLM)
 // ============================================================================
 
+// Fase 1.5 — Severity detection for injury/illness
+function detectInjurySeverity(text: string): "mild" | "moderate" | "severe" {
+  const t = text.toLowerCase();
+  // severe markers
+  if (/\b(fortissim[oa]|acut[oa]|lancinant[ei]|non riesco|impossibile|blocca|bloccat[oa]|fratt(?:ur|a)|strappo|distorsion[ei] grav|lesione|operazion[ei])\b/.test(t)) {
+    return "severe";
+  }
+  // mild markers
+  if (/\b(fastidi[oa]|lieve|leggero|leggera|piccol[oa]|rigidit[aà]|indolenziment[oa]|tens[ia]on[ei] muscolare)\b/.test(t)) {
+    return "mild";
+  }
+  // moderate is default when injury detected
+  return "moderate";
+}
+
+function detectIllnessSeverity(text: string): "mild" | "moderate" | "severe" {
+  const t = text.toLowerCase();
+  if (/\b(febbre alta|polmonit[ei]|ricoverat[oa]|grav[ei]|incapace|delirio|39|40\b)\b/.test(t)) {
+    return "severe";
+  }
+  if (/\b(raffreddore lieve|mal di gola leggero|qualche colp[oi] tosse)\b/.test(t)) {
+    return "mild";
+  }
+  if (/\b(influenza|febbre|covid|gastroenterit[ei])\b/.test(t)) {
+    return "moderate";
+  }
+  return "mild";
+}
+
+function detectExpectedDuration(text: string): number | null {
+  const t = text.toLowerCase();
+  // "5 giorni", "1 settimana", "2 settimane"
+  const days = t.match(/(\d+)\s*giorn[oi]/);
+  if (days) return parseInt(days[1], 10);
+  const weeks = t.match(/(\d+)\s*settiman[ae]/);
+  if (weeks) return parseInt(weeks[1], 10) * 7;
+  const months = t.match(/(\d+)\s*mes[ie]/);
+  if (months) return parseInt(months[1], 10) * 30;
+  return null;
+}
+
 function parseLog(body: string): { kind: string; fields: any; summary: string } {
   const lower = body.toLowerCase();
   const fields: any = {};
@@ -855,7 +900,11 @@ function parseLog(body: string): { kind: string; fields: any; summary: string } 
   if (/\b(malato|malata|febbre|raffreddore|influenza|mal di gola|tosse|covid)\b/i.test(lower)) {
     fields.illness_flag = true;
     fields.illness_details = body.slice(0, 200);
-    summary.push("malattia");
+    // Fase 1.5 — severity + expected duration
+    fields.severity = detectIllnessSeverity(body);
+    const dur = detectExpectedDuration(body);
+    if (dur !== null) fields.expected_duration_days = dur;
+    summary.push(`malattia (${fields.severity})`);
     return { kind: "illness", fields, summary: summary.join(", ") };
   }
 
@@ -863,9 +912,16 @@ function parseLog(body: string): { kind: string; fields: any; summary: string } 
   if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
-    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei])\b/i);
-    if (locMatch) fields.injury_location = locMatch[1];
-    summary.push("infortunio");
+    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|fascite|plantar[ei]|tibi[ae])\b/i);
+    if (locMatch) {
+      fields.injury_location = locMatch[1];
+      fields.body_location = locMatch[1];   // canonical DB column
+    }
+    // Fase 1.5 — severity + expected duration
+    fields.severity = detectInjurySeverity(body);
+    const dur = detectExpectedDuration(body);
+    if (dur !== null) fields.expected_duration_days = dur;
+    summary.push(`infortunio (${fields.severity})`);
     return { kind: "injury", fields, summary: summary.join(", ") };
   }
 
@@ -909,16 +965,25 @@ function parseDebrief(body: string): { fields: any; summary: string } {
   if (/\b(malato|malata|febbre|raffreddore|influenza|mal di gola|tosse|covid)\b/i.test(lower)) {
     fields.illness_flag = true;
     fields.illness_details = body.slice(0, 200);
-    summary.push("malattia");
+    fields.severity = detectIllnessSeverity(body);
+    const dur = detectExpectedDuration(body);
+    if (dur !== null) fields.expected_duration_days = dur;
+    summary.push(`malattia (${fields.severity})`);
   }
 
   const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/i;
   if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
-    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io])\b/i);
-    if (locMatch) fields.injury_location = locMatch[1];
-    summary.push("infortunio");
+    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io]|fascite|plantar[ei]|tibi[ae])\b/i);
+    if (locMatch) {
+      fields.injury_location = locMatch[1];
+      fields.body_location = locMatch[1];
+    }
+    fields.severity = detectInjurySeverity(body);
+    const dur = detectExpectedDuration(body);
+    if (dur !== null) fields.expected_duration_days = dur;
+    summary.push(`infortunio (${fields.severity})`);
   }
 
   if (/\b(no dolori|nessun dolore|no pain|niente dolori)\b/i.test(lower)) {

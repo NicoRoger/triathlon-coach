@@ -21,6 +21,7 @@ import requests
 
 from coach.utils.supabase_client import get_supabase
 from coach.utils.health import record_health
+from coach.utils.dt import today_rome
 
 logger = logging.getLogger(__name__)
 
@@ -183,21 +184,81 @@ def _build_session_section(planned_sessions: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _fetch_latest_severity(kind: str) -> Optional[dict]:
+    """Fase 1.5 — recupera l'ultimo log injury/illness ancora 'attivo' (ultimi 14gg)
+    per estrarre severity, body_location, durata attesa.
+    """
+    try:
+        sb = get_supabase()
+        since = (today_rome() - timedelta(days=14)).isoformat()
+        res = (
+            sb.table("subjective_log")
+            .select("severity,body_location,expected_duration_days,logged_at,injury_location")
+            .eq("kind", kind)
+            .gte("logged_at", since)
+            .order("logged_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+    except Exception:
+        return None
+
+
 def _build_warnings_section(metrics: dict) -> str:
-    """Warning specifici (hardcoded da CLAUDE.md, gestiti via env var)."""
+    """Warning specifici (hardcoded da CLAUDE.md, gestiti via env var) + severity-aware."""
     flags = metrics.get("flags") or []
     flag_msgs = {
         "fatigue_critical": "🚨 HRV in crash (z<-2) → recovery obbligatorio oggi",
         "fatigue_warning": "⚠️ HRV in calo da 2+ giorni → rimodula sessione di oggi",
         "trend_negative": "📉 HRV trend 7gg sotto baseline 28gg",
         "anticipate_recovery_week": "🔄 Suggerito anticipo settimana di scarico",
-        "illness_flag": "🤒 Flag malattia attivo → stop intensità",
-        "injury_flag": "🩹 Flag infortunio attivo → stop disciplina coinvolta",
         "high_soreness": "😣 Soreness alta segnalata",
         "low_motivation": "😐 Motivazione bassa segnalata",
         "post_illness_caution": "🐢 Cautela post-malattia",
     }
     flag_lines = [flag_msgs[f] for f in flags if f in flag_msgs]
+
+    # Fase 1.5 — Severity-aware injury/illness warnings
+    if "injury_flag" in flags:
+        inj = _fetch_latest_severity("injury") or {}
+        sev = inj.get("severity")
+        loc = inj.get("body_location") or inj.get("injury_location") or ""
+        loc_str = f" a {loc}" if loc else ""
+        if sev == "severe":
+            flag_lines.append(
+                f"🚑 <b>Infortunio severo{loc_str}</b> → STOP disciplina coinvolta. Valuta visita medica."
+            )
+        elif sev == "moderate":
+            flag_lines.append(
+                f"🩹 <b>Infortunio moderato{loc_str}</b> → skip qualità sulla disciplina. Z1-Z2 e tecnica."
+            )
+        elif sev == "mild":
+            flag_lines.append(
+                f"🟡 Fastidio lieve{loc_str} → monitora durante sessione, se peggiora STOP."
+            )
+        else:
+            flag_lines.append("🩹 Flag infortunio attivo → stop disciplina coinvolta")
+
+    if "illness_flag" in flags:
+        ill = _fetch_latest_severity("illness") or {}
+        sev = ill.get("severity")
+        dur = ill.get("expected_duration_days")
+        dur_str = f" (durata attesa ~{dur}gg)" if dur else ""
+        if sev == "severe":
+            flag_lines.append(
+                f"🤒 <b>Malattia grave{dur_str}</b> → STOP totale allenamento. Riposo + idratazione."
+            )
+        elif sev == "moderate":
+            flag_lines.append(
+                f"🤧 Malattia moderata{dur_str} → solo Z1 leggera se sintomi sopra il collo, altrimenti riposo."
+            )
+        elif sev == "mild":
+            flag_lines.append(
+                f"😷 Sintomi lievi{dur_str} → Z1-Z2 ridotto, evita intensità."
+            )
+        else:
+            flag_lines.append("🤒 Flag malattia attivo → stop intensità")
 
     # Warning permanenti gestiti da env var (default True, settali a "false" quando risolti)
     permanent = []
