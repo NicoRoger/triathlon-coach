@@ -1,0 +1,36 @@
+name: proactive-reminders
+
+# Fase 1.6 — Proactive Telegram nudges
+# Runs every 30 minutes to check trigger conditions and send nudges
+# to the athlete via Telegram when actions in Claude.ai are needed.
+# Deduplication via sent_reminders table (unique on trigger_type + sent_date).
+
+on:
+  schedule:
+    # Ogni 30 min (offset 7 per evitare picco condivisione runner)
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run proactive reminders
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python -m coach.coaching.proactive_reminders
