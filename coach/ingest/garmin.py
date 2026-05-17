@@ -378,8 +378,25 @@ def sync_activities(days_back: int = 7) -> int:
                     logger.warning("Weather non disponibile per %s: %s", activity_id, e)
 
             act = _normalize_activity(raw, splits=splits, weather=weather)
+            act_dict = act.model_dump(mode="json", exclude_none=True)
+
+            # Fase 1.4 — outlier validation
+            from coach.utils.validators import validate_activity
+            v = validate_activity(act_dict)
+            if not v.ok:
+                logger.warning(
+                    "Activity %s REJECTED by validator: %s",
+                    raw.get("activityId"), "; ".join(v.errors),
+                )
+                continue
+            if v.warnings:
+                logger.warning(
+                    "Activity %s warnings: %s",
+                    raw.get("activityId"), "; ".join(v.warnings),
+                )
+
             sb.table("activities").upsert(
-                act.model_dump(mode="json", exclude_none=True),
+                act_dict,
                 on_conflict="external_id,source",
             ).execute()
             count += 1
@@ -437,8 +454,25 @@ def sync_wellness(days_back: int = 7) -> int:
                 "training_readiness": training_readiness,
             }
             wellness = _normalize_wellness(payload, day)
+            wellness_dict = wellness.model_dump(mode="json", exclude_none=True)
+
+            # Fase 1.4 — outlier validation wellness
+            from coach.utils.validators import validate_wellness
+            v = validate_wellness(wellness_dict)
+            if not v.ok:
+                logger.warning(
+                    "Wellness %s REJECTED by validator: %s",
+                    day, "; ".join(v.errors),
+                )
+                continue
+            if v.warnings:
+                logger.warning(
+                    "Wellness %s warnings: %s",
+                    day, "; ".join(v.warnings),
+                )
+
             sb.table("daily_wellness").upsert(
-                wellness.model_dump(mode="json", exclude_none=True),
+                wellness_dict,
                 on_conflict="date",
             ).execute()
             count += 1
