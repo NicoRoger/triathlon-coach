@@ -422,6 +422,24 @@ def _build_footer() -> str:
     return "<i>💬 /log note · /debrief stasera · /help comandi</i>"
 
 
+def _build_risk_section() -> str:
+    """Fase 2.5 — Sezione rischio probabilistico nel brief.
+
+    Mostra solo i rischi >= 'high' (50%+) per non sovraccaricare il brief.
+    Rischi 'moderate' silenziosi; 'low' invisibili.
+    """
+    try:
+        from coach.analytics.risk import compute_all_risks, risks_to_brief_lines
+        risks = compute_all_risks()
+        lines = risks_to_brief_lines(risks, threshold="high")
+        if not lines:
+            return ""
+        return "<b>⚠️ Rischi attivi</b>\n" + "\n".join(lines)
+    except Exception:
+        logger.warning("Risk section failed", exc_info=True)
+        return ""
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -470,6 +488,7 @@ def build_brief() -> str:
             _build_wellness_section(wellness, metrics),
             _build_race_week_section(upcoming_race, today),
             _build_warnings_section(metrics),
+            _build_risk_section(),
             pattern_line,
             _build_footer(),
         ]
@@ -482,6 +501,7 @@ def build_brief() -> str:
             _build_session_section(planned_sessions),
             _build_race_progress_section(today),
             _build_warnings_section(metrics),
+            _build_risk_section(),
             pattern_line,
             _build_footer(),
         ]
