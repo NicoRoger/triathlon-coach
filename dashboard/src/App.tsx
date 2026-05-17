@@ -8,6 +8,7 @@ import { WellnessChart } from "./components/WellnessChart";
 import { ComplianceBar } from "./components/ComplianceBar";
 import { UpcomingSessions } from "./components/UpcomingSessions";
 import { GoalBoard } from "./components/GoalBoard";
+import { AnnualView } from "./components/AnnualView";
 
 const REFRESH_MS = 5 * 60 * 1000;
 
@@ -88,6 +89,7 @@ export default function App() {
           <WellnessChart wellness={data.wellness} />
           <ComplianceBar plannedSessions={data.planned_sessions} activities={data.activities} today={data.today} />
           <UpcomingSessions sessions={data.planned_sessions} today={data.today} />
+          <AnnualView data={data} />
           <GoalBoard data={data} />
         </div>
       )}

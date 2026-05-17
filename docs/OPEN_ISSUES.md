@@ -98,6 +98,7 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 | `migrations/2026-05-14-sent-reminders.sql` | Phase 1.6 | ⏳ Run once (proactive reminders dedup table) |
 | `migrations/2026-05-14-predictions-outcomes.sql` | Phase 2.1 | ⏳ Run once (outcome tracking engine) |
 | `migrations/2026-05-14-season-year.sql` | Phase 2.7 | ⏳ Run once (multi-race architecture) |
+| `migrations/2026-05-14-hypothesis-and-audit.sql` | Phase 3.1+3.4 | ⏳ Run once (hypothesis_tests + decision_audit tables) |
 
 ---
 
@@ -136,9 +137,15 @@ athlete_beliefs.md aggiornato automaticamente da outcome_verification.py ogni do
 
 Skill weekly_review, generate_mesocycle, propose_session richiedono citation tags `[source: ...]` per ogni decisione strutturale e `[athlete-belief: ...]` quando applicano beliefs.
 
-### Phase 3 — Professional coach (after Phase 2)
+### Phase 3 — Professional coach ✅ COMPLETED
 
-Hypothesis testing, multi-horizon planning, sport-specific modules, decision provenance, pre-test/post-test calibration.
+| Modulo | Status | Note |
+|--------|--------|------|
+| 3.1 Hypothesis testing framework | ✅ | `coach/coaching/hypothesis.py` con Welch t-test + Cohen's d |
+| 3.2 Multi-horizon planning (race_calendar_optimizer + AnnualView) | ✅ | Auto-genera mesocicli per gare A/B con taper [Mujika 2003] |
+| 3.3 Sport-specific deep modules | ✅ | `brick_design.md`, `ows_strategy.md`, `transition_training.md` |
+| 3.4 Decision provenance | ✅ | `decision_audit.py` con extract_citations / extract_beliefs auto |
+| 3.5 Pre-test/post-test calibration | ✅ | Già coperto in Fase 2.6 + outcome_verification bias correction |
 
 ### Phase 4 — Cognitive MVP (final)
 
