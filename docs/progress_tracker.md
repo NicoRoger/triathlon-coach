@@ -4,7 +4,7 @@
 
 ## Forma Fisica (CTL Trend)
 
-- **Readiness**: 84/100
+- **Readiness**: 77/100
 
 ## Zone Fisiologiche
 
