@@ -59,6 +59,20 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 
 ---
 
+## BUG-009 — Morning brief inviato 2 volte ogni mattina ✅
+- **Symptom**: ricevevi 2 brief mattutini ogni giorno (uno alle 06:05 e uno alle 06:20 UTC)
+- **Root cause**: doppio trigger non bloccato da `concurrency:cancel-in-progress`:
+  1. `ingest.yml` finisce alle ~06:05 UTC e chiama `gh workflow run morning-briefing.yml`
+  2. `morning-briefing.yml` cron fallback parte alle 06:20 UTC
+  3. Il `concurrency.cancel-in-progress: true` non si attiva perché il primo brief impiega ~30s e termina prima del trigger cron successivo
+- **Fix**: idempotency check Python in `coach/planning/briefing.py`:
+  - Query `bot_messages` per `purpose=morning_brief` negli ultimi 6h
+  - Se trovato → skip + log "already sent"
+  - `workflow_dispatch.inputs.force_send=true` per bypass manuale (test)
+- **Test**: domani mattina arriva 1 solo brief. Per testare manualmente: trigger `morning-briefing` da Actions UI → primo run sends, second run (immediato) salta con log "already sent"
+
+---
+
 ## BUG-008 — Weekly review skip `commit_plan_change` ✅
 - **Symptom**: dopo "ok" della weekly review, le sessioni a volte non apparivano nel DB / calendario. L'atleta doveva chiedere esplicitamente "ma le hai committate?" perché venisse fatto.
 - **Root cause**: la Fase 5 della skill descriveva l'azione ma non imponeva uno step di verifica esplicito → l'agente in Claude.ai a volte saltava o eseguiva commit parziali senza accorgersene.
