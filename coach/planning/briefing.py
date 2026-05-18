@@ -596,8 +596,42 @@ def send_to_telegram(message: str, purpose: str = "morning_brief", parent_workfl
         raise RuntimeError("send_to_telegram failed (see logs)")
 
 
+def _brief_already_sent_today(sb, *, window_hours: int = 6) -> bool:
+    """Idempotenza: True se un morning_brief è stato inviato negli ultimi N ore.
+
+    Previene doppio invio quando sia il trigger da ingest che il cron fallback
+    di morning-briefing.yml partono nella stessa finestra mattutina.
+    """
+    from datetime import timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
+    try:
+        res = (
+            sb.table("bot_messages")
+            .select("id,sent_at")
+            .eq("purpose", "morning_brief")
+            .gte("sent_at", cutoff)
+            .limit(1)
+            .execute()
+        )
+        return bool(res.data)
+    except Exception:
+        logger.warning("Idempotency check failed; proceeding with send", exc_info=True)
+        return False
+
+
 def main() -> None:
+    import os
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    # Idempotenza: skip se un brief è stato già inviato nelle ultime 6h
+    # (workflow_dispatch può forzare via FORCE_SEND=true)
+    force_send = os.environ.get("FORCE_SEND", "").lower() in ("true", "1", "yes")
+    if not force_send:
+        sb = get_supabase()
+        if _brief_already_sent_today(sb):
+            logger.info("Morning brief already sent in last 6h — skipping duplicate run")
+            return
+
     try:
         msg = build_brief()
         send_to_telegram(msg)

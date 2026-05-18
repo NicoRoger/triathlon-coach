@@ -5,8 +5,17 @@ on:
     # Fallback: si attiva solo se l'ingest mattutino non l'ha già triggerato.
     # L'ingest gira alle 06:00 UTC e chiama `gh workflow run` dopo il successo;
     # questo schedule a 06:20 è il safety net per ingest lento o fallito.
+    # NOTA: idempotenza gestita lato Python in coach/planning/briefing.py
+    # (check su bot_messages per skip se già inviato nelle ultime 6h).
     - cron: '20 6 * * *'
   workflow_dispatch:
+    inputs:
+      force_send:
+        description: "Bypass idempotency check (force re-send)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
 
 # Previene duplicate se sia il trigger da ingest che il fallback schedule partono
 concurrency:
@@ -26,6 +35,7 @@ jobs:
       PYTHONPATH: '.'
       SHOULDER_ACTIVE: ${{ secrets.SHOULDER_ACTIVE }}
       PLANTAR_ACTIVE: ${{ secrets.PLANTAR_ACTIVE }}
+      FORCE_SEND: ${{ github.event.inputs.force_send || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
