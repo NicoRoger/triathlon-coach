@@ -109,6 +109,7 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 | `migrations/2026-05-14-predictions-outcomes.sql` | Phase 2.1 | ⏳ Run once (outcome tracking engine) |
 | `migrations/2026-05-14-season-year.sql` | Phase 2.7 | ⏳ Run once (multi-race architecture) |
 | `migrations/2026-05-14-hypothesis-and-audit.sql` | Phase 3.1+3.4 | ⏳ Run once (hypothesis_tests + decision_audit tables) |
+| `migrations/2026-05-14-cognitive-mvp.sql` | Phase 4.3+4.4 | ⏳ Run once (beliefs + beliefs_history + recommendations tables) |
 
 ---
 
@@ -157,6 +158,17 @@ Skill weekly_review, generate_mesocycle, propose_session richiedono citation tag
 | 3.4 Decision provenance | ✅ | `decision_audit.py` con extract_citations / extract_beliefs auto |
 | 3.5 Pre-test/post-test calibration | ✅ | Già coperto in Fase 2.6 + outcome_verification bias correction |
 
-### Phase 4 — Cognitive MVP (final)
+### Phase 4 — Cognitive MVP ✅ COMPLETED
 
-Outcome engine (refactor cognitive layer) + decision priority + uncertainty framework + Bayesian belief engine. Vedi piano completo in `~/.claude/plans/spicy-weaving-twilight.md`.
+| Modulo | Status | Note |
+|--------|--------|------|
+| 4.1 Outcome engine (cognitive architecture refactor) | ✅ | `coach/cognition/{prediction,inference,prescription}` re-export semantico |
+| 4.2 Decision Priority Engine | ✅ | `coach/decision/priority_engine.py` — 9 priority hierarchy, tradeoff reasoning, hard rules |
+| 4.3 Uncertainty Framework | ✅ | `coach/analytics/uncertainty.py` + tabella `recommendations`. Hard rules: n<3 exploratory, n<5 ceiling 0.5, missing data penalty |
+| 4.4 Bayesian Belief Engine | ✅ | `coach/analytics/belief_engine.py` + `belief_guardrails.py` + tabelle `beliefs` + `beliefs_history`. Lifecycle 4 stati, evidence decay, contradictions Bayesian |
+| Integration brief | ✅ | Nuove sezioni `_build_belief_insight_section()` + `_build_uncertainty_disclaimer()` |
+| Pattern → beliefs pipeline | ✅ | `extract_beliefs_from_observations.py` parsa coaching_observations.md e sincronizza beliefs table |
+
+### Phase 5 — Future cognitive expansion (post-MVP, da valutare)
+
+Coaching philosophy layer, multi-memory architecture, psycho-physiological modeling, environmental intelligence, communication mode adaptation. Rimandata oltre l'orizzonte attuale.

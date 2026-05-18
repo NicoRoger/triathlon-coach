@@ -55,6 +55,15 @@ jobs:
       - name: Extract Patterns
         run: python -m coach.coaching.pattern_extraction
 
+      - name: Sync beliefs from observations (Phase 4.4)
+        # Estrae belief candidates dal pattern_extraction output e le scrive in
+        # `beliefs` table con guardrails automatici.
+        run: python -m coach.coaching.extract_beliefs_from_observations
+
+      - name: Decay old beliefs (Phase 4.4)
+        # Applica evidence decay esponenziale alle beliefs non reinforced
+        run: python -c "from coach.analytics.belief_engine import decay_old_beliefs; print(decay_old_beliefs())"
+
       - name: Update CLAUDE.md status
         run: python scripts/update_claude_md_status.py
 

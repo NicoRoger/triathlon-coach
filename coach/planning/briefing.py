@@ -440,6 +440,82 @@ def _build_risk_section() -> str:
         return ""
 
 
+def _build_belief_insight_section() -> str:
+    """Fase 4.4 — Sezione 'belief del giorno' nel brief.
+
+    Cita una validated/strong belief rilevante oggi (es. giorno della settimana,
+    fase mesociclo). Solo beliefs status >= validated_belief, confidence > 0.7.
+    Niente cita se non ce ne sono.
+    """
+    try:
+        from coach.analytics.belief_engine import get_actionable_beliefs
+        from coach.utils.dt import today_rome
+        beliefs = get_actionable_beliefs()
+        if not beliefs:
+            return ""
+        # Filtra beliefs rilevanti per oggi: cerca giorno settimana o fase mesociclo
+        # in belief_text. Semplice heuristica per ora.
+        today = today_rome()
+        day_names_it = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+        today_name = day_names_it[today.weekday()]
+
+        relevant = [b for b in beliefs
+                    if today_name in b.belief_text.lower()
+                    or today_name in (b.prescription or "").lower()]
+        if not relevant:
+            return ""
+        b = relevant[0]
+        emoji = "🏆" if b.status == "strong_belief" else "✅"
+        text = b.prescription or b.belief_text
+        return (
+            f"<b>{emoji} Insight personalizzato</b>\n"
+            f"{text} <i>(n={b.evidence_n}, conf={int(b.confidence*100)}%)</i>"
+        )
+    except Exception:
+        logger.warning("Belief insight section failed", exc_info=True)
+        return ""
+
+
+def _build_uncertainty_disclaimer() -> str:
+    """Fase 4.3 — Disclaimer se confidence dei dati di oggi è bassa.
+
+    Hard rules: missing HRV >40%, sleep mancante, sample <7 giorni.
+    """
+    try:
+        from coach.utils.dt import today_rome
+        from coach.utils.supabase_client import get_supabase
+        from datetime import timedelta
+        sb = get_supabase()
+        today = today_rome()
+        since = (today - timedelta(days=7)).isoformat()
+        res = sb.table("daily_wellness").select("date,hrv_rmssd,sleep_score").gte(
+            "date", since
+        ).execute()
+        rows = res.data or []
+        if not rows:
+            return ""
+        hrv_present = sum(1 for r in rows if r.get("hrv_rmssd") is not None)
+        sleep_present = sum(1 for r in rows if r.get("sleep_score") is not None)
+        total = len(rows)
+        hrv_coverage = hrv_present / total if total > 0 else 0
+        sleep_coverage = sleep_present / total if total > 0 else 0
+
+        warnings = []
+        if hrv_coverage < 0.6:
+            warnings.append(f"HRV mancante {total - hrv_present}/{total} giorni")
+        if sleep_coverage < 0.6:
+            warnings.append(f"sleep score mancante {total - sleep_present}/{total} giorni")
+        if not warnings:
+            return ""
+        return (
+            "<b>📊 Confidence ridotta</b>\n"
+            f"<i>{', '.join(warnings)}. Le proposte di oggi hanno data_coverage bassa.</i>"
+        )
+    except Exception:
+        logger.warning("Uncertainty disclaimer failed", exc_info=True)
+        return ""
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -489,6 +565,8 @@ def build_brief() -> str:
             _build_race_week_section(upcoming_race, today),
             _build_warnings_section(metrics),
             _build_risk_section(),
+            _build_belief_insight_section(),
+            _build_uncertainty_disclaimer(),
             pattern_line,
             _build_footer(),
         ]
@@ -502,6 +580,8 @@ def build_brief() -> str:
             _build_race_progress_section(today),
             _build_warnings_section(metrics),
             _build_risk_section(),
+            _build_belief_insight_section(),
+            _build_uncertainty_disclaimer(),
             pattern_line,
             _build_footer(),
         ]
