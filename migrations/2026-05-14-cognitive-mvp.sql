@@ -124,3 +124,8 @@ CREATE INDEX IF NOT EXISTS idx_recommendations_low_confidence
 
 COMMENT ON TABLE recommendations IS
   'Recommendation object standard (Fase 4.3). Audit trail di tutte le proposte con confidence, blind spots, priority resolution.';
+
+-- RLS: allinea al pattern single-user di schema.sql (deny-all anon, service_role bypassa).
+ALTER TABLE beliefs         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE beliefs_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recommendations ENABLE ROW LEVEL SECURITY;

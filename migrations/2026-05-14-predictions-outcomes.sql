@@ -75,3 +75,7 @@ GROUP BY p.prediction_type, p.model_version;
 
 COMMENT ON VIEW prediction_accuracy IS
   'Aggregato accuratezza per prediction_type + model_version. Usato per calibrazione bias.';
+
+-- RLS: allinea al pattern single-user di schema.sql (deny-all anon, service_role bypassa).
+ALTER TABLE predictions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE outcomes    ENABLE ROW LEVEL SECURITY;

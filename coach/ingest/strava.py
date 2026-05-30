@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 STRAVA_API = "https://www.strava.com/api/v3"
 TOKEN_URL = "https://www.strava.com/oauth/token"
 
+# Guard anti-loop: con days_back tipico (7) bastano pochissime pagine.
+# Cap difensivo per evitare loop infiniti / ban da rate-limit se l'API
+# restituisse sempre pagine piene.
+MAX_PAGES = 20
+PER_PAGE = 100
+
 SPORT_MAP = {
     "Run": Sport.RUN,
     "TrailRun": Sport.RUN,
@@ -101,9 +107,8 @@ def sync(days_back: int = 7) -> int:
     sb = get_supabase()
 
     count = 0
-    page = 1
-    while True:
-        batch = _list_activities(token, after, page=page)
+    for page in range(1, MAX_PAGES + 1):
+        batch = _list_activities(token, after, page=page, per_page=PER_PAGE)
         if not batch:
             break
         for raw in batch:
@@ -118,7 +123,11 @@ def sync(days_back: int = 7) -> int:
                 count += 1
             except Exception:  # noqa: BLE001
                 logger.exception("Strava upsert failed for %s", raw.get("id"))
-        page += 1
+        # Ultima pagina: meno elementi di per_page → niente altre pagine da leggere
+        if len(batch) < PER_PAGE:
+            break
+    else:
+        logger.warning("Strava sync hit MAX_PAGES=%d cap; possibili attività non lette", MAX_PAGES)
 
     return count
 

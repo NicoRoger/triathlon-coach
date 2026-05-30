@@ -74,6 +74,38 @@ Diagnosi prima di patch (filosofia Audio Guided Condotta):
 | Trimestrale | Rotazione secret, test DR restore, review CLAUDE.md profilo |
 | Annuale | Review macro: gare, obiettivi long-term, evoluzione stack |
 
+## Rotazione secret / token
+
+### GitHub PAT `GH_PAT_TRIGGER` (force_garmin_sync)
+Il MCP worker usa il secret `GH_PAT_TRIGGER` per lanciare il workflow `ingest`
+via `workflow_dispatch` quando chiami `force_garmin_sync` da Claude.ai. È un PAT
+classic con scope `repo` + `workflow` ed **ha una scadenza** → quando scade,
+`force_garmin_sync` smette di funzionare (il resto del sistema continua: ingest
+gira comunque ogni 3h via cron).
+
+Rotazione (azione manuale, ~3 min):
+1. Rigenera il token su GitHub:
+   `Settings → Developer settings → Personal access tokens` →
+   rigenera il PAT esistente, **oppure** (consigliato) crea un **fine-grained PAT**
+   limitato al solo repo `nicoroger/triathlon-coach` con permesso
+   *Actions: Read and write* — più sicuro e con scadenza gestibile.
+2. Aggiorna il secret del worker:
+   ```bash
+   cd workers/mcp-server
+   wrangler secret put GH_PAT_TRIGGER   # incolla il nuovo token
+   ```
+3. Verifica: da Claude.ai chiama `force_garmin_sync` → il workflow `ingest` parte.
+
+> Promemoria: GitHub invia un'email ~7 giorni prima della scadenza. Annota la
+> data di scadenza qui o passa a fine-grained PAT per ridurre la frequenza.
+
+### Email Supabase "Data API exposure" (30/05/2026)
+Nessuna azione runtime richiesta: l'app usa la `service_role` key ovunque
+(bypassa GRANT/RLS) e il progetto è esistente (grandfathered fino al 30/10/2026).
+L'allineamento di sicurezza è la migration `2026-05-30-rls-and-fk-integrity.sql`
+(abilita RLS sulle tabelle scoperte). **Non** concedere GRANT al ruolo `anon`.
+Dettagli in `docs/audit_2026-05-30.md`.
+
 ## Limiti noti
 
 - Sonno e HRV affidabili solo con orologio indossato di notte. Notti senza

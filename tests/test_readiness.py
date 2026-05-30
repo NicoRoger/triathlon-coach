@@ -3,6 +3,7 @@ from coach.analytics.readiness import (
     SubjectiveState,
     TrainingState,
     WellnessHistory,
+    _score_tsb,
     compute_flags,
     compute_readiness,
     hrv_z_score,
@@ -79,6 +80,33 @@ def test_readiness_green_light():
     report = compute_readiness(wellness, training, make_default_subj(motivation=9, soreness=1))
     assert report.label == "ready"
     assert report.score >= 75
+
+
+def test_score_tsb_none_is_neutral():
+    """Regressione A4: tsb=None (PMC assente) → 50 neutro, NON 100/ready.
+
+    Prima del fix daily.py passava tsb=0 quando il PMC mancava, e _score_tsb(0)
+    ricade in -10≤tsb≤5 → 100. Passare None deve dare il valore neutro.
+    """
+    assert _score_tsb(TrainingState(ctl=None, atl=None, tsb=None, days_since_hard_session=None)) == 50
+    # Sanity: tsb=0 invece vale 100 (ecco perché passare 0 gonfiava la readiness)
+    assert _score_tsb(TrainingState(ctl=0, atl=0, tsb=0, days_since_hard_session=None)) == 100
+
+
+def test_readiness_not_inflated_without_pmc():
+    """Regressione A4 end-to-end: senza PMC il fattore TSB non deve spingere a 'ready'.
+
+    Con HRV/sleep neutri e tsb=None, il contributo TSB è 50 (neutro), quindi lo
+    score complessivo resta sotto la soglia 'ready' (75)."""
+    wellness = WellnessHistory(
+        hrv_today=None, hrv_history_28d=[], hrv_recent_z_scores=[],
+        sleep_score_today=None, sleep_avg_7d=None,
+        body_battery_morning=None, resting_hr_today=None, resting_hr_baseline=None,
+    )
+    training = TrainingState(ctl=None, atl=None, tsb=None, days_since_hard_session=None)
+    report = compute_readiness(wellness, training, make_default_subj(motivation=None, soreness=None))
+    assert report.factors["tsb"] == 50
+    assert report.label != "ready"
 
 
 def test_readiness_caution_with_warning_capped():

@@ -143,7 +143,7 @@ def validate_activity(act: dict[str, Any]) -> ValidationResult:
         r.reject(f"max_power_w={max_power} impossibile (> {POWER_MAX_W}W)")
     if avg_power is not None and max_power is not None and avg_power > max_power:
         r.reject(f"avg_power_w={avg_power} > max_power_w={max_power} (incoerente)")
-    if np_w is not None and avg_power is not None and np_w > max_power if max_power else False:
+    if np_w is not None and max_power is not None and np_w > max_power:
         r.warn(f"np_w={np_w} > max_power_w={max_power} (anomalo)")
 
     # TSS

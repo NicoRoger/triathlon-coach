@@ -92,23 +92,29 @@ def compute_for(day: date, history_days: int = 90) -> dict:
     hrv_history = [r["hrv_rmssd"] for r in wellness_rows if r.get("hrv_rmssd") is not None]
     today_wellness = next((r for r in wellness_rows if r["date"] == day.isoformat()), {})
 
+    # Baseline = storia HRV ESCLUSO oggi (escluso per data, non per valore:
+    # escludere per valore rimuoverebbe tutti i giorni con lo stesso HRV di oggi).
+    baseline = [
+        r["hrv_rmssd"]
+        for r in wellness_rows
+        if r.get("hrv_rmssd") is not None and r["date"] != day.isoformat()
+    ]
+
     z = None
     baseline_28 = None
     baseline_sd = None
-    if today_wellness.get("hrv_rmssd") is not None and len(hrv_history) >= 7:
-        # Escludi oggi dalla baseline
-        baseline = [v for v in hrv_history if v != today_wellness["hrv_rmssd"]]
-        if baseline:
-            import statistics
-            baseline_28 = statistics.fmean(baseline)
-            baseline_sd = statistics.pstdev(baseline) if len(baseline) > 1 else 0
-            z = hrv_z_score(today_wellness["hrv_rmssd"], baseline)
+    if today_wellness.get("hrv_rmssd") is not None and len(baseline) >= 7:
+        import statistics
+        baseline_28 = statistics.fmean(baseline)
+        baseline_sd = statistics.pstdev(baseline) if len(baseline) > 1 else 0
+        z = hrv_z_score(today_wellness["hrv_rmssd"], baseline)
 
-    # Readiness
+    # Readiness — recent z-scores calcolati sulla stessa baseline esclusa-oggi
     recent_z_scores = []
-    for r in wellness_rows[-5:]:
-        if r.get("hrv_rmssd") is not None and len(hrv_history) >= 7:
-            recent_z_scores.append(hrv_z_score(r["hrv_rmssd"], hrv_history))
+    if len(baseline) >= 7:
+        for r in wellness_rows[-5:]:
+            if r.get("hrv_rmssd") is not None:
+                recent_z_scores.append(hrv_z_score(r["hrv_rmssd"], baseline))
 
     wh = WellnessHistory(
         hrv_today=today_wellness.get("hrv_rmssd"),
@@ -120,10 +126,12 @@ def compute_for(day: date, history_days: int = 90) -> dict:
         resting_hr_today=today_wellness.get("resting_hr"),
         resting_hr_baseline=None,
     )
+    # Quando non c'è PMC (cold-start, zone fisiologiche non ancora misurate) passa
+    # None: _score_tsb(None) → 50 neutro. Passare 0 darebbe falsamente TSB=100/ready.
     ts = TrainingState(
-        ctl=today_pmc.ctl if today_pmc else 0,
-        atl=today_pmc.atl if today_pmc else 0,
-        tsb=today_pmc.tsb if today_pmc else 0,
+        ctl=today_pmc.ctl if today_pmc else None,
+        atl=today_pmc.atl if today_pmc else None,
+        tsb=today_pmc.tsb if today_pmc else None,
         days_since_hard_session=None,
     )
     subj_data = _fetch_recent_subjective(sb, day)

@@ -202,6 +202,7 @@ def _fetch_latest_severity(kind: str) -> Optional[dict]:
         )
         return res.data[0] if res.data else None
     except Exception:
+        logger.exception("_fetch_latest_severity failed (kind=%s)", kind)
         return None
 
 

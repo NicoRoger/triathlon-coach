@@ -49,10 +49,19 @@ jobs:
       - name: Garmin sync (with retries)
         id: garmin
         run: |
+          ok=0
           for i in 1 2 3; do
             echo "Garmin attempt $i"
-            python -m coach.ingest.garmin && break || sleep $((i * 30))
+            if python -m coach.ingest.garmin; then
+              ok=1
+              break
+            fi
+            sleep $((i * 30))
           done
+          if [ "$ok" != "1" ]; then
+            echo "::error::Garmin sync failed after 3 attempts"
+            exit 1
+          fi
 
       #- name: Strava sync
        # if: always()

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
@@ -113,7 +113,7 @@ def apply_modulation(modulation_id: str) -> bool:
 
     sb.table("plan_modulations").update({
         "status": "accepted",
-        "resolved_at": "now()",
+        "resolved_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", modulation_id).execute()
 
     logger.info("Modulation %s accepted and applied", modulation_id)
@@ -125,7 +125,7 @@ def reject_modulation(modulation_id: str) -> bool:
     sb = get_supabase()
     sb.table("plan_modulations").update({
         "status": "rejected",
-        "resolved_at": "now()",
+        "resolved_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", modulation_id).execute()
     logger.info("Modulation %s rejected", modulation_id)
     return True

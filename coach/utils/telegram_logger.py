@@ -45,7 +45,15 @@ def send_and_log_message(
             timeout=30,
         )
         resp.raise_for_status()
-        msg_id: Optional[int] = resp.json().get("result", {}).get("message_id")
+        body = resp.json()
+        if not body.get("ok"):
+            # Telegram può rispondere 200 con ok=false (es. parse_mode entities errate)
+            logger.error(
+                "Telegram API ok=false (purpose=%s): %s",
+                purpose, body.get("description", body),
+            )
+            return None
+        msg_id: Optional[int] = (body.get("result") or {}).get("message_id")
 
         if msg_id:
             _log_bot_message(
