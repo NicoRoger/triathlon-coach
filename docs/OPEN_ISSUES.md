@@ -188,3 +188,13 @@ Skill weekly_review, generate_mesocycle, propose_session richiedono citation tag
 ### Phase 5 — Future cognitive expansion (post-MVP, da valutare)
 
 Coaching philosophy layer, multi-memory architecture, psycho-physiological modeling, environmental intelligence, communication mode adaptation. Rimandata oltre l'orizzonte attuale.
+
+## BUG-011 — Weekly review: l'agente "dimentica" / va corretto spesso ✅
+- **Sintomo**: durante la weekly review il software non ricorda bene i dati e l'atleta deve correggerlo spesso.
+- **Root cause (2 cause)**:
+  1. **Payload gonfio**: `get_weekly_context` faceva `SELECT *` su `activities` e `daily_wellness`, includendo la colonna JSONB `raw_payload` (dump Garmin ~5KB/attività: userRoles, ogni split con lat/long, weather, connectIQ). Una settimana di attività + wellness → ~70.000 caratteri di contesto, per lo più rumore → l'LLM perde il filo e confonde i numeri.
+  2. **Doppio caricamento**: la skill `weekly_review.md` (Fase 1) chiedeva di chiamare i tool granulari (`get_activity_history`, `get_recent_metrics`, `query_subjective_log`, `get_planned_session` per ogni giorno) OLTRE a `get_weekly_context`, caricando gli stessi dati due volte in forme diverse → incongruenze.
+- **Fix**:
+  1. `workers/mcp-server/src/index.ts` — `getWeeklyContext` ora proietta colonne esplicite (niente `raw_payload`) su tutte le 9 query. **Richiede redeploy del worker mcp-server.**
+  2. `skills/weekly_review.md` — Fase 0/1 riscritte: `get_weekly_context` è la singola fonte di verità, caricata UNA volta; vietato duplicare con i tool granulari; confronto pianificato-vs-eseguito fatto sull'oggetto già ritornato.
+- **Test**: dopo redeploy, `get_weekly_context(days=7)` deve restituire un payload molto più piccolo (no `raw_payload`); la weekly review in Claude.ai non deve più richiedere correzioni sui dati base.
