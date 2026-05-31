@@ -18,6 +18,7 @@ Le migration sono ordinate per data nel nome file. Eseguile in ordine cronologic
 |------|-------------|-------|
 | `2026-05-06-add-calendar-event-id.sql` | Aggiunge `calendar_event_id` a `planned_sessions` | ⬜ Da eseguire |
 | `2026-05-30-rls-and-fk-integrity.sql` | Abilita RLS sulle 8 tabelle scoperte (predictions, outcomes, beliefs, beliefs_history, recommendations, hypothesis_tests, decision_audit, sent_reminders) + ON DELETE SET NULL sulle FK orfane | ⬜ Da eseguire |
+| `2026-05-30-seed-run-zones-provisional.sql` | Zone corsa provvisorie dal test soglia 30/05 (BUG-010) | ⬜ Da eseguire |
 
 ## Note
 

@@ -125,6 +125,7 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 | `migrations/2026-05-14-hypothesis-and-audit.sql` | Phase 3.1+3.4 | ⏳ Run once (hypothesis_tests + decision_audit tables) |
 | `migrations/2026-05-14-cognitive-mvp.sql` | Phase 4.3+4.4 | ⏳ Run once (beliefs + beliefs_history + recommendations tables) |
 | `migrations/2026-05-30-rls-and-fk-integrity.sql` | Security (RLS gap) + FK integrity | ⏳ Run once — abilita RLS sulle 8 tabelle scoperte + ON DELETE SET NULL su FK orfane. Vedi `docs/audit_2026-05-30.md` |
+| `migrations/2026-05-30-seed-run-zones-provisional.sql` | BUG-010 recovery | ⏳ Run once — zone corsa provvisorie (threshold 4:23/km, LTHR 183) dal test 30/05 non auto-processato |
 
 ---
 

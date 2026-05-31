@@ -63,3 +63,25 @@ Non aggiornare manualmente CLAUDE.md per le zone — il sistema lo fa autonomame
 - Non proporre test senza lo schema `structured` completo — il processore non lo riconoscerebbe
 - Non inventare nomi Garmin diversi da quelli nel protocollo
 - Non saltare il commit su `planned_sessions` — è il trigger per il matching automatico
+
+## ⚠️ Regole operative critiche (2026-05-30)
+
+### 1. Bici = test a FREQUENZA CARDIACA (l'atleta NON ha wattmetro)
+Niente FTP a potenza. Usa `test_type = threshold_bike_hr` (20' all-out a HR
+costante max sostenibile). Risultato = LTHR bici → zone `lthr_5zone`. I test a
+potenza restano solo per il futuro (se arriverà un wattmetro).
+
+### 2. Quando crei un test con commit_plan_change, POPOLA `structured`
+Serve almeno `test_type` e, per l'auto-estrazione, `extraction.primary`
+(quale lap usare). Senza `structured` il test NON aggiorna le zone (BUG-010).
+Esempio: `{"test_type":"threshold_run_30min","zone_system":"pace_5zone","extraction":{"primary":{"interval_index":1}}}`
+
+### 3. Salvataggio zone: tool `commit_physiology_zones`
+Se l'auto-estrazione non è possibile (split assenti, pacing pessimo, dati
+riportati a voce): `get_session_review_context(activity_id)` → calcola
+soglia/zone dal segmento corretto → dopo conferma chiama
+`commit_physiology_zones` (disciplina, valore, `zones`, `method`, `test_activity_id`).
+
+### 4. Validità: dichiara sempre la confidenza
+Test 20' (non 30') o pacing aggressivo (HR in Z5, calo finale) → zone
+PROVVISORIE: usale ma pianifica un re-test pulito.

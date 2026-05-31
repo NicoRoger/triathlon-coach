@@ -208,6 +208,27 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "commit_physiology_zones",
+    description: "Salva/aggiorna le zone fisiologiche di una disciplina (FTP bici, soglia corsa, CSS nuoto, LTHR). Da chiamare SOLO dopo conferma dell'atleta. IMPORTANTE: l'atleta NON ha wattmetro -> per la bici usa 'lthr' (soglia a frequenza cardiaca), non 'ftp_w'. Fornisci almeno uno tra ftp_w / threshold_pace_s_per_km / css_pace_s_per_100m / lthr, piu' l'oggetto 'zones' gia' calcolato. Tipicamente preceduto da get_session_review_context per leggere gli split del test.",
+    inputSchema: {
+      type: "object",
+      required: ["discipline", "method"],
+      properties: {
+        discipline: { type: "string", enum: ["swim", "bike", "run"] },
+        valid_from: { type: "string", format: "date" },
+        ftp_w: { type: "number" },
+        threshold_pace_s_per_km: { type: "number" },
+        css_pace_s_per_100m: { type: "number" },
+        lthr: { type: "integer" },
+        hr_max: { type: "integer" },
+        zones: { type: "object" },
+        method: { type: "string" },
+        test_activity_id: { type: "string" },
+        notes: { type: "string" },
+      },
+    },
+  },
 ];
 
 // ============================================================================
@@ -440,6 +461,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return forceGarminSync(env);
     case "commit_mesocycle":
       return commitMesocycle(args, env);
+    case "commit_physiology_zones":
+      return commitPhysiologyZones(args, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -824,6 +847,53 @@ async function getTechniqueHistory(sport: string, days: number, env: Env) {
 // ============================================================================
 // Mesocycles
 // ============================================================================
+async function commitPhysiologyZones(args: any, env: Env): Promise<any> {
+  const validDisc = ["swim", "bike", "run"];
+  if (!validDisc.includes(args.discipline)) {
+    throw new Error(`Invalid discipline: ${args.discipline}. Must be one of ${validDisc.join(", ")}`);
+  }
+  if (!args.method) throw new Error("Missing required field: method");
+  const valueFields = ["ftp_w", "threshold_pace_s_per_km", "css_pace_s_per_100m", "lthr"];
+  if (!valueFields.some((k) => args[k] !== undefined && args[k] !== null)) {
+    throw new Error(`Provide at least one value field: ${valueFields.join(", ")}`);
+  }
+
+  const validFrom = args.valid_from || todayRomeISO();
+  const payload: any = { discipline: args.discipline, valid_from: validFrom, method: args.method };
+  for (const k of ["ftp_w", "threshold_pace_s_per_km", "css_pace_s_per_100m", "lthr", "hr_max", "test_activity_id"]) {
+    if (args[k] !== undefined && args[k] !== null) payload[k] = args[k];
+  }
+  payload.notes = args.notes || (args.zones ? JSON.stringify({ zones: args.zones }) : null);
+
+  const headers = {
+    "apikey": env.SUPABASE_SERVICE_KEY,
+    "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+    "Content-Type": "application/json",
+    "Prefer": "return=representation",
+  };
+
+  const existingResp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/physiology_zones?discipline=eq.${args.discipline}&valid_from=eq.${validFrom}`,
+    { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
+  );
+  const existing = (await existingResp.json()) as any[];
+
+  if (existing.length > 0) {
+    const id = existing[0].id;
+    const upd = await fetch(`${env.SUPABASE_URL}/rest/v1/physiology_zones?id=eq.${id}`, {
+      method: "PATCH", headers, body: JSON.stringify(payload),
+    });
+    if (!upd.ok) throw new Error(`Update failed: ${upd.status} ${await upd.text()}`);
+    return { status: "updated", zone_id: id, payload };
+  }
+  const ins = await fetch(`${env.SUPABASE_URL}/rest/v1/physiology_zones`, {
+    method: "POST", headers, body: JSON.stringify(payload),
+  });
+  if (!ins.ok) throw new Error(`Insert failed: ${ins.status} ${await ins.text()}`);
+  const result = (await ins.json()) as any[];
+  return { status: "created", zone_id: result[0]?.id, payload };
+}
+
 async function commitMesocycle(args: any, env: Env): Promise<any> {
   const required = ["name", "phase", "start_date", "end_date"];
   for (const k of required) {
