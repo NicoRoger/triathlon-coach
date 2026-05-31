@@ -55,10 +55,12 @@ discipline:
     debolezze: tecnica post-pausa, spalla destra
     vincolo: zero Z4+ con spalla, distanza 72h tra sessioni nuoto
   bici:
-    ftp_attuale_w: da testare (FTP test giugno 2026)
+    ftp_attuale_w: N/A — atleta SENZA wattmetro. Intensità bici a frequenza cardiaca (LTHR bici, test_type=threshold_bike_hr, zone lthr_5zone). NON proporre FTP a potenza finché non c'è un wattmetro.
+    no_wattmetro: true
     debolezze: muscular endurance post-pausa (primo cedimento muscolare, non cardiovascolare)
   corsa:
-    threshold_pace_per_km: da testare (soglia test giugno 2026)
+    threshold_pace_per_km: 4:23 (263 s/km) — PROVVISORIO, test 20min 2026-05-30 (riconfermare con 30min pulito e ben pacizzato)
+    lthr_corsa: 183 bpm | hr_max: 194 bpm (dal test 2026-05-30)
     debolezze: muscular endurance, carico progressivo limitato da fascite plantare sx
     vincolo_fascite: max +10% volume/settimana, cap 14-15km/settimana attuale
 
