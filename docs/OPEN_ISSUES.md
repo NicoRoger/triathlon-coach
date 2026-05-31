@@ -199,5 +199,15 @@ Coaching philosophy layer, multi-memory architecture, psycho-physiological model
 - **Fix**:
   1. `workers/mcp-server/src/index.ts` — `getWeeklyContext`: projection esplicita su `planned_past`/`planned_upcoming` (drop `structured`/`target_zones`), `limit=5` su `open_modulations`, `limit=8` su `session_analyses`. **Richiede redeploy del worker mcp-server.**
   2. `skills/weekly_review.md` — Fase 0/1 riscritte: `get_weekly_context` è la singola fonte di verità, caricata UNA volta; vietato duplicare con i tool granulari.
-- **Follow-up correlato**: 14 modulazioni `proposed` mai risolte indicano che le proposte mid-week non vengono chiuse (accept/reject). Da indagare a parte (cleanup + auto-scadenza delle proposte vecchie).
 - **Test**: dopo redeploy, `get_weekly_context(days=7)` restituisce un payload nettamente più piccolo; la weekly review in Claude.ai non deve più richiedere correzioni sui dati base.
+
+---
+
+## BUG-012 — Modulazioni `proposed` mai chiuse si accumulano ✅
+- **Sintomo**: 14 modulazioni in stato `proposed` mai accettate/rifiutate. Si accumulavano, gonfiavano `get_weekly_context` (causa #1 di BUG-011) e generavano reminder ripetuti su proposte ormai obsolete.
+- **Root cause**: nessun meccanismo di scadenza. Una modulazione propone modifiche ai "prossimi 3 giorni"; se l'atleta non risponde, resta `proposed` per sempre.
+- **Fix** (`coach/coaching/modulation.py` + `coach/coaching/proactive_reminders.py`):
+  - `expire_stale_modulations(max_age_days=4)` marca `expired` le proposte più vecchie di 4 giorni (`resolved_at` valorizzato).
+  - Chiamata all'inizio di `run_proactive_reminders()` (cron ogni 30 min) → housekeeping continuo.
+  - NB: `plan_modulations.status` non ha CHECK constraint → nessuna migration necessaria per il valore `expired`.
+- **Test**: `tests/test_regressions.py::test_expire_stale_modulations_marks_expired`. Le 14 appese si auto-scadono al primo run del workflow `proactive-reminders`.
