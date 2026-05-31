@@ -191,10 +191,13 @@ Coaching philosophy layer, multi-memory architecture, psycho-physiological model
 
 ## BUG-011 — Weekly review: l'agente "dimentica" / va corretto spesso ✅
 - **Sintomo**: durante la weekly review il software non ricorda bene i dati e l'atleta deve correggerlo spesso.
+- **Misurazione** (da output reale `get_weekly_context`, 70.023 char totali):
+  `open_modulations` 23.101 char/14 item · `planned_past` 9.732/9 · `session_analyses` 7.739/8 · `daily_metrics` 4.315/21 · `subjective_log` 3.986/12 · `daily_wellness` 3.802/21.
 - **Root cause (2 cause)**:
-  1. **Payload gonfio**: `get_weekly_context` faceva `SELECT *` su `activities` e `daily_wellness`, includendo la colonna JSONB `raw_payload` (dump Garmin ~5KB/attività: userRoles, ogni split con lat/long, weather, connectIQ). Una settimana di attività + wellness → ~70.000 caratteri di contesto, per lo più rumore → l'LLM perde il filo e confonde i numeri.
-  2. **Doppio caricamento**: la skill `weekly_review.md` (Fase 1) chiedeva di chiamare i tool granulari (`get_activity_history`, `get_recent_metrics`, `query_subjective_log`, `get_planned_session` per ogni giorno) OLTRE a `get_weekly_context`, caricando gli stessi dati due volte in forme diverse → incongruenze.
+  1. **Payload gonfio**: il contesto pesava ~70K caratteri → l'LLM perde il filo e confonde i numeri. I contributi maggiori: (a) `open_modulations` query `status=eq.proposed` **senza limite** → 14 modulazioni mai risolte accumulate, ognuna col JSONB `proposed_changes`; (b) `planned_past`/`planned_upcoming` **senza projection** → trascinavano i JSONB `structured` e `target_zones` non necessari alla review. (NB: `activities`/`daily_wellness` proiettavano già le colonne — niente `raw_payload`.)
+  2. **Doppio caricamento**: la skill `weekly_review.md` (Fase 1) chiedeva i tool granulari (`get_activity_history`, `get_recent_metrics`, `query_subjective_log`, `get_planned_session` per ogni giorno) OLTRE a `get_weekly_context`, caricando gli stessi dati due volte in forme diverse → incongruenze.
 - **Fix**:
-  1. `workers/mcp-server/src/index.ts` — `getWeeklyContext` ora proietta colonne esplicite (niente `raw_payload`) su tutte le 9 query. **Richiede redeploy del worker mcp-server.**
-  2. `skills/weekly_review.md` — Fase 0/1 riscritte: `get_weekly_context` è la singola fonte di verità, caricata UNA volta; vietato duplicare con i tool granulari; confronto pianificato-vs-eseguito fatto sull'oggetto già ritornato.
-- **Test**: dopo redeploy, `get_weekly_context(days=7)` deve restituire un payload molto più piccolo (no `raw_payload`); la weekly review in Claude.ai non deve più richiedere correzioni sui dati base.
+  1. `workers/mcp-server/src/index.ts` — `getWeeklyContext`: projection esplicita su `planned_past`/`planned_upcoming` (drop `structured`/`target_zones`), `limit=5` su `open_modulations`, `limit=8` su `session_analyses`. **Richiede redeploy del worker mcp-server.**
+  2. `skills/weekly_review.md` — Fase 0/1 riscritte: `get_weekly_context` è la singola fonte di verità, caricata UNA volta; vietato duplicare con i tool granulari.
+- **Follow-up correlato**: 14 modulazioni `proposed` mai risolte indicano che le proposte mid-week non vengono chiuse (accept/reject). Da indagare a parte (cleanup + auto-scadenza delle proposte vecchie).
+- **Test**: dopo redeploy, `get_weekly_context(days=7)` restituisce un payload nettamente più piccolo; la weekly review in Claude.ai non deve più richiedere correzioni sui dati base.
