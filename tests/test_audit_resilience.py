@@ -215,3 +215,77 @@ def test_b11_sleep_score_clamped():
         body_battery_morning=None, resting_hr_today=None, resting_hr_baseline=None,
     )
     assert readiness._score_sleep(wh2) == 0
+
+
+# ===========================================================================
+# I1 — hard cap mai applicato sulla spesa REALE (solo proiezione)
+# ===========================================================================
+def test_i1_actual_spend_over_cap_blocks_non_emergency():
+    """Spesa reale già oltre $5.00 → blocco anche se la stima è minuscola."""
+    from unittest.mock import patch
+    from coach.utils.budget import check_budget_or_raise, BudgetExceededError
+    with patch("coach.utils.budget.get_month_spend_usd", return_value=5.01), \
+         patch("coach.utils.budget._send_budget_alert"):
+        with pytest.raises(BudgetExceededError):
+            # stima irrisoria: senza il fix su spesa-reale, projected=5.01+0.0001
+            # > 4.80 bloccherebbe comunque; il caso critico è spend appena sotto
+            # cap con stima che sottostima — vedi test successivo.
+            check_budget_or_raise(0.0001, "session_analysis")
+
+
+def test_i1_actual_spend_at_cap_blocks_even_if_projection_low():
+    """Spend == cap esatto deve bloccare (>=), a prescindere dalla proiezione."""
+    from unittest.mock import patch
+    from coach.utils.budget import check_budget_or_raise, BudgetExceededError, BUDGET_HARD_CAP
+    with patch("coach.utils.budget.get_month_spend_usd", return_value=BUDGET_HARD_CAP), \
+         patch("coach.utils.budget._send_budget_alert"):
+        with pytest.raises(BudgetExceededError):
+            check_budget_or_raise(0.0, "session_analysis")
+
+
+def test_i1_emergency_bypasses_hard_cap():
+    from unittest.mock import patch
+    from coach.utils.budget import check_budget_or_raise
+    with patch("coach.utils.budget.get_month_spend_usd", return_value=5.50), \
+         patch("coach.utils.budget._send_budget_alert"):
+        # emergency non deve sollevare
+        check_budget_or_raise(0.10, "emergency")
+
+
+# ===========================================================================
+# I2 — days_in_month errato per dicembre / aritmetica mese fragile
+# ===========================================================================
+def test_i2_days_in_month_correct_all_months():
+    from unittest.mock import patch
+    from datetime import datetime, timezone
+    import coach.utils.budget as budget
+    expected = {1: 31, 2: 28, 4: 30, 12: 31}
+    for month, exp in expected.items():
+        fake_now = datetime(2026, month, 15, tzinfo=timezone.utc)
+
+        class _DT(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        with patch.object(budget, "datetime", _DT), \
+             patch("coach.utils.budget.get_supabase") as mock_sb:
+            mock_sb.return_value.table.return_value.select.return_value.gte.return_value.execute.return_value.data = []
+            stats = budget.get_month_stats()
+            # days_remaining = days_in_month - day(15)
+            assert stats["days_remaining"] == exp - 15, f"month {month}"
+
+
+# ===========================================================================
+# I9 — alert budget su OGNI chiamata (spam) invece che all'attraversamento
+# ===========================================================================
+def test_i9_no_alert_when_already_above_threshold():
+    """Se la spesa è GIÀ sopra la soglia warning, una nuova chiamata non
+    deve rimandare l'alert (dedup anti-spam)."""
+    from unittest.mock import patch
+    from coach.utils.budget import check_budget_or_raise
+    with patch("coach.utils.budget.get_month_spend_usd", return_value=4.20), \
+         patch("coach.utils.budget._send_budget_alert") as mock_alert:
+        # 4.20 già oltre 4.00: nessun nuovo attraversamento → niente alert
+        check_budget_or_raise(0.05, "session_analysis")
+        mock_alert.assert_not_called()
