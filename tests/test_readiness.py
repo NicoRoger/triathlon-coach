@@ -3,6 +3,7 @@ from coach.analytics.readiness import (
     SubjectiveState,
     TrainingState,
     WellnessHistory,
+    _score_subjective,
     _score_tsb,
     compute_flags,
     compute_readiness,
@@ -107,6 +108,62 @@ def test_readiness_not_inflated_without_pmc():
     report = compute_readiness(wellness, training, make_default_subj(motivation=None, soreness=None))
     assert report.factors["tsb"] == 50
     assert report.label != "ready"
+
+
+def test_score_subjective_default_neutral_not_optimistic():
+    """Senza dati soggettivi il default è 60, non 70 (non assumere che tutto vada bene)."""
+    subj = SubjectiveState(motivation=None, soreness=None, illness_flag=False, injury_flag=False)
+    assert _score_subjective(subj) == 60
+
+
+def test_deep_tsb_caps_readiness():
+    """TSB < -25 impone un tetto dinamico anche con HRV ottima.
+
+    TSB=-29: cap = max(45, 80 + (-4*2)) = 72.
+    Con HRV +1.5σ il punteggio grezzo supererebbe 72 → deve essere cappato.
+    """
+    history = [50.0] * 28
+    wellness = WellnessHistory(
+        hrv_today=62.5,  # +1.5σ con SD=8.3... ma qui SD=0 su lista uniforme
+        # usiamo una history con varianza per avere un z-score reale
+        hrv_history_28d=[45 + (i % 10) for i in range(28)],
+        hrv_recent_z_scores=[],
+        sleep_score_today=90,
+        sleep_avg_7d=88,
+        body_battery_morning=95,
+        resting_hr_today=48,
+        resting_hr_baseline=52,
+    )
+    import statistics
+    mean = statistics.fmean(wellness.hrv_history_28d)
+    sd = statistics.pstdev(wellness.hrv_history_28d)
+    # Scegliamo hrv_today sopra la media per z positivo
+    wellness.hrv_today = mean + 1.8 * sd
+
+    training = TrainingState(ctl=90, atl=100, tsb=-29, days_since_hard_session=1)
+    subj = make_default_subj(motivation=8, soreness=4)
+    report = compute_readiness(wellness, training, subj)
+
+    # Con TSB=-29 il cap è max(45, 80 + (-4*2)) = 72 → score <= 72
+    assert report.score <= 72, f"Score {report.score} too high for TSB=-29 (overreaching)"
+    assert report.label in ("caution", "rest"), f"Label '{report.label}' unexpected with TSB=-29"
+
+
+def test_deep_tsb_very_negative_hard_cap():
+    """TSB=-40: cap = max(45, 80 + (-15*2)) = max(45, 50) = 50 → score <= 50."""
+    wellness = WellnessHistory(
+        hrv_today=55.0,
+        hrv_history_28d=[50.0] * 28,
+        hrv_recent_z_scores=[],
+        sleep_score_today=80,
+        sleep_avg_7d=80,
+        body_battery_morning=80,
+        resting_hr_today=52,
+        resting_hr_baseline=52,
+    )
+    training = TrainingState(ctl=100, atl=120, tsb=-40, days_since_hard_session=1)
+    report = compute_readiness(wellness, training, make_default_subj())
+    assert report.score <= 50, f"Score {report.score} expected <= 50 for TSB=-40"
 
 
 def test_readiness_caution_with_warning_capped():

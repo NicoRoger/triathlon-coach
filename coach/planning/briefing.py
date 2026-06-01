@@ -133,6 +133,21 @@ def _build_wellness_section(wellness: dict, metrics: dict) -> str:
         lines.append(f"HRV: {hrv_str}")
     if bb_str:
         lines.append(f"Energia al risveglio: {bb_str}")
+
+    # CLAUDE.md §12: discrepanza >15 tra il nostro readiness e Garmin = segnale
+    our_r = metrics.get("readiness_score")
+    garmin_r = metrics.get("garmin_training_readiness") or wellness.get("training_readiness_score")
+    if our_r is not None and garmin_r is not None:
+        diff = abs(int(our_r) - int(garmin_r))
+        if diff > 15:
+            if our_r > garmin_r:
+                note = "Garmin è più pessimista — possibile carico recente sottostimato"
+            else:
+                note = "Garmin è più ottimista — considera il nostro score come più prudente"
+            lines.append(
+                f"⚠️ <i>Readiness: noi {our_r} vs Garmin {garmin_r} (Δ{diff}) — {note}.</i>"
+            )
+
     return "\n".join(lines)
 
 

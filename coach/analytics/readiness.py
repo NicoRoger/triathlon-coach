@@ -181,7 +181,7 @@ def _score_subjective(subjective: SubjectiveState) -> int:
     if subjective.soreness is not None:
         factors.append(100 - subjective.soreness * 10)
     if not factors:
-        return 70  # default neutral-positive
+        return 60  # neutral (non ottimista: dato mancante ≠ tutto ok)
     return int(statistics.fmean(factors))
 
 
@@ -216,9 +216,18 @@ def compute_readiness(
         "subjective": _score_subjective(subjective),
     }
 
-    # Pesi: HRV pesa di più, soggettivo è correttivo
-    weights = {"hrv": 0.35, "sleep": 0.25, "tsb": 0.20, "subjective": 0.20}
+    # Pesi: soggettivo-first; HRV importante ma non dominante
+    weights = {"hrv": 0.28, "sleep": 0.22, "tsb": 0.20, "subjective": 0.30}
     score = sum(factors[k] * weights[k] for k in factors)
+
+    # Cap dinamico per overreaching profondo: TSB < -25 impone un tetto
+    # anche quando HRV è buona (recupero cardiaco ≠ recupero muscolare/sistemico).
+    # -25 → cap 80, -30 → cap 70, -40 → cap 50
+    tsb_val = training.tsb
+    if tsb_val is not None and tsb_val < -25:
+        tsb_cap = max(45, 80 + int((tsb_val + 25) * 2))
+        cap = min(cap, tsb_cap)
+
     score = min(cap, int(round(score)))
 
     if score >= 75:
