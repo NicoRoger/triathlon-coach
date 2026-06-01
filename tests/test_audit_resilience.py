@@ -327,3 +327,29 @@ def test_a4_missing_start_time_raises_clear():
     raw = {"activityId": 1, "activityType": {"typeKey": "running"}, "duration": 60}
     with pytest.raises(ValueError):
         _normalize_activity(raw)
+
+
+# ===========================================================================
+# A5 — precedenza operatori nel check np_w > max_power
+# ===========================================================================
+def test_a5_np_gt_max_power_warns():
+    from coach.utils.validators import validate_activity
+    act = {"sport": "bike", "duration_s": 3600, "avg_power_w": 200,
+           "max_power_w": 300, "np_w": 350}  # np > max → anomalo
+    res = validate_activity(act)
+    assert any("np_w" in w for w in res.warnings), "np_w>max_power deve generare warning"
+
+
+def test_a5_np_le_max_power_no_warn():
+    from coach.utils.validators import validate_activity
+    act = {"sport": "bike", "duration_s": 3600, "avg_power_w": 200,
+           "max_power_w": 400, "np_w": 220}  # np < max → ok
+    res = validate_activity(act)
+    assert not any("np_w" in w for w in res.warnings)
+
+
+def test_a5_no_crash_when_max_power_none():
+    from coach.utils.validators import validate_activity
+    act = {"sport": "bike", "duration_s": 3600, "avg_power_w": 200, "np_w": 220}
+    # max_power None: non deve sollevare TypeError
+    validate_activity(act)
