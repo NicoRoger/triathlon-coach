@@ -243,7 +243,15 @@ def extract_patterns(days: int = 28) -> Optional[str]:
             max_tokens=1500,
             temperature=0.3,
         )
-        new_obs = result["text"]
+        new_obs = (result or {}).get("text") or ""
+
+        # Bug fix audit G2: NON sovrascrivere il file con testo vuoto (LLM può
+        # restituire "" su troncamento/safety). Fallback ai pattern biometrici.
+        if not new_obs.strip():
+            logger.warning("Pattern extraction: testo LLM vuoto, mantengo file e fallback biometrico")
+            if biometric:
+                _save_biometric_only(biometric, today)
+            return None
 
         OBSERVATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
         OBSERVATIONS_FILE.write_text(new_obs, encoding="utf-8")

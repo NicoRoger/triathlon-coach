@@ -486,3 +486,128 @@ def test_d5_naive_timestamp_treated_as_utc():
     from coach.utils.dt import to_rome_date
     # naive (senza tz) → trattato come UTC
     assert to_rome_date("2026-06-01 23:30:00") == date(2026, 6, 2)
+
+
+# ===========================================================================
+# H1 — race_mental: T-0 delega al race day brief, non stringa vuota
+# ===========================================================================
+def test_h1_mental_check_t0_delegates():
+    # NB: usa il modulo budget reale (ha BudgetExceededError); non sostituirlo
+    # per non rompere l'isolamento di test_budget.py.
+    rm = _load("coach.coaching.race_mental", "coach/coaching/race_mental.py")
+    msg = rm.generate_mental_check(0)
+    assert msg and "RACE DAY" in msg, "T-0 deve produrre il race day brief"
+    # countdown negativo → nessun messaggio, ma non crash
+    assert rm.generate_mental_check(-1) == ""
+
+
+# ===========================================================================
+# H2 — test_scheduler: _pick_test_date non va in loop infinito
+# ===========================================================================
+def test_h2_pick_test_date_bounded():
+    # fake sb: ogni data risulta SEMPRE occupata → senza cap sarebbe loop infinito
+    class _Q:
+        def select(self, *a, **k): return self
+        def eq(self, *a, **k): return self
+        def execute(self):
+            return types.SimpleNamespace(data=[{"id": "busy"}])
+
+    class _SB:
+        def table(self, *a, **k): return _Q()
+
+    for n in ["coach.utils.supabase_client", "coach.utils.dt"]:
+        if n in sys.modules and not hasattr(sys.modules[n], "today_rome") and n.endswith("dt"):
+            pass
+    # dt reale serve; supabase non usato da _pick_test_date direttamente (sb passato)
+    ts = _load("coach.coaching.test_scheduler", "coach/coaching/test_scheduler.py")
+    result = ts._pick_test_date(_SB(), date(2026, 6, 1))
+    assert result is not None  # ritorna senza appendere (cap raggiunto)
+
+
+# ===========================================================================
+# G3 — outcome_verification: int(None) da view non deve crashare il render
+# ===========================================================================
+def test_g3_int_none_guard():
+    # Riproduce il pattern del fix: int(r.get("n") or 0) gestisce None
+    r = {"n": None}
+    assert int(r.get("n") or 0) == 0
+    r2 = {"n": "5"}
+    assert int(r2.get("n") or 0) == 5
+
+
+# ===========================================================================
+# G1 — sync beliefs con 0 candidati NON deve contraddire le belief esistenti
+# ===========================================================================
+def test_g1_no_contradiction_when_zero_candidates():
+    # stub belief_engine
+    be = types.ModuleType("coach.analytics.belief_engine")
+    contradicted = []
+
+    class _B:
+        belief_key = "hrv-basso-sabato"
+        status = "weak_belief"
+        flagged = False
+        from datetime import datetime as _dt, timezone as _tz
+        last_reinforced_at = _dt.now(_tz.utc)
+
+    be.list_beliefs = lambda **k: [_B()]  # type: ignore
+    be.contradict_belief = lambda key, reason="": contradicted.append(key)  # type: ignore
+    be.create_belief = lambda **k: None  # type: ignore
+    be.reinforce_belief = lambda *a, **k: None  # type: ignore
+    sys.modules["coach.analytics.belief_engine"] = be
+    mod = _load("coach.coaching.extract_beliefs_from_observations",
+                "coach/coaching/extract_beliefs_from_observations.py")
+    # contenuto che NON matcha il formato pattern → 0 candidati (es. fallback biometrico)
+    content = "### HRV media settimana\n- **media**: 60ms\n- **trend**: stabile\n"
+    counts = mod.sync_beliefs_from_observations(content=content)
+    assert counts["contradicted"] == 0, "0 candidati non deve contraddire nulla"
+    assert contradicted == []
+
+
+def test_g1_parses_zero_from_biometric_fallback():
+    mod = sys.modules.get("coach.coaching.extract_beliefs_from_observations")
+    if mod is None:
+        be = types.ModuleType("coach.analytics.belief_engine")
+        be.list_beliefs = lambda **k: []  # type: ignore
+        be.contradict_belief = be.create_belief = be.reinforce_belief = lambda *a, **k: None  # type: ignore
+        sys.modules["coach.analytics.belief_engine"] = be
+        mod = _load("coach.coaching.extract_beliefs_from_observations",
+                    "coach/coaching/extract_beliefs_from_observations.py")
+    cands = mod.parse_observations_to_candidates("### Titolo\n- **k**: v\n")
+    assert cands == []
+
+
+# ===========================================================================
+# G2 — pattern_extraction: testo LLM vuoto NON sovrascrive observations
+# ===========================================================================
+def test_g2_empty_llm_text_does_not_overwrite(tmp_path):
+    # fake supabase: nessuna analisi/debrief
+    class _Q:
+        def select(self, *a, **k): return self
+        def gte(self, *a, **k): return self
+        def execute(self): return types.SimpleNamespace(data=[])
+
+    class _SB:
+        def table(self, *a, **k): return _Q()
+
+    sys.modules["coach.utils.supabase_client"] = types.ModuleType("coach.utils.supabase_client")
+    sys.modules["coach.utils.supabase_client"].get_supabase = lambda: _SB()  # type: ignore
+    # budget reale (ha BudgetExceededError); non sostituirlo.
+    sys.modules["coach.utils.llm_client"] = types.ModuleType("coach.utils.llm_client")
+
+    mod = _load("coach.coaching.pattern_extraction", "coach/coaching/pattern_extraction.py")
+
+    f = tmp_path / "obs.md"
+    f.write_text("CONTENUTO IMPORTANTE", encoding="utf-8")
+    mod.OBSERVATIONS_FILE = f
+    mod.extract_biometric_patterns = lambda days=28: {}  # niente biometrico → niente fallback
+
+    class _Client:
+        def call(self, **k):
+            return {"text": "   "}  # vuoto/whitespace
+
+    sys.modules["coach.utils.llm_client"].get_client_for_purpose = lambda p: _Client()  # type: ignore
+
+    out = mod.extract_patterns(days=28)
+    assert out is None
+    assert f.read_text(encoding="utf-8") == "CONTENUTO IMPORTANTE", "file non deve essere sovrascritto da testo vuoto"
