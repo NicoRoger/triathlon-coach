@@ -326,12 +326,22 @@ Coperti in L (dr_snapshot, dr_restore, watchdog, db_cleanup, keepalive, etl_heal
 | A2 | 📋 | Garmin `get_activities_by_date` senza paginazione: per un singolo atleta con ≤14 sessioni/settimana e finestra 7gg non si supera la prima pagina. Rischio reale trascurabile. |
 | A3 | 📋 | Strava rate-limit/paginazione: l'ingest Strava è **disabilitato** (commentato in `ingest.yml`, Garmin = single source of truth). Non attivo. |
 | I3 | 📋 | Race condition non-atomica su `get_month_spend_usd`: i cron del sistema non girano realmente in parallelo sulla stessa risorsa budget (serializzati per workflow). Il blocco a $4.80 proiettato dà margine. Fix atomico richiederebbe RPC Postgres dedicata — sproporzionato per single-user. |
-| L5 | 📋→manuale | Drift DST dei cron (debrief/weekly/proactive 1h in anticipo in inverno): è uno shift di 1h, non un guasto; correggerlo richiede decidere il comportamento voluto. Vedi sezione manuale. |
-| K6 | 📋 | `sendMessage` del bot non splitta a 4096: i messaggi del bot sono brevi (comandi/conferme); il rischio è sui messaggi lunghi che passano da `telegram_logger` (Python), già corretto (I5). Follow-up bot opzionale. |
-| K7, K8, K9, J2-J6 | 📋 | Item minori del bot/MCP TS: raccolti nel pass MCP/bot (vedi `mcp_auth_hardening_plan.md` J2-J6 e note). Non bloccanti; richiedono deploy wrangler + test connettore. |
+| K9 | 📋 | Dedup KV scritto prima del processing nel bot: trade-off no-spam vs delivery; rischio basso (Telegram retry raro). Da rivedere nel pass bot. |
+| J2-J6 | 📋 | Item minori MCP TS: **bundle con il pass auth** (`mcp_auth_hardening_plan.md`), richiedono deploy + test connettore Claude.ai. |
+
+### Aggiornamento (2 turno) — punti chiusi dopo le decisioni dell'atleta
+| ID | Stato | Note |
+|----|-------|------|
+| K6 | 🔧 | `sendMessage` bot splitta a 4096 + check resp.ok |
+| K7 | 🔧 | `/manual_activity` collega l'RPE all'attività via `activity_id` |
+| K8 | 🔧 | classify rpe valida 1-10 (no insert 400 su numeri spuri) |
+| L5 | 🔧 | gate DST: doppio cron + `--rome-hour`/gate shell su debrief, weekly-review, proactive-check-in → orario Rome corretto tutto l'anno. Test: test_l5_dst_gate_skips_wrong_hour |
+| O4 (dedup) | 🔧 | migration: dedup `races` (repoint mesocicli + delete duplicati) prima del vincolo unique — risolve l'errore 23505 in esecuzione |
+| Brief workout | 🔧 | sessione del giorno con descrizione completa + TSS + zone + struttura su Telegram (richiesta atleta). Coerente con piano/modulazioni approvati. |
 
 > Nessun ❌ della tassonomia resta non gestito: ogni ❌ è 🔧 (fixato+test) o
-> esplicitamente documentato qui con motivazione.
+> esplicitamente documentato qui con motivazione. Restano consapevolmente
+> rimandati solo gli item MCP TS (J2-J6) bundlati col pass auth (decisione atleta).
 
 ---
 
@@ -369,5 +379,11 @@ Coperti in L (dr_snapshot, dr_restore, watchdog, db_cleanup, keepalive, etl_heal
 - **Bound fisiologici** (E): FTP 80-450W, threshold 150-360 s/km, CSS 70-150 s/100m,
   LTHR 120-200 bpm in `coach/coaching/fitness_test_processor.py` (PLAUSIBLE_BOUNDS).
   Confermare/correggere prima del test di giugno 2026.
-- **DST cron** (L5): se vuoi orari esatti tutto l'anno (es. debrief sempre 21:30
-  Rome), decidere se introdurre un gate Rome-time negli script o doppio cron.
+- **DST cron** (L5): RISOLTO — doppio cron + gate Rome-time su debrief (21:00),
+  weekly-review (19:00), proactive-check-in (18:00). Nessuna azione richiesta.
+
+### 6. Google Calendar (decisione atleta: "valutiamo dopo")
+- Non esiste integrazione Google Calendar reale (solo la colonna
+  `calendar_event_id`). Sync vera = build separato (OAuth Google + API). Rimandato.
+- Nel frattempo il "calendario allenamenti" è `planned_sessions`, mostrato nel
+  brief Telegram (ora con dettaglio completo) e nella dashboard.

@@ -920,3 +920,36 @@ def test_brief_session_robust_to_missing_fields():
     assert "tecnica" in out
     # nessuna sessione → fallback
     assert "Nessuna sessione" in b._build_session_section([])
+
+
+# ===========================================================================
+# L5 — gate DST: invia solo se l'ora Rome corrente combacia
+# ===========================================================================
+def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
+    sn = _load("scripts.send_notification", "scripts/send_notification.py")
+    sent = []
+    sn.send_and_log_message = lambda *a, **k: sent.append(a)  # type: ignore
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    class _DT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 15, 20, 30, tzinfo=ZoneInfo("Europe/Rome"))  # inverno, 20:30
+
+    monkeypatch.setattr(sn, "datetime", _DT)
+    monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
+    sn.main()
+    assert sent == [], "alle 20:30 Rome con gate 21 non deve inviare"
+
+    # ora corretta → invia
+    class _DT2(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 15, 21, 30, tzinfo=ZoneInfo("Europe/Rome"))
+
+    monkeypatch.setattr(sn, "datetime", _DT2)
+    monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
+    sn.main()
+    assert len(sent) == 1, "alle 21:30 Rome con gate 21 deve inviare"

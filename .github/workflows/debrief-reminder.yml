@@ -2,7 +2,10 @@ name: debrief-reminder
 
 on:
   schedule:
-    - cron: '30 19 * * *'  # 21:30 Europe/Rome (UTC+2 estate, regola se necessario)
+    # Audit L5: doppio cron (estate UTC+2 / inverno UTC+1). Il gate --rome-hour 21
+    # fa inviare SOLO il run che cade alle 21:xx Europe/Rome → 21:30 tutto l'anno.
+    - cron: '30 19 * * *'  # estate: 21:30 Rome
+    - cron: '30 20 * * *'  # inverno: 21:30 Rome
   workflow_dispatch:
 
 jobs:
@@ -23,4 +26,10 @@ jobs:
           cache: 'pip'
       - run: pip install -r requirements.txt
       - name: Send reminder
-        run: python scripts/send_notification.py debrief-reminder
+        # workflow_dispatch (manuale) bypassa il gate; i cron lo applicano.
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python scripts/send_notification.py debrief-reminder
+          else
+            python scripts/send_notification.py debrief-reminder --rome-hour 21
+          fi
