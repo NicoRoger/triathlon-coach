@@ -249,8 +249,11 @@ def optimize_calendar(today: Optional[date] = None, horizon_days: int = 365) -> 
                                race_id=race["id"], race_name=race["name"],
                                notes=f"Taper {taper_weeks}sett verso {race['name']} [Mujika 2003]")
 
-        # Race-week pseudo-event: cursor avanza a settimana successiva alla gara
-        cursor = race_monday + timedelta(weeks=1)
+        # Race-week pseudo-event: cursor avanza a settimana successiva alla gara.
+        # Bug fix audit H3: usa max(cursor, ...) per non far MAI tornare indietro
+        # il cursore. Se build+spec+taper hanno superato race_monday (over-alloc
+        # da arrotondamenti), un reset secco creerebbe mesocicli sovrapposti.
+        cursor = max(cursor, race_monday + timedelta(weeks=1))
 
         # Recovery + rebuild post-gara A (1+1 sett)
         if priority == "A":

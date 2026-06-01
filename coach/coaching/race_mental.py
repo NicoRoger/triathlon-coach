@@ -26,6 +26,14 @@ MENTAL_TECHNIQUES = {
 
 def generate_mental_check(days_to_race: int) -> str:
     """Genera domanda mental + tecnica giornaliera per race week."""
+    # Bug fix audit H1: a T-0 (giorno gara) delega al brief del giorno gara
+    # invece di restituire silenziosamente stringa vuota. Per countdown negativo
+    # (gara passata) nessun messaggio, ma loggato per visibilità.
+    if days_to_race == 0:
+        return generate_race_day_brief()
+    if days_to_race < 0:
+        logger.info("generate_mental_check: countdown negativo (%d), nessun messaggio", days_to_race)
+        return ""
     if days_to_race not in range(1, 8):
         return ""
 

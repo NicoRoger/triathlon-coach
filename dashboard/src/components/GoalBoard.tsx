@@ -14,10 +14,18 @@ export function GoalBoard({ data }: Props) {
   const apiRef = useRef<any>(null);
   const [key, setKey] = useState(0);
 
+  // Bug fix audit N1: passa array con fallback [] (shape drift / risposta parziale
+  // non deve crashare il generatore con "undefined is not iterable").
+  // Bug fix audit N2: includi gli array nelle deps così la board si rigenera
+  // sull'auto-refresh dei dati, non solo al click su Rigenera.
   const elements = useMemo(
-    () => generateTimelineElements(data.today, data.mesocycles, data.races, data.planned_sessions),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [key, data.today]
+    () => generateTimelineElements(
+      data.today,
+      data.mesocycles ?? [],
+      data.races ?? [],
+      data.planned_sessions ?? [],
+    ),
+    [key, data.today, data.mesocycles, data.races, data.planned_sessions]
   );
 
   // When data changes, update existing scene (if API is ready)

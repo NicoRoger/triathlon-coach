@@ -22,29 +22,43 @@ THRESHOLDS_HOURS = {
 }
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    sb = get_supabase()
-    res = sb.table("health").select("*").execute()
-    now = datetime.now(timezone.utc)
+def compute_alerts(rows: list[dict], now: datetime) -> list[str]:
+    """Calcola gli alert dato lo stato health. Funzione pura (testabile).
 
-    alerts = []
-    for row in res.data or []:
-        comp = row["component"]
-        threshold = THRESHOLDS_HOURS.get(comp)
-        if threshold is None:
+    Bug fix audit L4: itera sui componenti ATTESI (THRESHOLDS_HOURS), non solo
+    su quelli presenti. Una riga health mai scritta (DB fresco, riga cancellata)
+    prima era invisibile → falso verde permanente.
+    """
+    by_comp = {row["component"]: row for row in (rows or [])}
+    alerts: list[str] = []
+    for comp, threshold in THRESHOLDS_HOURS.items():
+        row = by_comp.get(comp)
+        if row is None:
+            alerts.append(f"⚠️ <b>{comp}</b>: nessuna riga health (mai eseguito?)")
             continue
         last = row.get("last_success_at")
         if not last:
             alerts.append(f"⚠️ <b>{comp}</b>: mai sincronizzato")
             continue
         last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
         age = (now - last_dt).total_seconds() / 3600
         if age > threshold:
             err = row.get("last_error") or "-"
             alerts.append(
                 f"🚨 <b>{comp}</b>: {age:.1f}h dall'ultimo successo (soglia {threshold}h)\n  err: {err[:120]}"
             )
+    return alerts
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    sb = get_supabase()
+    res = sb.table("health").select("*").execute()
+    now = datetime.now(timezone.utc)
+
+    alerts = compute_alerts(res.data or [], now)
 
     if alerts:
         msg = "<b>Watchdog alert</b>\n\n" + "\n\n".join(alerts)

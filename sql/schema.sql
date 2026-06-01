@@ -15,7 +15,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ============================================================================
 -- ATTIVITÀ (oggettive, da Garmin/Strava)
 -- ============================================================================
-CREATE TABLE activities (
+CREATE TABLE IF NOT EXISTS activities (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     external_id     TEXT NOT NULL,                  -- es. garmin_<id> o strava_<id>
     source          TEXT NOT NULL CHECK (source IN ('garmin', 'strava', 'manual')),
@@ -55,13 +55,13 @@ CREATE TABLE activities (
     UNIQUE (external_id, source)
 );
 
-CREATE INDEX idx_activities_started_at ON activities (started_at DESC);
-CREATE INDEX idx_activities_sport_date ON activities (sport, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_started_at ON activities (started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_sport_date ON activities (sport, started_at DESC);
 
 -- ============================================================================
 -- WELLNESS GIORNALIERO (Garmin morning data)
 -- ============================================================================
-CREATE TABLE daily_wellness (
+CREATE TABLE IF NOT EXISTS daily_wellness (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     date            DATE NOT NULL UNIQUE,
 
@@ -100,12 +100,12 @@ CREATE TABLE daily_wellness (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_daily_wellness_date ON daily_wellness (date DESC);
+CREATE INDEX IF NOT EXISTS idx_daily_wellness_date ON daily_wellness (date DESC);
 
 -- ============================================================================
 -- LOG SOGGETTIVO (RPE, dolori, malattia, note libere)
 -- ============================================================================
-CREATE TABLE subjective_log (
+CREATE TABLE IF NOT EXISTS subjective_log (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     logged_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     activity_id     UUID REFERENCES activities(id) ON DELETE SET NULL,
@@ -135,13 +135,13 @@ CREATE TABLE subjective_log (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_subjective_log_logged_at ON subjective_log (logged_at DESC);
-CREATE INDEX idx_subjective_log_activity ON subjective_log (activity_id);
+CREATE INDEX IF NOT EXISTS idx_subjective_log_logged_at ON subjective_log (logged_at DESC);
+CREATE INDEX IF NOT EXISTS idx_subjective_log_activity ON subjective_log (activity_id);
 
 -- ============================================================================
 -- ZONE FISIOLOGICHE (versionate, mai sovrascritte)
 -- ============================================================================
-CREATE TABLE physiology_zones (
+CREATE TABLE IF NOT EXISTS physiology_zones (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     discipline      TEXT NOT NULL CHECK (discipline IN ('swim', 'bike', 'run')),
     valid_from      DATE NOT NULL,
@@ -164,12 +164,12 @@ CREATE TABLE physiology_zones (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_zones_discipline_valid ON physiology_zones (discipline, valid_from DESC);
+CREATE INDEX IF NOT EXISTS idx_zones_discipline_valid ON physiology_zones (discipline, valid_from DESC);
 
 -- ============================================================================
 -- METRICHE CALCOLATE (PMC, readiness, snapshot daily)
 -- ============================================================================
-CREATE TABLE daily_metrics (
+CREATE TABLE IF NOT EXISTS daily_metrics (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     date            DATE NOT NULL UNIQUE,
 
@@ -204,12 +204,12 @@ CREATE TABLE daily_metrics (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_daily_metrics_date ON daily_metrics (date DESC);
+CREATE INDEX IF NOT EXISTS idx_daily_metrics_date ON daily_metrics (date DESC);
 
 -- ============================================================================
 -- PIANIFICAZIONE (proiezione di plans/*.yaml in repo)
 -- ============================================================================
-CREATE TABLE mesocycles (
+CREATE TABLE IF NOT EXISTS mesocycles (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name            TEXT NOT NULL,
     phase           TEXT NOT NULL CHECK (phase IN ('base', 'build', 'specific', 'peak', 'taper', 'recovery')),
@@ -222,7 +222,7 @@ CREATE TABLE mesocycles (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE planned_sessions (
+CREATE TABLE IF NOT EXISTS planned_sessions (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     mesocycle_id    UUID REFERENCES mesocycles(id) ON DELETE CASCADE,
     planned_date    DATE NOT NULL,
@@ -239,12 +239,12 @@ CREATE TABLE planned_sessions (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_planned_sessions_date ON planned_sessions (planned_date);
+CREATE INDEX IF NOT EXISTS idx_planned_sessions_date ON planned_sessions (planned_date);
 
 -- ============================================================================
 -- GARE
 -- ============================================================================
-CREATE TABLE races (
+CREATE TABLE IF NOT EXISTS races (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name            TEXT NOT NULL,
     race_date       DATE NOT NULL,
@@ -305,7 +305,7 @@ CREATE INDEX IF NOT EXISTS idx_plan_modulations_status ON plan_modulations(statu
 -- ============================================================================
 -- HEALTH (system status per watchdog)
 -- ============================================================================
-CREATE TABLE health (
+CREATE TABLE IF NOT EXISTS health (
     component       TEXT PRIMARY KEY,         -- 'garmin_sync', 'strava_sync', 'briefing', ...
     last_success_at TIMESTAMPTZ,
     last_failure_at TIMESTAMPTZ,
@@ -318,7 +318,8 @@ CREATE TABLE health (
 -- Bootstrap rows
 INSERT INTO health (component) VALUES
     ('garmin_sync'), ('strava_sync'), ('briefing_morning'),
-    ('debrief_evening'), ('analytics_daily'), ('dr_snapshot');
+    ('debrief_evening'), ('analytics_daily'), ('dr_snapshot')
+ON CONFLICT (component) DO NOTHING;
 
 -- ============================================================================
 -- TRIGGER updated_at
@@ -336,6 +337,7 @@ BEGIN
     FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN
         ('activities','daily_wellness','daily_metrics','mesocycles','planned_sessions','health')
     LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS trg_%I_updated_at ON %I', t, t);
         EXECUTE format('CREATE TRIGGER trg_%I_updated_at BEFORE UPDATE ON %I
                         FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at()', t, t);
     END LOOP;

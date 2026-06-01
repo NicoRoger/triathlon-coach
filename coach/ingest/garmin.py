@@ -31,7 +31,7 @@ import logging
 import os
 import tempfile
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -88,7 +88,15 @@ def _normalize_activity(raw: dict, splits: Optional[list] = None, weather: Optio
     raw_sport = (raw.get("activityType", {}).get("typeKey") or "").lower()
     sport = SPORT_MAP.get(raw_sport, Sport.OTHER)
 
-    started = datetime.fromisoformat(raw["startTimeGMT"].replace("Z", "+00:00"))
+    # Bug fix audit A4: startTimeGMT può arrivare come "2026-05-30 06:12:33"
+    # (separato da spazio, senza Z/offset) → fromisoformat dà un datetime NAIVE
+    # che però è GMT. Forziamo tzinfo=UTC per evitare drift Rome/UTC a valle.
+    raw_start = raw.get("startTimeGMT")
+    if not raw_start:
+        raise ValueError(f"activity {raw.get('activityId')} senza startTimeGMT")
+    started = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
 
     # HR zones
     hr_zones = None
@@ -135,6 +143,10 @@ def _normalize_activity(raw: dict, splits: Optional[list] = None, weather: Optio
         splits=splits,
         weather=weather,
         raw_payload=raw,
+        # Bug fix audit E6: salva il nome attività Garmin in notes, così la
+        # safety-net keyword di fitness_test_processor può rilevare i test
+        # nominati (es. "FTP test") quando manca la planned_session.
+        notes=raw.get("activityName"),
     )
 
 def _extract_vo2max(max_metrics_payload: Optional[dict], discipline: str) -> Optional[float]:
@@ -417,33 +429,33 @@ def sync_wellness(days_back: int = 7) -> int:
             user_summary = g.get_user_summary(day.isoformat())
             sleep = g.get_sleep_data(day.isoformat())
             
-            # HRV: opzionale
+            # Endpoint opzionali. Bug fix audit A1: NON inghiottire silenziosamente.
+            # HRV in particolare è l'input core della readiness (§5.1): un break
+            # permanente dell'endpoint deve essere visibile nei log, non sparire.
             hrv = None
             try:
                 hrv = g.get_hrv_data(day.isoformat())
-            except Exception:
-                pass
-            
-            # VO2max: opzionale, endpoint diverso
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Garmin HRV non disponibile per %s: %s", day, exc)
+
             vo2max = None
             try:
                 vo2max = g.get_max_metrics(day.isoformat())
-            except Exception:
-                pass
-            
-            # Training status: opzionale, endpoint diverso
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Garmin VO2max non disponibile per %s: %s", day, exc)
+
             training_status = None
             try:
                 training_status = g.get_training_status(day.isoformat())
-            except Exception:
-                pass
-            
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Garmin training_status non disponibile per %s: %s", day, exc)
+
             # Step 5.1: Training readiness score Garmin (opzionale)
             training_readiness = None
             try:
                 training_readiness = g.get_training_readiness(day.isoformat())
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Garmin training_readiness non disponibile per %s: %s", day, exc)
             
             payload = {
                 **(user_summary or {}),
@@ -455,6 +467,14 @@ def sync_wellness(days_back: int = 7) -> int:
             }
             wellness = _normalize_wellness(payload, day)
             wellness_dict = wellness.model_dump(mode="json", exclude_none=True)
+
+            # Bug fix audit A6: se non c'è alcun dato reale oltre alla data
+            # (device non indossato), non scrivere una riga vuota. exclude_none
+            # già evita di sovrascrivere campi buoni esistenti, ma evitiamo anche
+            # di creare righe placeholder per giorni senza dati.
+            if set(wellness_dict.keys()) <= {"date"}:
+                logger.info("Wellness %s: nessun dato, skip upsert", day)
+                continue
 
             # Fase 1.4 — outlier validation wellness
             from coach.utils.validators import validate_wellness

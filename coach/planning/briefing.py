@@ -161,20 +161,84 @@ def _build_load_section(metrics: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_target_zones(zones) -> Optional[str]:
+    """Rende target_zones (dict {'z2':0.7,...}) in una riga leggibile."""
+    if not isinstance(zones, dict) or not zones:
+        return None
+    parts = []
+    for z, frac in zones.items():
+        try:
+            pct = round(float(frac) * 100)
+        except (TypeError, ValueError):
+            continue
+        parts.append(f"{str(z).upper()} {pct}%")
+    return " · ".join(parts) if parts else None
+
+
+def _format_structured(structured) -> list[str]:
+    """Rende un workout strutturato (lista di step o dict) in righe leggibili.
+    Best-effort: tollera formati diversi senza crashare."""
+    from html import escape as _esc
+    out: list[str] = []
+    steps = None
+    if isinstance(structured, dict):
+        steps = structured.get("steps") or structured.get("intervals") or structured.get("workout")
+    elif isinstance(structured, list):
+        steps = structured
+    if not isinstance(steps, list):
+        return out
+    for s in steps:
+        if isinstance(s, dict):
+            # campi tipici: name/label, reps, duration_s/duration, zone/target, notes
+            label = s.get("name") or s.get("label") or s.get("type") or "step"
+            reps = s.get("reps")
+            dur = s.get("duration_s") or s.get("duration")
+            zone = s.get("zone") or s.get("target") or s.get("intensity")
+            bits = [str(label)]
+            if reps:
+                bits.append(f"x{reps}")
+            if dur:
+                try:
+                    bits.append(f"{int(dur) // 60}min" if int(dur) >= 60 else f"{int(dur)}s")
+                except (TypeError, ValueError):
+                    pass
+            if zone:
+                bits.append(str(zone))
+            out.append("  • " + _esc(" · ".join(bits)))
+        else:
+            out.append("  • " + _esc(str(s)))
+    return out
+
+
 def _build_session_section(planned_sessions: list[dict]) -> str:
     lines = ["<b>🎯 Cosa fare oggi</b>"]
     if planned_sessions:
+        from html import escape as _esc
         sport_emoji_map = {"swim": "🏊", "bike": "🚴", "run": "🏃",
                            "brick": "🚴🏃", "strength": "💪"}
         for planned in planned_sessions:
             sport_emoji = sport_emoji_map.get(planned.get("sport"), "🏋️")
             dur_min = (planned.get("duration_s") or 0) // 60
             type_str = planned.get("session_type") or ""
-            lines.append(f"{sport_emoji} {type_str} · {dur_min}min")
+            # Riga intestazione: sport · tipo · durata · TSS target
+            header = f"{sport_emoji} {type_str} · {dur_min}min"
+            if planned.get("target_tss") is not None:
+                header += f" · TSS {round(float(planned['target_tss']))}"
+            lines.append(header)
+            # Zone target
+            zones_line = _format_target_zones(planned.get("target_zones"))
+            if zones_line:
+                lines.append(f"Zone: {zones_line}")
+            # Descrizione COMPLETA (non troncata) — richiesta atleta: dettaglio
+            # accurato come su calendar.
             if planned.get("description"):
-                from html import escape as _esc
-                desc = [_esc(line) for line in planned["description"].strip().split("\n")[:4]]
+                desc = [_esc(line) for line in planned["description"].strip().split("\n")]
                 lines.append(f"<i>{chr(10).join(desc)}</i>")
+            # Workout strutturato (se presente)
+            struct_lines = _format_structured(planned.get("structured"))
+            if struct_lines:
+                lines.append("<b>Struttura:</b>")
+                lines.extend(struct_lines)
         return "\n".join(lines)
 
     lines.append("Nessuna sessione pianificata.")
@@ -283,20 +347,26 @@ def _build_warnings_section(metrics: dict) -> str:
 
 def _build_race_progress_section(today: date) -> str:
     """Sezione progresso verso la prossima gara A dalla tabella races."""
-    sb = get_supabase()
-    res = sb.table("races").select(
-        "name,race_date"
-    ).gte("race_date", today.isoformat()).eq(
-        "priority", "A"
-    ).order("race_date").limit(1).execute()
+    # Bug fix audit C2: una query/parsing fallita su questa sezione opzionale
+    # NON deve far crashare l'intero brief mattutino. Degrada a sezione vuota.
+    try:
+        sb = get_supabase()
+        res = sb.table("races").select(
+            "name,race_date"
+        ).gte("race_date", today.isoformat()).eq(
+            "priority", "A"
+        ).order("race_date").limit(1).execute()
 
-    if not res.data:
+        if not res.data:
+            return ""
+
+        r = res.data[0]
+        race_date = date.fromisoformat(r["race_date"])
+        race_name = r["name"]
+        days_left = (race_date - today).days
+    except Exception:
+        logger.warning("_build_race_progress_section fallita", exc_info=True)
         return ""
-
-    r = res.data[0]
-    race_date = date.fromisoformat(r["race_date"])
-    race_name = r["name"]
-    days_left = (race_date - today).days
 
     if days_left < 0:
         return ""
@@ -332,26 +402,32 @@ def _build_race_progress_section(today: date) -> str:
 
 def _get_upcoming_race(today: date) -> Optional[dict]:
     """Trova la prossima gara A o B entro 7 giorni dalla tabella races."""
-    sb = get_supabase()
-    window_end = (today + timedelta(days=7)).isoformat()
-    res = sb.table("races").select(
-        "name,race_date,priority,distance"
-    ).gte("race_date", today.isoformat()).lte(
-        "race_date", window_end
-    ).in_("priority", ["A", "B"]).order("race_date").limit(1).execute()
+    # Bug fix audit C2: questa funzione gira presto in build_brief; una query
+    # fallita non deve abbattere l'intero brief.
+    try:
+        sb = get_supabase()
+        window_end = (today + timedelta(days=7)).isoformat()
+        res = sb.table("races").select(
+            "name,race_date,priority,distance"
+        ).gte("race_date", today.isoformat()).lte(
+            "race_date", window_end
+        ).in_("priority", ["A", "B"]).order("race_date").limit(1).execute()
 
-    if not res.data:
+        if not res.data:
+            return None
+
+        r = res.data[0]
+        race_dt = date.fromisoformat(r["race_date"])
+        return {
+            "name": r["name"],
+            "date": race_dt,
+            "priority": r["priority"],
+            "distance": r.get("distance") or "",
+            "days_to_race": (race_dt - today).days,
+        }
+    except Exception:
+        logger.warning("_get_upcoming_race fallita", exc_info=True)
         return None
-
-    r = res.data[0]
-    race_dt = date.fromisoformat(r["race_date"])
-    return {
-        "name": r["name"],
-        "date": race_dt,
-        "priority": r["priority"],
-        "distance": r.get("distance") or "",
-        "days_to_race": (race_dt - today).days,
-    }
 
 
 def _build_race_week_section(race: dict, today: date) -> str:
@@ -525,6 +601,10 @@ def _last_sync_age_hours(sb) -> Optional[float]:
     if not res.data or not res.data[0]["last_success_at"]:
         return None
     last = datetime.fromisoformat(res.data[0]["last_success_at"].replace("Z", "+00:00"))
+    # Bug fix audit C3: se il timestamp è naive (senza tz), forzalo UTC altrimenti
+    # `now(utc) - naive` solleva TypeError e fa crashare l'intero brief.
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc) - last).total_seconds() / 3600
 
 

@@ -89,24 +89,29 @@ def compute_for(day: date, history_days: int = 90) -> dict:
 
     # HRV z-score
     wellness_rows = _fetch_wellness_window(sb, day - timedelta(days=28))
-    hrv_history = [r["hrv_rmssd"] for r in wellness_rows if r.get("hrv_rmssd") is not None]
-    today_wellness = next((r for r in wellness_rows if r["date"] == day.isoformat()), {})
+    today_iso = day.isoformat()
+    today_wellness = next((r for r in wellness_rows if r["date"] == today_iso), {})
+
+    # Storico HRV ESCLUDENDO oggi (per identità di data, non per valore).
+    # Bug fix audit B1: escludere per valore rimuoveva ogni giorno con HRV uguale a
+    # oggi (frequente su HRV stabile), distorcendo media/SD della baseline.
+    hist_rows = [r for r in wellness_rows if r["date"] != today_iso]
+    hrv_history = [r["hrv_rmssd"] for r in hist_rows if r.get("hrv_rmssd") is not None]
 
     z = None
     baseline_28 = None
     baseline_sd = None
     if today_wellness.get("hrv_rmssd") is not None and len(hrv_history) >= 7:
-        # Escludi oggi dalla baseline
-        baseline = [v for v in hrv_history if v != today_wellness["hrv_rmssd"]]
-        if baseline:
-            import statistics
-            baseline_28 = statistics.fmean(baseline)
-            baseline_sd = statistics.pstdev(baseline) if len(baseline) > 1 else 0
-            z = hrv_z_score(today_wellness["hrv_rmssd"], baseline)
+        import statistics
+        baseline_28 = statistics.fmean(hrv_history)
+        baseline_sd = statistics.pstdev(hrv_history) if len(hrv_history) > 1 else 0
+        z = hrv_z_score(today_wellness["hrv_rmssd"], hrv_history)
 
-    # Readiness
+    # Readiness: z-score dei giorni PRECEDENTI (oggi escluso) per il check
+    # "2 giorni consecutivi" (§5.1). Bug fix audit B2: includere oggi qui faceva
+    # scattare fatigue_warning dopo 1 solo giorno invece di 2.
     recent_z_scores = []
-    for r in wellness_rows[-5:]:
+    for r in hist_rows[-5:]:
         if r.get("hrv_rmssd") is not None and len(hrv_history) >= 7:
             recent_z_scores.append(hrv_z_score(r["hrv_rmssd"], hrv_history))
 
@@ -120,10 +125,12 @@ def compute_for(day: date, history_days: int = 90) -> dict:
         resting_hr_today=today_wellness.get("resting_hr"),
         resting_hr_baseline=None,
     )
+    # Bug fix audit B3: passare None (non 0) quando manca il PMC, altrimenti
+    # _score_tsb tratta tsb=0 come "ottimale" (100) in un giorno cold-start.
     ts = TrainingState(
-        ctl=today_pmc.ctl if today_pmc else 0,
-        atl=today_pmc.atl if today_pmc else 0,
-        tsb=today_pmc.tsb if today_pmc else 0,
+        ctl=today_pmc.ctl if today_pmc else None,
+        atl=today_pmc.atl if today_pmc else None,
+        tsb=today_pmc.tsb if today_pmc else None,
         days_since_hard_session=None,
     )
     subj_data = _fetch_recent_subjective(sb, day)

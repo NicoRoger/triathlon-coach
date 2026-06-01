@@ -12,6 +12,7 @@ Soglie:
 """
 from __future__ import annotations
 
+import calendar
 import logging
 import os
 from datetime import datetime, timezone
@@ -93,7 +94,8 @@ def get_month_stats() -> dict:
     total_cost = sum(float(r.get("cost_usd_estimated", 0)) for r in rows)
     total_calls = len(rows)
     successful = sum(1 for r in rows if r.get("success"))
-    days_in_month = (now.replace(month=now.month % 12 + 1, day=1) - now.replace(day=1)).days if now.month < 12 else 31
+    # Bug fix audit I2: usa calendar.monthrange (corretto per ogni mese, dicembre incluso)
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
     days_elapsed = now.day
     days_remaining = days_in_month - days_elapsed
 
@@ -181,7 +183,19 @@ def check_budget_or_raise(estimated_cost: float, purpose: str) -> str:
     projected = spend + estimated_cost
     is_emergency = purpose in EMERGENCY_PURPOSES
 
-    if projected > BUDGET_BLOCKED and not is_emergency:
+    def _crosses(threshold: float) -> bool:
+        """True solo quando QUESTA chiamata supera la soglia per la prima volta.
+        Dedup stateless degli alert (audit I9): le chiamate che proseguono
+        loggano il costo e fanno salire `spend`, quindi una volta sopra soglia
+        `spend <= threshold` diventa falso e l'alert non si ripete."""
+        return spend <= threshold < projected
+
+    # Bug fix audit I1: hard-stop sulla spesa REALE già sostenuta, non solo sulla
+    # proiezione. `estimated_cost` è una stima conservativa che può sottostimare
+    # il costo effettivo; senza questo controllo la spesa reale può superare il
+    # cap di $5.00. Blocca quando la spesa reale ha raggiunto il cap, OPPURE
+    # quando la proiezione supera la soglia di blocco $4.80.
+    if (spend >= BUDGET_HARD_CAP or projected > BUDGET_BLOCKED) and not is_emergency:
         _send_budget_alert(
             f"🛑 Budget API ESAURITO (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
             f"Tutte le chiamate AI disabilitate fino a fine mese. "
@@ -193,21 +207,22 @@ def check_budget_or_raise(estimated_cost: float, purpose: str) -> str:
         )
 
     if projected > BUDGET_DEGRADED and not is_emergency:
-        _send_budget_alert(
-            f"⚠️ Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
-            f"Declassato a Haiku. Chiamate non critiche bloccate sopra $4.80."
-        )
+        if _crosses(BUDGET_DEGRADED):
+            _send_budget_alert(
+                f"⚠️ Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
+                f"Declassato a Haiku. Chiamate non critiche bloccate sopra $4.80."
+            )
         return "BLOCKED_NON_CRITICAL"
 
     if projected > BUDGET_WARNING:
-        _send_budget_alert(
-            f"📊 Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
-            f"Modello declassato a Haiku per risparmiare."
-        )
+        if _crosses(BUDGET_WARNING):
+            _send_budget_alert(
+                f"📊 Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
+                f"Modello declassato a Haiku per risparmiare."
+            )
         return "DEGRADED"
 
     if projected > BUDGET_OK:
-        # Alert solo la prima volta (check se già mandato oggi)
         logger.info("Budget warning: $%.2f / $%.2f", spend, BUDGET_HARD_CAP)
         return "WARNING"
 

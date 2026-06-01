@@ -26,6 +26,17 @@ CLAUDE_MD_PATH = Path(__file__).resolve().parent.parent.parent / "CLAUDE.md"
 
 SPORT_MAP = {"bike": "bike", "run": "run", "swim": "swim"}
 
+# Bound di plausibilità fisiologica per test_type (audit E — confermati
+# dall'atleta, 2026-06-01). Risultati fuori range = estrazione errata
+# (unità/split sbagliati) → scartati per non corrompere le zone.
+PLAUSIBLE_BOUNDS = {
+    "ftp_bike_20min": (80, 450),       # W
+    "ftp_bike_ramp": (80, 450),        # W
+    "threshold_run_30min": (150, 360), # s/km
+    "css_swim_400_200": (70, 150),     # s/100m
+    "lthr_run": (120, 200),            # bpm
+}
+
 TEST_CYCLE_ORDER = ["ftp_bike_20min", "ftp_bike_ramp", "threshold_run_30min", "css_swim_400_200", "lthr_run"]
 TEST_CYCLE_NEXT = {
     "ftp_bike_20min": "threshold_run_30min",
@@ -79,11 +90,28 @@ class FitnessTestProcessor:
             )
             return {"status": "fallback_failed", "test_type": test_type}
 
+        # Audit E: bound di plausibilità. Un risultato fuori range indica
+        # estrazione errata (unità/split) → NON sovrascrivere le zone con dati corrotti.
+        bounds = PLAUSIBLE_BOUNDS.get(test_type)
+        if bounds and not (bounds[0] <= result <= bounds[1]):
+            logger.warning(
+                "Fitness test %s: risultato %s fuori range plausibile %s, scartato",
+                test_type, result, bounds,
+            )
+            self._notify_telegram(
+                test_type, result, {}, success=False,
+                error_msg=f"Risultato estratto ({result}) fuori range plausibile {bounds}. "
+                          f"Probabile errore di rilevamento split. Verifica manualmente su Claude.ai.",
+            )
+            return {"status": "implausible_result", "test_type": test_type, "result": result}
+
         zone_system = structured.get("zone_system", "coggan_7zone")
         zones = self._compute_zones(zone_system, result)
 
         sport = _test_type_to_sport(test_type)
-        activity_date = str(activity.get("started_at", ""))[:10]
+        from coach.utils.dt import to_rome_date
+        _d = to_rome_date(activity.get("started_at"))
+        activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
 
         self._upsert_physiology_zones(
             sport=sport,
@@ -117,8 +145,11 @@ class FitnessTestProcessor:
         extraction = (structured.get("extraction") or {}).get("primary", {})
         idx = extraction.get("interval_index", 1)
         if splits and isinstance(splits, list) and len(splits) > idx:
-            avg_power = splits[idx].get("avg_power_w") or splits[idx].get("averageSpeed")
-            if avg_power:
+            # Bug fix audit E1: NIENTE fallback su averageSpeed — velocità (m/s) e
+            # potenza (W) non sono interscambiabili; usarla come watt corrompe FTP
+            # e tutte le zone. Senza potenza per-split, ritorna None (no dato).
+            avg_power = splits[idx].get("avg_power_w")
+            if avg_power and float(avg_power) > 0:
                 return round(float(avg_power) * 0.95, 1)
         return None
 
@@ -133,8 +164,11 @@ class FitnessTestProcessor:
         extraction = (structured.get("extraction") or {}).get("primary", {})
         idx = extraction.get("interval_index", 1)
         if splits and isinstance(splits, list) and len(splits) > idx:
-            pace = splits[idx].get("avg_pace_s_per_km") or splits[idx].get("averagePace")
-            if pace:
+            # Bug fix audit E2: NIENTE fallback su averagePace (chiave raw Garmin
+            # con unità diversa da s/km) — usiamo solo il campo normalizzato dal
+            # nostro ingest. Unità errata produrrebbe zone senza senso.
+            pace = splits[idx].get("avg_pace_s_per_km")
+            if pace and float(pace) > 0:
                 return round(float(pace), 1)
         return None
 
@@ -155,7 +189,10 @@ class FitnessTestProcessor:
             elif 180 <= dist <= 250 and t200 is None:
                 t200 = time_s
 
-        if t400 is not None and t200 is not None:
+        # Bug fix audit E3: guard t400 > t200. Se gli split sono mal rilevati
+        # (es. warmup catturato come t400) la formula darebbe CSS negativo/assurdo
+        # che corromperebbe le zone. Richiediamo t400 > t200 (e tempi positivi).
+        if t400 is not None and t200 is not None and t400 > t200 > 0:
             css_per_100m = (t400 - t200) / 2
             return round(css_per_100m, 1)
         return None
@@ -270,8 +307,11 @@ class FitnessTestProcessor:
             "notes": json.dumps({"zones": zones, "zone_system": zone_system}),
         }
 
+        # Audit E4: chiave unique (discipline, valid_from, method) — prima non
+        # esisteva alcun vincolo unique (upsert sarebbe fallito a runtime) e
+        # test diversi lo stesso giorno si sarebbero sovrascritti.
         self.sb.table("physiology_zones").upsert(
-            record, on_conflict="discipline,valid_from"
+            record, on_conflict="discipline,valid_from,method"
         ).execute()
         logger.info("Physiology zones upserted: %s %s=%s", discipline, db_field, result)
 
@@ -394,7 +434,7 @@ def check_recent() -> list[dict]:
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
     activities = sb.table("activities").select(
-        "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits"
+        "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits,notes"
     ).gte("started_at", cutoff).in_(
         "sport", ["bike", "run", "swim"]
     ).order("started_at", desc=True).limit(10).execute().data or []
@@ -412,8 +452,14 @@ def check_recent() -> list[dict]:
 
         if planned:
             logger.info("Matched planned fitness test: %s %s", sport, activity_date)
-            result = processor.process_fitness_test(activity, planned[0])
-            results.append(result)
+            # Bug fix audit E5: isola ogni attività — un errore (estrazione, cast,
+            # write DB) non deve abortire il processing delle restanti.
+            try:
+                result = processor.process_fitness_test(activity, planned[0])
+                results.append(result)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Errore processing fitness test per %s", activity.get("external_id"))
+                results.append({"status": "error", "activity": activity.get("external_id"), "error": str(e)})
             continue
 
         name = (activity.get("notes") or activity.get("external_id") or "").lower()

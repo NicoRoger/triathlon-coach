@@ -49,10 +49,19 @@ jobs:
       - name: Garmin sync (with retries)
         id: garmin
         run: |
+          # Bug fix audit L1: senza questo, l'ultima cmd del loop su fallimento
+          # era `sleep` (exit 0) → lo step risultava VERDE anche dopo 3 fallimenti,
+          # mascherando uno stop sync e facendo girare i downstream su dati stantii.
+          ok=0
           for i in 1 2 3; do
             echo "Garmin attempt $i"
-            python -m coach.ingest.garmin && break || sleep $((i * 30))
+            if python -m coach.ingest.garmin; then ok=1; break; fi
+            sleep $((i * 30))
           done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::Garmin sync fallito dopo 3 tentativi"
+            exit 1
+          fi
 
       #- name: Strava sync
        # if: always()
@@ -82,6 +91,13 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Apply accepted modulations (audit K1)
+        # Il bot Telegram setta status='accepted' al tap; qui le applichiamo
+        # davvero al piano (apply_accepted_modulations → status 'applied').
+        if: always()
+        continue-on-error: true
+        run: python -m coach.coaching.modulation --apply-accepted
 
       - name: ETL health check
         if: always()

@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
 
-from coach.utils.dt import today_rome
+from coach.utils.dt import today_rome, to_rome_date
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,16 @@ def compute_weekly_compliance(week_start: Optional[date] = None) -> WeeklyCompli
     ).execute()
     rpes = [d["rpe"] for d in (debrief_res.data or []) if d.get("rpe") is not None]
 
-    completed_sports = {a["started_at"][:10] + "_" + (a.get("sport") or "") for a in activities}
+    # Bug fix audit D5: confronta sulla DATA Rome (non slicing UTC), altrimenti
+    # un'attività a cavallo di mezzanotte risulta in un giorno diverso da
+    # planned_date e una sessione completata viene segnata "missed".
+    def _act_key(a: dict) -> Optional[str]:
+        d = to_rome_date(a.get("started_at"))
+        if d is None:
+            return None
+        return d.isoformat() + "_" + (a.get("sport") or "")
+
+    completed_sports = {k for a in activities if (k := _act_key(a)) is not None}
     planned_keys = {p["planned_date"] + "_" + (p.get("sport") or "") for p in planned}
 
     missed = planned_keys - completed_sports

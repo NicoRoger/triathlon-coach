@@ -87,8 +87,8 @@ class TestCheckBudget:
     @patch("coach.utils.budget.get_month_spend_usd")
     @patch("coach.utils.budget._send_budget_alert")
     def test_degraded_level(self, mock_alert, mock_spend):
-        """$4.10 + $0.10 = $4.20 → DEGRADED, alert sent."""
-        mock_spend.return_value = 4.10
+        """$3.95 + $0.10 = $4.05 → DEGRADED, alert al PRIMO attraversamento di $4.00."""
+        mock_spend.return_value = 3.95
         level = check_budget_or_raise(0.10, "session_analysis")
         assert level == "DEGRADED"
         mock_alert.assert_called_once()

@@ -2,9 +2,10 @@ name: proactive-check-in
 
 on:
   schedule:
-    # Martedì, Giovedì, Sabato alle 18:00 (Europe/Rome = 16:00 UTC in estate o 17:00 UTC in inverno)
-    # Assumiamo 16:00 UTC
-    - cron: '0 16 * * 2,4,6'
+    # Audit L5: doppio cron (estate UTC+2 / inverno UTC+1) + gate Rome-hour=18
+    # nello step → 18:00 Europe/Rome tutto l'anno (Mar/Gio/Sab).
+    - cron: '0 16 * * 2,4,6'  # estate: 18:00 Rome
+    - cron: '0 17 * * 2,4,6'  # inverno: 18:00 Rome
   workflow_dispatch:
 
 concurrency:
@@ -33,4 +34,14 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Proactive Questions Check-In
-        run: python -m coach.coaching.proactive_questions
+        # Gate DST: invia solo nel run che cade alle 18:xx Europe/Rome
+        # (workflow_dispatch manuale bypassa il gate).
+        run: |
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            HOUR=$(TZ='Europe/Rome' date +%H)
+            if [ "$HOUR" != "18" ]; then
+              echo "DST gate: ora Rome $HOUR != 18, skip"
+              exit 0
+            fi
+          fi
+          python -m coach.coaching.proactive_questions

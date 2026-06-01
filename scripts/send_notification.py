@@ -1,15 +1,35 @@
-import sys
+import argparse
 import logging
+import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from coach.utils.telegram_logger import send_and_log_message
+
+logger = logging.getLogger(__name__)
+
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    if len(sys.argv) < 2:
-        print("Usage: python scripts/send_notification.py <type>")
-        sys.exit(1)
-        
-    notif_type = sys.argv[1]
-    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("notif_type")
+    # Audit L5: gate DST. Il cron gira a UTC fisso (1h in anticipo in inverno).
+    # Schedulando DUE cron (uno per estate, uno per inverno) e passando l'ora
+    # Rome desiderata, solo il run che cade in quell'ora Rome invia davvero.
+    parser.add_argument("--rome-hour", type=int, default=None,
+                        help="Se impostato, invia solo se l'ora corrente Europe/Rome == questo valore")
+    args = parser.parse_args()
+    notif_type = args.notif_type
+
+    if args.rome_hour is not None:
+        rome_now = datetime.now(ZoneInfo("Europe/Rome"))
+        if rome_now.hour != args.rome_hour:
+            logger.info(
+                "DST gate: ora Rome %02d:%02d != %02d, skip invio %s",
+                rome_now.hour, rome_now.minute, args.rome_hour, notif_type,
+            )
+            return
+
     if notif_type == "debrief-reminder":
         msg = (
             "<b>📋 Debrief serale</b>\n\n"

@@ -28,6 +28,25 @@ TABLES = [
 ]
 BUCKET = "dr-snapshots"
 
+# Bug fix audit L3: tabelle che in un sistema in esercizio NON possono essere
+# vuote. Se l'export le restituisce vuote è quasi certo un read degradato di
+# Supabase: NON dobbiamo committare un backup vuoto (che al restore via upsert
+# non ripristina nulla / maschera la perdita dati).
+CRITICAL_NONEMPTY_TABLES = ["activities", "daily_wellness", "daily_metrics"]
+
+
+class EmptySnapshotError(RuntimeError):
+    """Sollevata quando una tabella critica risulta vuota nell'export."""
+
+
+def assert_snapshot_sane(snapshot: dict) -> None:
+    empty = [t for t in CRITICAL_NONEMPTY_TABLES if not snapshot.get(t)]
+    if empty:
+        raise EmptySnapshotError(
+            f"Tabelle critiche vuote nell'export: {empty}. "
+            f"Snapshot ABORTITO per non sovrascrivere un backup valido con uno vuoto."
+        )
+
 
 def export_all() -> dict:
     sb = get_supabase()
@@ -62,6 +81,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
         snapshot = export_all()
+        assert_snapshot_sane(snapshot)  # audit L3: non committare backup vuoti
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         body = json.dumps(snapshot, default=str, separators=(",", ":")).encode()
         compressed = gzip.compress(body)
