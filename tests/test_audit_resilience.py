@@ -647,3 +647,55 @@ def test_c2_race_progress_resilient_to_db_error():
     from unittest.mock import patch
     with patch.object(_briefing_mod, "get_supabase", side_effect=RuntimeError("db down")):
         assert _briefing_mod._build_race_progress_section(date(2026, 6, 1)) == ""
+
+
+# ===========================================================================
+# L2/L3/L4 — workflow/script: fallimenti silenziosi
+# ===========================================================================
+def test_l3_empty_snapshot_aborts():
+    ds = _load("scripts.dr_snapshot", "scripts/dr_snapshot.py")
+    full = {"activities": [{"id": 1}], "daily_wellness": [{"date": "x"}],
+            "daily_metrics": [{"date": "x"}], "races": []}
+    ds.assert_snapshot_sane(full)  # ok, non solleva
+    empty = {"activities": [], "daily_wellness": [{"date": "x"}], "daily_metrics": [{"date": "x"}]}
+    with pytest.raises(ds.EmptySnapshotError):
+        ds.assert_snapshot_sane(empty)
+
+
+def test_l4_watchdog_alerts_missing_component():
+    from datetime import datetime, timezone
+    wd = _load("scripts.watchdog", "scripts/watchdog.py")
+    # nessuna riga health → ogni componente atteso deve generare un alert
+    alerts = wd.compute_alerts([], datetime(2026, 6, 1, tzinfo=timezone.utc))
+    assert len(alerts) == len(wd.THRESHOLDS_HOURS)
+    assert any("garmin_sync" in a for a in alerts)
+
+
+def test_l4_watchdog_stale_component():
+    from datetime import datetime, timezone, timedelta
+    wd = _load("scripts.watchdog", "scripts/watchdog.py")
+    now = datetime(2026, 6, 1, 12, tzinfo=timezone.utc)
+    old = (now - timedelta(hours=20)).isoformat()
+    rows = [{"component": c, "last_success_at": old} for c in wd.THRESHOLDS_HOURS]
+    alerts = wd.compute_alerts(rows, now)
+    # garmin_sync soglia 8h, 20h → alert; briefing_morning soglia 26h → no
+    assert any("garmin_sync" in a and "🚨" in a for a in alerts)
+
+
+def test_l2_db_cleanup_exits_nonzero_on_error():
+    dc = _load("scripts.db_cleanup", "scripts/db_cleanup.py")
+
+    class _Q:
+        def delete(self, *a, **k): return self
+        def lt(self, *a, **k): return self
+        def in_(self, *a, **k): return self
+        def execute(self):
+            raise RuntimeError("delete failed")
+
+    class _SB:
+        def table(self, *a, **k): return _Q()
+
+    dc.get_supabase = lambda: _SB()  # type: ignore
+    with pytest.raises(SystemExit) as exc:
+        dc.main()
+    assert exc.value.code == 1
