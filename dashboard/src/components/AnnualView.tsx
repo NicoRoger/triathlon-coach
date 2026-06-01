@@ -23,6 +23,11 @@ const PRIORITY_COLORS: Record<string, string> = {
  * gare per priorità e CTL trend (90gg actual + proiezione future settimane). */
 export function AnnualView({ data }: Props) {
   const today = new Date(data.today + "T00:00:00Z");
+  // Bug fix audit N3: se data.today manca/è malformato, tutta la geometria
+  // diventa NaN e la vista renderizza "NaN%". Mostra un placeholder.
+  if (!data.today || isNaN(today.getTime())) {
+    return <div style={{ padding: 16, color: "#a0aec0" }}>Dati timeline non disponibili</div>;
+  }
   const start = new Date(today);
   start.setUTCMonth(start.getUTCMonth() - 3);
   const end = new Date(today);
@@ -49,7 +54,8 @@ export function AnnualView({ data }: Props) {
     })
     .map((m: Mesocycle, i) => {
       const left = Math.max(0, dateToPct(m.start_date));
-      const width = Math.min(100 - left, dateToPct(m.end_date) - left);
+      // Bug fix audit N3: clamp a >=0 per dati con end_date < start_date.
+      const width = Math.max(0, Math.min(100 - left, dateToPct(m.end_date) - left));
       return (
         <div
           key={`meso-${i}`}

@@ -231,6 +231,12 @@ export function generateTimelineElements(
   _idCounter = 0;
   const elements: any[] = [];
 
+  // Bug fix audit N1: difesa-in-profondità contro array undefined (shape drift).
+  mesocycles = mesocycles ?? [];
+  races = races ?? [];
+  plannedSessions = plannedSessions ?? [];
+  if (!today) return elements;
+
   const startDate = addDays(today, -WINDOW_PAST_DAYS);
   const endDate = addDays(today, WINDOW_FUTURE_DAYS);
   const totalWidth = (WINDOW_PAST_DAYS + WINDOW_FUTURE_DAYS) * PX_PER_DAY;
