@@ -881,3 +881,42 @@ def test_b4_volume_bucketing_handles_datetime_and_str():
     score = risk.compute_injury_risk()  # NON deve sollevare
     assert score.raw_inputs["volume_this_week_min"] == 60
     assert score.raw_inputs["volume_last_week_min"] == 30
+
+
+# ===========================================================================
+# Brief: sessione del giorno con descrizione COMPLETA + TSS + zone + struttura
+# (richiesta atleta — dettaglio accurato su Telegram)
+# ===========================================================================
+def test_brief_session_full_description():
+    b = _briefing_mod
+    desc = "Riga1\nRiga2\nRiga3\nRiga4\nRiga5\nRiga6"  # >4 righe: prima venivano troncate
+    planned = [{
+        "sport": "run",
+        "session_type": "threshold",
+        "duration_s": 3600,
+        "target_tss": 75,
+        "target_zones": {"z2": 0.6, "z4": 0.3},
+        "description": desc,
+        "structured": {"steps": [
+            {"name": "warmup", "duration_s": 600, "zone": "Z1"},
+            {"name": "1000m", "reps": 5, "zone": "Z4"},
+        ]},
+    }]
+    out = b._build_session_section(planned)
+    # descrizione completa (anche la 6a riga)
+    assert "Riga6" in out
+    # TSS target nell'intestazione
+    assert "TSS 75" in out
+    # zone formattate
+    assert "Z2 60%" in out and "Z4 30%" in out
+    # struttura
+    assert "warmup" in out and "1000m" in out and "x5" in out
+
+
+def test_brief_session_robust_to_missing_fields():
+    b = _briefing_mod
+    # solo i campi minimi, niente structured/zones/tss → nessun crash
+    out = b._build_session_section([{"sport": "swim", "session_type": "tecnica", "duration_s": 1800}])
+    assert "tecnica" in out
+    # nessuna sessione → fallback
+    assert "Nessuna sessione" in b._build_session_section([])
