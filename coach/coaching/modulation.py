@@ -106,9 +106,28 @@ def apply_modulation(modulation_id: str) -> bool:
         return False
 
     mod = res.data[0]
-    if mod["status"] != "proposed":
-        logger.info("Modulation %s already %s", modulation_id, mod["status"])
+    if mod.get("status") != "proposed":
+        logger.info("Modulation %s already %s", modulation_id, mod.get("status"))
         return False
+
+    # Bug fix audit D1: rifiuta modulazioni scadute. Una proposta basata su
+    # condizioni di lunedì non deve essere applicata giorni dopo su stato stantio.
+    # Retro-compatibile: expires_at NULL (righe pre-migration) = mai scade.
+    expires_at = mod.get("expires_at")
+    if expires_at:
+        try:
+            exp = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp:
+                logger.info("Modulation %s scaduta (%s), non applicata", modulation_id, expires_at)
+                sb.table("plan_modulations").update({
+                    "status": "expired",
+                    "resolved_at": _now_iso(),
+                }).eq("id", modulation_id).execute()
+                return False
+        except ValueError:
+            logger.warning("Modulation %s: expires_at non parsabile (%s), procedo", modulation_id, expires_at)
 
     changes = mod.get("proposed_changes") or []
     applied = 0

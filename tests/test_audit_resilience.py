@@ -699,3 +699,54 @@ def test_l2_db_cleanup_exits_nonzero_on_error():
     with pytest.raises(SystemExit) as exc:
         dc.main()
     assert exc.value.code == 1
+
+
+# ===========================================================================
+# O1/O2/O3 — schema.sql e migration idempotenti (source assertion)
+# ===========================================================================
+def test_o1_schema_create_table_idempotent():
+    src = (ROOT / "sql" / "schema.sql").read_text(encoding="utf-8")
+    import re
+    # Ogni CREATE TABLE deve avere IF NOT EXISTS
+    bad = re.findall(r"CREATE TABLE (?!IF NOT EXISTS)", src)
+    assert not bad, "tutti i CREATE TABLE devono essere IF NOT EXISTS"
+    bad_idx = re.findall(r"CREATE INDEX (?!IF NOT EXISTS)", src)
+    assert not bad_idx, "tutti i CREATE INDEX devono essere IF NOT EXISTS"
+    assert "ON CONFLICT (component) DO NOTHING" in src
+    assert "DROP TRIGGER IF EXISTS" in src
+
+
+def test_o3_migrations_idempotent():
+    for f in ["2026-05-10-fix-planned-sessions-unique.sql", "2026-05-12-mesocycles-unique.sql"]:
+        src = (ROOT / "migrations" / f).read_text(encoding="utf-8")
+        assert "EXCEPTION" in src, f"{f} deve gestire il re-run (DO/EXCEPTION)"
+
+
+def test_o4_o6_migration_present():
+    src = (ROOT / "migrations" / "2026-06-01-resilience-audit.sql").read_text(encoding="utf-8")
+    assert "races_name_date_unique" in src
+    assert "expires_at" in src
+    assert "mesocycles_target_race_fk" in src
+
+
+# ===========================================================================
+# D1 — modulazione scaduta non viene applicata
+# ===========================================================================
+def test_d1_expired_modulation_not_applied():
+    from datetime import datetime, timezone, timedelta
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    mod = {"id": "mexp", "status": "proposed", "expires_at": past,
+           "proposed_changes": [{"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}}]}
+    sb = _ModFakeSB(mod)
+    mt = _load_modulation(sb)
+    assert mt.apply_modulation("mexp") is False
+    assert sb.mod_update["status"] == "expired"
+    assert sb.upserts == [], "nessuna modifica al piano per una modulazione scaduta"
+
+
+def test_d1_null_expires_still_applies():
+    mod = {"id": "mok", "status": "proposed", "expires_at": None,
+           "proposed_changes": [{"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}}]}
+    sb = _ModFakeSB(mod)
+    mt = _load_modulation(sb)
+    assert mt.apply_modulation("mok") is True
