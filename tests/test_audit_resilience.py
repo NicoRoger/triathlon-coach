@@ -289,3 +289,41 @@ def test_i9_no_alert_when_already_above_threshold():
         # 4.20 già oltre 4.00: nessun nuovo attraversamento → niente alert
         check_budget_or_raise(0.05, "session_analysis")
         mock_alert.assert_not_called()
+
+
+# ===========================================================================
+# A4 — startTimeGMT naive (senza Z) → datetime naive, drift Rome/UTC
+# E6 — activityName salvato in notes per la safety-net keyword
+# ===========================================================================
+def test_a4_naive_start_time_forced_utc():
+    from coach.ingest.garmin import _normalize_activity
+    raw = {
+        "activityId": 123,
+        "activityType": {"typeKey": "running"},
+        "startTimeGMT": "2026-05-30 06:12:33",  # spazio, NO Z, NO offset
+        "duration": 3600,
+        "activityName": "Easy Run",
+    }
+    act = _normalize_activity(raw)
+    assert act.started_at.tzinfo is not None, "started_at deve essere tz-aware"
+    assert act.started_at.utcoffset().total_seconds() == 0, "deve essere UTC"
+
+
+def test_e6_activity_name_stored_in_notes():
+    from coach.ingest.garmin import _normalize_activity
+    raw = {
+        "activityId": 99,
+        "activityType": {"typeKey": "cycling"},
+        "startTimeGMT": "2026-06-15T07:00:00Z",
+        "duration": 1800,
+        "activityName": "FTP Test 20min",
+    }
+    act = _normalize_activity(raw)
+    assert act.notes == "FTP Test 20min"
+
+
+def test_a4_missing_start_time_raises_clear():
+    from coach.ingest.garmin import _normalize_activity
+    raw = {"activityId": 1, "activityType": {"typeKey": "running"}, "duration": 60}
+    with pytest.raises(ValueError):
+        _normalize_activity(raw)

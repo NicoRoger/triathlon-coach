@@ -31,7 +31,7 @@ import logging
 import os
 import tempfile
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -88,7 +88,15 @@ def _normalize_activity(raw: dict, splits: Optional[list] = None, weather: Optio
     raw_sport = (raw.get("activityType", {}).get("typeKey") or "").lower()
     sport = SPORT_MAP.get(raw_sport, Sport.OTHER)
 
-    started = datetime.fromisoformat(raw["startTimeGMT"].replace("Z", "+00:00"))
+    # Bug fix audit A4: startTimeGMT può arrivare come "2026-05-30 06:12:33"
+    # (separato da spazio, senza Z/offset) → fromisoformat dà un datetime NAIVE
+    # che però è GMT. Forziamo tzinfo=UTC per evitare drift Rome/UTC a valle.
+    raw_start = raw.get("startTimeGMT")
+    if not raw_start:
+        raise ValueError(f"activity {raw.get('activityId')} senza startTimeGMT")
+    started = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
 
     # HR zones
     hr_zones = None
@@ -135,6 +143,10 @@ def _normalize_activity(raw: dict, splits: Optional[list] = None, weather: Optio
         splits=splits,
         weather=weather,
         raw_payload=raw,
+        # Bug fix audit E6: salva il nome attività Garmin in notes, così la
+        # safety-net keyword di fitness_test_processor può rilevare i test
+        # nominati (es. "FTP test") quando manca la planned_session.
+        notes=raw.get("activityName"),
     )
 
 def _extract_vo2max(max_metrics_payload: Optional[dict], discipline: str) -> Optional[float]:

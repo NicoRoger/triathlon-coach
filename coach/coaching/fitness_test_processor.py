@@ -117,8 +117,11 @@ class FitnessTestProcessor:
         extraction = (structured.get("extraction") or {}).get("primary", {})
         idx = extraction.get("interval_index", 1)
         if splits and isinstance(splits, list) and len(splits) > idx:
-            avg_power = splits[idx].get("avg_power_w") or splits[idx].get("averageSpeed")
-            if avg_power:
+            # Bug fix audit E1: NIENTE fallback su averageSpeed — velocità (m/s) e
+            # potenza (W) non sono interscambiabili; usarla come watt corrompe FTP
+            # e tutte le zone. Senza potenza per-split, ritorna None (no dato).
+            avg_power = splits[idx].get("avg_power_w")
+            if avg_power and float(avg_power) > 0:
                 return round(float(avg_power) * 0.95, 1)
         return None
 
@@ -133,8 +136,11 @@ class FitnessTestProcessor:
         extraction = (structured.get("extraction") or {}).get("primary", {})
         idx = extraction.get("interval_index", 1)
         if splits and isinstance(splits, list) and len(splits) > idx:
-            pace = splits[idx].get("avg_pace_s_per_km") or splits[idx].get("averagePace")
-            if pace:
+            # Bug fix audit E2: NIENTE fallback su averagePace (chiave raw Garmin
+            # con unità diversa da s/km) — usiamo solo il campo normalizzato dal
+            # nostro ingest. Unità errata produrrebbe zone senza senso.
+            pace = splits[idx].get("avg_pace_s_per_km")
+            if pace and float(pace) > 0:
                 return round(float(pace), 1)
         return None
 
@@ -155,7 +161,10 @@ class FitnessTestProcessor:
             elif 180 <= dist <= 250 and t200 is None:
                 t200 = time_s
 
-        if t400 is not None and t200 is not None:
+        # Bug fix audit E3: guard t400 > t200. Se gli split sono mal rilevati
+        # (es. warmup catturato come t400) la formula darebbe CSS negativo/assurdo
+        # che corromperebbe le zone. Richiediamo t400 > t200 (e tempi positivi).
+        if t400 is not None and t200 is not None and t400 > t200 > 0:
             css_per_100m = (t400 - t200) / 2
             return round(css_per_100m, 1)
         return None
@@ -394,7 +403,7 @@ def check_recent() -> list[dict]:
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
     activities = sb.table("activities").select(
-        "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits"
+        "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits,notes"
     ).gte("started_at", cutoff).in_(
         "sport", ["bike", "run", "swim"]
     ).order("started_at", desc=True).limit(10).execute().data or []
@@ -412,8 +421,14 @@ def check_recent() -> list[dict]:
 
         if planned:
             logger.info("Matched planned fitness test: %s %s", sport, activity_date)
-            result = processor.process_fitness_test(activity, planned[0])
-            results.append(result)
+            # Bug fix audit E5: isola ogni attività — un errore (estrazione, cast,
+            # write DB) non deve abortire il processing delle restanti.
+            try:
+                result = processor.process_fitness_test(activity, planned[0])
+                results.append(result)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Errore processing fitness test per %s", activity.get("external_id"))
+                results.append({"status": "error", "activity": activity.get("external_id"), "error": str(e)})
             continue
 
         name = (activity.get("notes") or activity.get("external_id") or "").lower()
