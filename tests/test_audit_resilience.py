@@ -733,6 +733,22 @@ def test_o4_o6_migration_present():
     assert "mesocycles_target_race_fk" in src
 
 
+def test_o7_e4_o8_o9_migration_present():
+    src = (ROOT / "migrations" / "2026-06-01-resilience-audit.sql").read_text(encoding="utf-8")
+    assert "unique_planned_date_sport_type" in src           # O7
+    assert "physiology_zones_disc_validfrom_method_unique" in src  # E4
+    assert "ON DELETE SET NULL" in src                        # O8
+    assert "plan_modulations_status_check" in src             # O9
+
+
+def test_o7_e4_code_on_conflict_aligned():
+    # Il codice deve usare le chiavi unique allargate
+    mod_src = (ROOT / "coach" / "coaching" / "modulation.py").read_text(encoding="utf-8")
+    assert 'on_conflict="planned_date,sport,session_type"' in mod_src
+    ft_src = (ROOT / "coach" / "coaching" / "fitness_test_processor.py").read_text(encoding="utf-8")
+    assert 'on_conflict="discipline,valid_from,method"' in ft_src
+
+
 # ===========================================================================
 # D1 — modulazione scaduta non viene applicata
 # ===========================================================================

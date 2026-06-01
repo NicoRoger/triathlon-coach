@@ -307,8 +307,11 @@ class FitnessTestProcessor:
             "notes": json.dumps({"zones": zones, "zone_system": zone_system}),
         }
 
+        # Audit E4: chiave unique (discipline, valid_from, method) — prima non
+        # esisteva alcun vincolo unique (upsert sarebbe fallito a runtime) e
+        # test diversi lo stesso giorno si sarebbero sovrascritti.
         self.sb.table("physiology_zones").upsert(
-            record, on_conflict="discipline,valid_from"
+            record, on_conflict="discipline,valid_from,method"
         ).execute()
         logger.info("Physiology zones upserted: %s %s=%s", discipline, db_field, result)
 

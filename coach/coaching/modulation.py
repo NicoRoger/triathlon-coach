@@ -248,7 +248,8 @@ def _apply_single_change(sb, change: dict) -> bool:
     }
 
     sb.table("planned_sessions").upsert(
-        payload, on_conflict="planned_date,sport"
+        # Audit O7: chiave unique allargata a (planned_date, sport, session_type)
+        payload, on_conflict="planned_date,sport,session_type"
     ).execute()
     return True
 
