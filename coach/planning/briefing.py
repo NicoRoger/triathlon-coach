@@ -283,20 +283,26 @@ def _build_warnings_section(metrics: dict) -> str:
 
 def _build_race_progress_section(today: date) -> str:
     """Sezione progresso verso la prossima gara A dalla tabella races."""
-    sb = get_supabase()
-    res = sb.table("races").select(
-        "name,race_date"
-    ).gte("race_date", today.isoformat()).eq(
-        "priority", "A"
-    ).order("race_date").limit(1).execute()
+    # Bug fix audit C2: una query/parsing fallita su questa sezione opzionale
+    # NON deve far crashare l'intero brief mattutino. Degrada a sezione vuota.
+    try:
+        sb = get_supabase()
+        res = sb.table("races").select(
+            "name,race_date"
+        ).gte("race_date", today.isoformat()).eq(
+            "priority", "A"
+        ).order("race_date").limit(1).execute()
 
-    if not res.data:
+        if not res.data:
+            return ""
+
+        r = res.data[0]
+        race_date = date.fromisoformat(r["race_date"])
+        race_name = r["name"]
+        days_left = (race_date - today).days
+    except Exception:
+        logger.warning("_build_race_progress_section fallita", exc_info=True)
         return ""
-
-    r = res.data[0]
-    race_date = date.fromisoformat(r["race_date"])
-    race_name = r["name"]
-    days_left = (race_date - today).days
 
     if days_left < 0:
         return ""
@@ -332,26 +338,32 @@ def _build_race_progress_section(today: date) -> str:
 
 def _get_upcoming_race(today: date) -> Optional[dict]:
     """Trova la prossima gara A o B entro 7 giorni dalla tabella races."""
-    sb = get_supabase()
-    window_end = (today + timedelta(days=7)).isoformat()
-    res = sb.table("races").select(
-        "name,race_date,priority,distance"
-    ).gte("race_date", today.isoformat()).lte(
-        "race_date", window_end
-    ).in_("priority", ["A", "B"]).order("race_date").limit(1).execute()
+    # Bug fix audit C2: questa funzione gira presto in build_brief; una query
+    # fallita non deve abbattere l'intero brief.
+    try:
+        sb = get_supabase()
+        window_end = (today + timedelta(days=7)).isoformat()
+        res = sb.table("races").select(
+            "name,race_date,priority,distance"
+        ).gte("race_date", today.isoformat()).lte(
+            "race_date", window_end
+        ).in_("priority", ["A", "B"]).order("race_date").limit(1).execute()
 
-    if not res.data:
+        if not res.data:
+            return None
+
+        r = res.data[0]
+        race_dt = date.fromisoformat(r["race_date"])
+        return {
+            "name": r["name"],
+            "date": race_dt,
+            "priority": r["priority"],
+            "distance": r.get("distance") or "",
+            "days_to_race": (race_dt - today).days,
+        }
+    except Exception:
+        logger.warning("_get_upcoming_race fallita", exc_info=True)
         return None
-
-    r = res.data[0]
-    race_dt = date.fromisoformat(r["race_date"])
-    return {
-        "name": r["name"],
-        "date": race_dt,
-        "priority": r["priority"],
-        "distance": r.get("distance") or "",
-        "days_to_race": (race_dt - today).days,
-    }
 
 
 def _build_race_week_section(race: dict, today: date) -> str:
@@ -525,6 +537,10 @@ def _last_sync_age_hours(sb) -> Optional[float]:
     if not res.data or not res.data[0]["last_success_at"]:
         return None
     last = datetime.fromisoformat(res.data[0]["last_success_at"].replace("Z", "+00:00"))
+    # Bug fix audit C3: se il timestamp è naive (senza tz), forzalo UTC altrimenti
+    # `now(utc) - naive` solleva TypeError e fa crashare l'intero brief.
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc) - last).total_seconds() / 3600
 
 

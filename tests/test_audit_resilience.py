@@ -18,6 +18,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Cattura il modulo briefing REALE all'import di questo file (collezionato per
+# primo, prima che altri test stubbino il package coach.planning in sys.modules).
+from coach.planning import briefing as _briefing_mod  # noqa: E402
+
 
 def _load(mod_name: str, rel_path: str):
     spec = importlib.util.spec_from_file_location(mod_name, ROOT / rel_path)
@@ -611,3 +615,35 @@ def test_g2_empty_llm_text_does_not_overwrite(tmp_path):
     out = mod.extract_patterns(days=28)
     assert out is None
     assert f.read_text(encoding="utf-8") == "CONTENUTO IMPORTANTE", "file non deve essere sovrascritto da testo vuoto"
+
+
+# ===========================================================================
+# C2/C3 — briefing: sezioni gara resilienti, timestamp naive non crasha
+# ===========================================================================
+def test_c3_last_sync_naive_timestamp_no_crash():
+    briefing = _briefing_mod
+
+    class _Q:
+        def select(self, *a, **k): return self
+        def eq(self, *a, **k): return self
+        def execute(self):
+            # timestamp NAIVE (senza tz)
+            return types.SimpleNamespace(data=[{"last_success_at": "2026-06-01 06:00:00"}])
+
+    class _SB:
+        def table(self, *a, **k): return _Q()
+
+    hours = briefing._last_sync_age_hours(_SB())
+    assert isinstance(hours, float)
+
+
+def test_c2_get_upcoming_race_resilient_to_db_error():
+    from unittest.mock import patch
+    with patch.object(_briefing_mod, "get_supabase", side_effect=RuntimeError("db down")):
+        assert _briefing_mod._get_upcoming_race(date(2026, 6, 1)) is None
+
+
+def test_c2_race_progress_resilient_to_db_error():
+    from unittest.mock import patch
+    with patch.object(_briefing_mod, "get_supabase", side_effect=RuntimeError("db down")):
+        assert _briefing_mod._build_race_progress_section(date(2026, 6, 1)) == ""
