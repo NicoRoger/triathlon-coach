@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
 
-from coach.utils.dt import today_rome
+from coach.utils.dt import today_rome, to_rome_date
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -239,13 +239,19 @@ def compute_injury_risk() -> RiskScore:
     today = today_rome()
     this_week_start = today - timedelta(days=today.weekday())
     last_week_start = this_week_start - timedelta(days=7)
+    # Bug fix audit B4: usa to_rome_date invece di slicing `started_at[:10]`.
+    # Lo slicing rompe (TypeError) se started_at è un datetime e usa la data UTC
+    # invece di quella Rome per il bucketing settimanale.
+    def _adate(a: dict):
+        return to_rome_date(a.get("started_at"))
+
     this_week_min = sum(
         (a.get("duration_s") or 0) / 60 for a in activities
-        if a.get("started_at", "")[:10] >= this_week_start.isoformat()
+        if (_d := _adate(a)) is not None and _d >= this_week_start
     )
     last_week_min = sum(
         (a.get("duration_s") or 0) / 60 for a in activities
-        if last_week_start.isoformat() <= a.get("started_at", "")[:10] < this_week_start.isoformat()
+        if (_d := _adate(a)) is not None and last_week_start <= _d < this_week_start
     )
     raw["volume_this_week_min"] = round(this_week_min, 0)
     raw["volume_last_week_min"] = round(last_week_min, 0)

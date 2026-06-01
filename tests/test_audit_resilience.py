@@ -861,3 +861,23 @@ def test_h3_no_overlapping_mesocycles():
     mesos = sorted(plan.mesocycles, key=lambda m: m.start_date)
     for a, b in zip(mesos, mesos[1:]):
         assert a.end_date < b.start_date, f"overlap: {a.phase}({a.end_date}) vs {b.phase}({b.start_date})"
+
+
+# ===========================================================================
+# B4 — risk.py: started_at datetime/str non deve crashare il bucketing volume
+# ===========================================================================
+def test_b4_volume_bucketing_handles_datetime_and_str():
+    from datetime import datetime, timezone
+    risk = _load("coach.analytics.risk", "coach/analytics/risk.py")
+    today = date(2026, 6, 3)  # mercoledì
+    risk.today_rome = lambda: today  # type: ignore
+    risk._load_metrics = lambda days=28: []  # type: ignore
+    risk._load_recent_subjective = lambda days=60: []  # type: ignore
+    # mix: una con datetime object (caso che crashava [:10]), una con stringa ISO
+    risk._load_recent_activities = lambda days=14: [  # type: ignore
+        {"started_at": datetime(2026, 6, 2, 7, 0, tzinfo=timezone.utc), "duration_s": 3600},
+        {"started_at": "2026-05-27T07:00:00Z", "duration_s": 1800},  # settimana scorsa
+    ]
+    score = risk.compute_injury_risk()  # NON deve sollevare
+    assert score.raw_inputs["volume_this_week_min"] == 60
+    assert score.raw_inputs["volume_last_week_min"] == 30

@@ -255,6 +255,7 @@ Coperti in L (dr_snapshot, dr_restore, watchdog, db_cleanup, keepalive, etl_heal
 | B1 | 🔧 | baseline HRV esclusa per data non per valore | test_b1_baseline_not_filtered_by_value |
 | B2 | 🔧 | recent_z_scores esclude oggi → 2gg consecutivi reali | test_b2_* (3) |
 | B3 | 🔧 | PMC mancante = None (non 0) | test_b3_missing_pmc_does_not_score_tsb_optimal |
+| B4 | 🔧 | risk.py volume bucketing via to_rome_date (no crash su datetime/UTC) | test_b4_volume_bucketing_handles_datetime_and_str |
 | B11 | 🔧 | _score_sleep clamp 0-100 | test_b11_sleep_score_clamped |
 | I1 | 🔧 | hard-stop spesa reale >=$5 (difesa-in-profondità) | test_i1_* (3) |
 | I2 | 🔧 | days_in_month via calendar.monthrange | test_i2_days_in_month_correct_all_months |
