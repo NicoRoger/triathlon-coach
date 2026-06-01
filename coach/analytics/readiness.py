@@ -39,9 +39,9 @@ class WellnessHistory:
 
 @dataclass
 class TrainingState:
-    ctl: float
-    atl: float
-    tsb: float
+    ctl: Optional[float]
+    atl: Optional[float]
+    tsb: Optional[float]  # None quando manca il PMC (cold-start): _score_tsb → neutral 50
     days_since_hard_session: Optional[int]
 
 
@@ -114,7 +114,7 @@ def compute_flags(
                 flags.append("trend_negative")
 
     # TSB profondo + trend negativo → anticipa scarico
-    if "trend_negative" in flags and training.tsb < TSB_DEEP_NEGATIVE:
+    if "trend_negative" in flags and training.tsb is not None and training.tsb < TSB_DEEP_NEGATIVE:
         flags.append("anticipate_recovery_week")
 
     # Soggettivo
@@ -151,7 +151,9 @@ def _score_hrv(wellness: WellnessHistory) -> int:
 
 def _score_sleep(wellness: WellnessHistory) -> int:
     if wellness.sleep_score_today is not None:
-        return wellness.sleep_score_today
+        # Bug fix audit B11: clamp 0-100 (un valore Garmin anomalo non deve
+        # propagarsi non-bounded nello score pesato).
+        return max(0, min(100, wellness.sleep_score_today))
     return 50
 
 

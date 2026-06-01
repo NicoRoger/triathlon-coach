@@ -8,7 +8,14 @@
       "mcp__claude_ai_Google_Calendar__list_events",
       "mcp__triathlon-coach__get_planned_session",
       "mcp__claude_ai_Google_Calendar__create_event",
-      "mcp__triathlon-coach__commit_plan_change"
+      "mcp__triathlon-coach__commit_plan_change",
+      "Bash(git checkout *)",
+      "Bash(python -m pytest -q)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'audit: fasi 1-3 \\(inventario + tassonomia guasti + analisi confini\\) *)",
+      "Bash(python -m pytest tests/test_audit_resilience.py -q)",
+      "Bash(python -m pytest -q --ignore=scripts)",
+      "Bash(git commit -q -m 'fix\\(analytics\\): B1/B2/B3/B11 — baseline HRV, fatigue consecutivo, PMC None, clamp sleep *)"
     ]
   }
 }
