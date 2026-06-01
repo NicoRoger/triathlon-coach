@@ -84,15 +84,13 @@ def _make_daily_module(supabase: _FakeSupabase):
     # pmc e readiness reali
     _load("coach.analytics.pmc", "coach/analytics/pmc.py")
     _load("coach.analytics.readiness", "coach/analytics/readiness.py")
-    # stub utils
-    for n in ["coach.utils.supabase_client", "coach.utils.health", "coach.utils.dt"]:
-        if n not in sys.modules or not hasattr(sys.modules[n], "__stubbed__"):
-            m = types.ModuleType(n)
-            m.__stubbed__ = True  # type: ignore
-            sys.modules[n] = m
+    # stub solo supabase_client e health; dt resta REALE (serve to_rome_date e
+    # compute_for riceve `day` esplicito, non usa today_rome).
+    for n in ["coach.utils.supabase_client", "coach.utils.health"]:
+        m = types.ModuleType(n)
+        sys.modules[n] = m
     sys.modules["coach.utils.supabase_client"].get_supabase = lambda: supabase  # type: ignore
     sys.modules["coach.utils.health"].record_health = lambda *a, **k: None  # type: ignore
-    sys.modules["coach.utils.dt"].today_rome = lambda: date(2026, 5, 30)  # type: ignore
     return _load("coach.analytics.daily", "coach/analytics/daily.py")
 
 
@@ -353,3 +351,138 @@ def test_a5_no_crash_when_max_power_none():
     act = {"sport": "bike", "duration_s": 3600, "avg_power_w": 200, "np_w": 220}
     # max_power None: non deve sollevare TypeError
     validate_activity(act)
+
+
+# ===========================================================================
+# Area D — modulazioni: D2 (falso successo), D3 (merge), D4 (None format)
+# ===========================================================================
+class _ModFakeQuery:
+    def __init__(self, parent, table):
+        self.parent = parent
+        self.table = table
+        self._payload = None
+        self._op = None
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def update(self, payload):
+        self._op = "update"
+        self._payload = payload
+        return self
+
+    def upsert(self, payload, **k):
+        self.parent.upserts.append(payload)
+        return self
+
+    def execute(self):
+        if self._op == "update" and self.table == "plan_modulations":
+            self.parent.mod_update = self._payload
+        if self.table == "plan_modulations":
+            return types.SimpleNamespace(data=[self.parent.mod] if self.parent.mod else [])
+        if self.table == "planned_sessions":
+            return types.SimpleNamespace(data=list(self.parent.existing_sessions))
+        return types.SimpleNamespace(data=[])
+
+
+class _ModFakeSB:
+    def __init__(self, mod, existing_sessions=None):
+        self.mod = mod
+        self.existing_sessions = existing_sessions or []
+        self.upserts = []
+        self.mod_update = None
+
+    def table(self, name):
+        return _ModFakeQuery(self, name)
+
+
+def _load_modulation(sb):
+    for n in ["coach.utils.supabase_client", "coach.utils.budget"]:
+        if n not in sys.modules:
+            sys.modules[n] = types.ModuleType(n)
+    sys.modules["coach.utils.supabase_client"].get_supabase = lambda: sb  # type: ignore
+    if not hasattr(sys.modules["coach.utils.budget"], "BudgetExceededError"):
+        class _BE(Exception):
+            pass
+        sys.modules["coach.utils.budget"].BudgetExceededError = _BE  # type: ignore
+    return _load("coach.coaching.modulation", "coach/coaching/modulation.py")
+
+
+def test_d2_partial_apply_not_marked_accepted():
+    """D2: se una modifica viene saltata (sport mancante), lo status NON è accepted."""
+    mod = {"id": "m1", "status": "proposed", "proposed_changes": [
+        {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
+        {"date": "2026-06-03", "new": {"duration_s": 1800}},  # manca sport → skip
+    ]}
+    sb = _ModFakeSB(mod)
+    mt = _load_modulation(sb)
+    ok = mt.apply_modulation("m1")
+    assert ok is False
+    assert sb.mod_update["status"] == "partial"
+
+
+def test_d2_full_apply_accepted():
+    mod = {"id": "m2", "status": "proposed", "proposed_changes": [
+        {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
+    ]}
+    sb = _ModFakeSB(mod)
+    mt = _load_modulation(sb)
+    assert mt.apply_modulation("m2") is True
+    assert sb.mod_update["status"] == "accepted"
+    # niente literal "now()" — deve essere un ISO timestamp
+    assert "now()" != sb.mod_update["resolved_at"]
+
+
+def test_d3_merge_preserves_session_type():
+    """D3: una modifica che tocca solo la durata non azzera session_type esistente."""
+    mod = {"id": "m3", "status": "proposed", "proposed_changes": [
+        {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
+    ]}
+    existing = [{"planned_date": "2026-06-02", "sport": "run",
+                 "session_type": "threshold", "duration_s": 3600,
+                 "description": "6x1000 soglia"}]
+    sb = _ModFakeSB(mod, existing_sessions=existing)
+    mt = _load_modulation(sb)
+    mt.apply_modulation("m3")
+    up = sb.upserts[0]
+    assert up["session_type"] == "threshold", "session_type esistente preservato"
+    assert up["duration_s"] == 1800, "durata aggiornata"
+    assert up["description"] == "6x1000 soglia"
+
+
+def test_d4_none_hrv_z_does_not_crash():
+    sb = _ModFakeSB(None)
+    mt = _load_modulation(sb)
+    # hrv_z presente ma None → non deve sollevare
+    msg = mt._format_modulation_message("hrv", {"hrv_z": None, "rpe": None}, [])
+    assert isinstance(msg, str)
+
+
+# ===========================================================================
+# D5 / E8 — to_rome_date: confronto data Rome vs slicing UTC
+# ===========================================================================
+def test_d5_to_rome_date_crosses_midnight():
+    from coach.utils.dt import to_rome_date
+    # 2026-06-01 23:30 UTC = 2026-06-02 01:30 Rome (estate, UTC+2)
+    assert to_rome_date("2026-06-01T23:30:00Z") == date(2026, 6, 2)
+    # 2026-01-15 23:30 UTC = 2026-01-16 00:30 Rome (inverno, UTC+1)
+    assert to_rome_date("2026-01-15T23:30:00Z") == date(2026, 1, 16)
+
+
+def test_d5_to_rome_date_robust_to_bad_input():
+    from coach.utils.dt import to_rome_date
+    assert to_rome_date(None) is None
+    assert to_rome_date("") is None
+    assert to_rome_date("not-a-date") is None
+
+
+def test_d5_naive_timestamp_treated_as_utc():
+    from coach.utils.dt import to_rome_date
+    # naive (senza tz) → trattato come UTC
+    assert to_rome_date("2026-06-01 23:30:00") == date(2026, 6, 2)

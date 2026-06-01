@@ -8,13 +8,19 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
+
+
+def _now_iso() -> str:
+    """Timestamp UTC ISO. Bug fix audit D: evita il literal 'now()' passato a
+    PostgREST (cast string fragile, non valutazione SQL)."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def should_trigger_modulation(analysis_text: str, metrics: Optional[dict]) -> bool:
@@ -105,19 +111,41 @@ def apply_modulation(modulation_id: str) -> bool:
         return False
 
     changes = mod.get("proposed_changes") or []
+    applied = 0
+    failed = 0
+    skipped = 0
     for change in changes:
         try:
-            _apply_single_change(sb, change)
+            ok = _apply_single_change(sb, change)
+            if ok:
+                applied += 1
+            else:
+                skipped += 1
+                logger.warning("Modulation change skipped (date/sport mancante): %s", change)
         except Exception:
             logger.exception("Failed to apply change: %s", change)
+            failed += 1
+
+    # Bug fix audit D2: lo status riflette l'esito reale. Non dichiarare
+    # "accepted" se alcune modifiche sono fallite o sono state saltate (così
+    # l'atleta non viene informato di un successo con piano dimezzato).
+    if failed == 0 and skipped == 0 and applied > 0:
+        new_status = "accepted"
+    elif applied == 0:
+        new_status = "failed"
+    else:
+        new_status = "partial"
 
     sb.table("plan_modulations").update({
-        "status": "accepted",
-        "resolved_at": "now()",
+        "status": new_status,
+        "resolved_at": _now_iso(),
     }).eq("id", modulation_id).execute()
 
-    logger.info("Modulation %s accepted and applied", modulation_id)
-    return True
+    logger.info(
+        "Modulation %s → %s (%d applied, %d skipped, %d failed)",
+        modulation_id, new_status, applied, skipped, failed,
+    )
+    return new_status == "accepted"
 
 
 def reject_modulation(modulation_id: str) -> bool:
@@ -125,33 +153,53 @@ def reject_modulation(modulation_id: str) -> bool:
     sb = get_supabase()
     sb.table("plan_modulations").update({
         "status": "rejected",
-        "resolved_at": "now()",
+        "resolved_at": _now_iso(),
     }).eq("id", modulation_id).execute()
     logger.info("Modulation %s rejected", modulation_id)
     return True
 
 
-def _apply_single_change(sb, change: dict) -> None:
-    """Applica una singola modifica al piano (upsert planned_sessions)."""
+def _apply_single_change(sb, change: dict) -> bool:
+    """Applica una singola modifica al piano (upsert planned_sessions).
+
+    Ritorna True se applicata, False se saltata (date/sport mancanti).
+    Bug fix audit D3: fa MERGE sulla sessione esistente invece di sovrascrivere
+    i campi non specificati con default — una modifica che tocca solo la durata
+    non deve azzerare session_type/description della sessione reale.
+    """
     target_date = change.get("date")
     sport = change.get("sport")
-    new_session = change.get("new", {})
+    new_session = change.get("new", {}) or {}
 
     if not target_date or not sport:
-        return
+        return False
+
+    # Recupera la sessione esistente per preservare i campi non modificati
+    existing = sb.table("planned_sessions").select("*").eq(
+        "planned_date", target_date
+    ).eq("sport", sport).limit(1).execute()
+    base = (existing.data[0] if existing.data else {}) or {}
+
+    def _pick(key, default):
+        if key in new_session and new_session[key] is not None:
+            return new_session[key]
+        if base.get(key) is not None:
+            return base[key]
+        return default
 
     payload = {
         "planned_date": target_date,
         "sport": sport,
-        "session_type": new_session.get("session_type", "recovery"),
-        "duration_s": new_session.get("duration_s", 3600),
-        "description": new_session.get("description", "Sessione modificata per recupero"),
+        "session_type": _pick("session_type", "recovery"),
+        "duration_s": _pick("duration_s", 3600),
+        "description": _pick("description", "Sessione modificata per recupero"),
         "status": "planned",
     }
 
     sb.table("planned_sessions").upsert(
         payload, on_conflict="planned_date,sport"
     ).execute()
+    return True
 
 
 def _format_modulation_message(
@@ -160,10 +208,11 @@ def _format_modulation_message(
     """Formatta messaggio Telegram per proposta modulazione."""
     lines = ["🔍 <b>Ho notato che dopo la sessione di oggi:</b>\n"]
 
-    # Trigger details
-    if "hrv_z" in data:
+    # Trigger details. Bug fix audit D4: usa .get() is not None invece di
+    # `in data`, altrimenti una chiave presente ma None fa crashare f"{None:.1f}".
+    if data.get("hrv_z") is not None:
         lines.append(f"• HRV crashata ({data['hrv_z']:.1f}σ)")
-    if "rpe" in data:
+    if data.get("rpe") is not None:
         lines.append(f"• RPE {data['rpe']} vs previsto")
     if "flags" in data:
         for f in data["flags"]:

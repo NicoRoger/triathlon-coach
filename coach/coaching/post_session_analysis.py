@@ -135,7 +135,11 @@ def analyze_session(activity_id: str) -> Optional[dict]:
         return None
 
     activity = act_res.data[0]
-    activity_date = activity["started_at"][:10]
+    # Bug fix audit E8: data Rome (non slicing UTC) per il lookup di
+    # planned_session/metriche del giorno corretto a cavallo di mezzanotte.
+    from coach.utils.dt import to_rome_date
+    _d = to_rome_date(activity.get("started_at"))
+    activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
     sport = activity.get("sport", "other")
 
     # Raccolta contesto
@@ -185,6 +189,12 @@ def analyze_session(activity_id: str) -> Optional[dict]:
         logger.exception("LLM call failed for session analysis %s", activity_id)
         return None
 
+    # Bug fix audit E7: non salvare/inviare un'analisi vuota (Gemini può
+    # restituire "" su risposta troncata/safety). result può anche mancare campi.
+    if not result or not (result.get("text") or "").strip():
+        logger.warning("Analisi sessione vuota per %s, skip salvataggio", activity_id)
+        return None
+
     analysis_text = result["text"]
 
     # Salva su DB
@@ -195,8 +205,8 @@ def analyze_session(activity_id: str) -> Optional[dict]:
         "activity_id": activity_id,
         "analysis_text": analysis_text,
         "suggested_actions": actions,
-        "model_used": result["model"],
-        "cost_usd": result["cost_usd"],
+        "model_used": result.get("model"),
+        "cost_usd": result.get("cost_usd"),
     }
     sb.table("session_analyses").insert(record).execute()
 
@@ -298,7 +308,9 @@ def _send_analysis_telegram(activity: dict, analysis: str) -> None:
             context_data={"activity_id": activity.get("id"), "sport": activity.get("sport")},
         )
     except Exception:
-        logger.warning("Failed to send session analysis to Telegram")
+        # Bug fix audit E9: exc_info=True per poter diagnosticare uno stop invii
+        # (token mancante, messaggio troppo lungo, HTTP 400, ...).
+        logger.warning("Failed to send session analysis to Telegram", exc_info=True)
 
 
 def main() -> None:
