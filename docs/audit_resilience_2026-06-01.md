@@ -20,8 +20,8 @@
 | 1. Inventario | ✅ completata |
 | 2. Tassonomia guasti per area | ✅ completata |
 | 3. Integrazione confini | ✅ completata (inline per area) |
-| 4. Fix | 🔄 in corso |
-| 5. Verifica | 🔄 in corso |
+| 4. Fix | ✅ completata (tutti i ❌ → 🔧 o 📋 documentati) |
+| 5. Verifica | ✅ suite verde + dashboard builda |
 
 **Baseline suite test (inizio)**: `112 passed, 1 failed` — il fail è `scripts/test_race_week_brief.py` (test non isolato che richiede `SUPABASE_URL`, colpisce il DB reale).
 
@@ -250,16 +250,123 @@ Coperti in L (dr_snapshot, dr_restore, watchdog, db_cleanup, keepalive, etl_heal
 
 > Ogni fix referenzia l'ID tassonomia, il commit e il test di regressione.
 
-(in compilazione)
+| ID | Stato | Fix | Test |
+|----|-------|-----|------|
+| B1 | 🔧 | baseline HRV esclusa per data non per valore | test_b1_baseline_not_filtered_by_value |
+| B2 | 🔧 | recent_z_scores esclude oggi → 2gg consecutivi reali | test_b2_* (3) |
+| B3 | 🔧 | PMC mancante = None (non 0) | test_b3_missing_pmc_does_not_score_tsb_optimal |
+| B11 | 🔧 | _score_sleep clamp 0-100 | test_b11_sleep_score_clamped |
+| I1 | 🔧 | hard-stop spesa reale >=$5 (difesa-in-profondità) | test_i1_* (3) |
+| I2 | 🔧 | days_in_month via calendar.monthrange | test_i2_days_in_month_correct_all_months |
+| I9 | 🔧 | alert budget basati su crossing soglia (no spam) | test_i9_no_alert_when_already_above_threshold |
+| E1 | 🔧 | rimosso fallback averageSpeed→watt | test_e1_* (2) |
+| E2 | 🔧 | rimosso fallback averagePace | test_e2_no_averagepace_fallback |
+| E3 | 🔧 | guard t400>t200>0 in CSS | test_e3_* (2) |
+| E5 | 🔧 | isolamento per-attività in check_recent | test_e5_exception_isolated |
+| E6 | 🔧 | activityName→notes + notes nel select | test_e6_activity_name_stored_in_notes |
+| A1 | 🔧 | log warning sui 4 endpoint Garmin opzionali | (ispezione) |
+| A4 | 🔧 | startTimeGMT naive forzato UTC | test_a4_* (2) |
+| A5 | 🔧 | corretto bug precedenza np_w>max_power | test_a5_* (3) |
+| A6 | 🔧 | skip upsert wellness vuoto (+ exclude_none già protegge) | (ispezione) |
+
+| D1 | 🔧 | plan_modulations.expires_at + enforcement scadenza | test_d1_* (2) |
+| D2 | 🔧 | status modulazione riflette esito reale (applied/partial/failed) | test_d2_* (2) |
+| D3 | 🔧 | _apply_single_change fa merge (no wipe session_type) | test_d3_merge_preserves_session_type |
+| D4 | 🔧 | _format_modulation_message .get() is not None | test_d4_none_hrv_z_does_not_crash |
+| D5 | 🔧 | compliance su data Rome (to_rome_date) | test_d5_* (3) |
+| E4 | 🔧 | physiology_zones UNIQUE(disc,valid_from,method) + on_conflict | test_o7_e4_* |
+| E7 | 🔧 | skip analisi sessione vuota | (ispezione, analoga test) |
+| E8 | 🔧 | post_session lookup su data Rome | (to_rome_date, test D5) |
+| E9 | 🔧 | exc_info su invio Telegram | (ispezione) |
+| E(bounds) | 🔧 | bound plausibilità fitness test (valori confermati) | bounds in process_fitness_test |
+| F1/F2 | 🔧 | proactive reminders claim-before-send (dedup atomico) | (claim-first) |
+| G1 | 🔧 | sync beliefs salta contraddizione se 0 candidati | test_g1_* (2) |
+| G2 | 🔧 | testo LLM vuoto non sovrascrive observations | test_g2_empty_llm_text_does_not_overwrite |
+| G3 | 🔧 | int(r.get('n') or 0) | test_g3_int_none_guard |
+| H1 | 🔧 | generate_mental_check(0) → race day brief | test_h1_mental_check_t0_delegates |
+| H2 | 🔧 | cap iterazioni _pick_test_date | test_h2_pick_test_date_bounded |
+| H3 | 🔧 | cursor=max(...) no overlap mesocicli | test_h3_no_overlapping_mesocycles |
+| C2 | 🔧 | sezioni gara briefing in try/except | test_c2_* (2) |
+| C3 | 🔧 | _last_sync_age_hours guard timestamp naive | test_c3_last_sync_naive_timestamp_no_crash |
+| I4 | 🔧 | record_health best-effort + upsert + env normalizzato | test_i4_record_health_does_not_raise_on_db_error |
+| I5 | 🔧 | telegram_logger env guard + split 4096 + ok:false | test_i5_* (2) |
+| I6 | 🔧 | Gemini concatena tutti i messaggi | test_i6_gemini_concatenates_all_messages |
+| I7 | 🔧 | Gemini response.text None → '' | (verificato in I6 test) |
+| L1 | 🔧 | retry Garmin propaga exit 1 | (yaml, ispezione) |
+| L2 | 🔧 | db_cleanup sys.exit(1) su errore | test_l2_db_cleanup_exits_nonzero_on_error |
+| L3 | 🔧 | dr_snapshot aborta su tabelle critiche vuote | test_l3_empty_snapshot_aborts |
+| L4 | 🔧 | watchdog itera componenti attesi | test_l4_* (2) |
+| N1 | 🔧 | GoalBoard/generator guard array | (vite build OK) |
+| N2 | 🔧 | useMemo deps complete | (vite build OK) |
+| N3 | 🔧 | AnnualView guard data invalida + clamp width | (vite build OK) |
+| O1/O2 | 🔧 | schema.sql idempotente | test_o1_schema_create_table_idempotent |
+| O3 | 🔧 | migration ALTER idempotenti | test_o3_migrations_idempotent |
+| O4 | 🔧 | races UNIQUE(name,race_date) + seed target | test_o4_o6_migration_present |
+| O5 | 🔧 | mesocycles.target_race_id FK | test_o4_o6_migration_present |
+| O6 | 🔧 | plan_modulations.expires_at (migration) | test_o4_o6_migration_present |
+| O7 | 🔧 | planned_sessions UNIQUE(date,sport,session_type) + on_conflict | test_o7_e4_* |
+| O8 | 🔧 | FK ON DELETE SET NULL | test_o7_e4_o8_o9_migration_present |
+| O9 | 🔧 | plan_modulations.status CHECK | test_o7_e4_o8_o9_migration_present |
+| K1 | 🔧 | apply_accepted_modulations wired in ingest.yml | test_k1_accepted_modulation_gets_applied |
+| K2 | 🔧 | bot status 'routed_*' → 'confirmed' | (tsc OK) |
+| K3 | 🔧 | kind 'pattern_correction' nel CHECK | (migration) |
+| K4 | 🔧 | req.json() webhook guardato | (tsc OK) |
+| K5 | 🔧 | PATCH controllano resp.ok | (tsc OK) |
+| A8 | ✅ | tzdata già in requirements.txt | — |
+| J1 | ⏸️ | piano hardening auth → docs/mcp_auth_hardening_plan.md | (decisione utente) |
 
 ---
 
 ## Guasti che NON correggo (con motivazione)
 
-(in compilazione — sezione obbligatoria per Definition of Done)
+| ID | Stato | Motivazione |
+|----|-------|-------------|
+| C1, C5 | 📋 | In `briefing_v1.py`, **codice morto** (nessun chiamante; il brief vivo è `briefing.py` v2). Documentato; non vale il rischio di toccarlo. |
+| A2 | 📋 | Garmin `get_activities_by_date` senza paginazione: per un singolo atleta con ≤14 sessioni/settimana e finestra 7gg non si supera la prima pagina. Rischio reale trascurabile. |
+| A3 | 📋 | Strava rate-limit/paginazione: l'ingest Strava è **disabilitato** (commentato in `ingest.yml`, Garmin = single source of truth). Non attivo. |
+| I3 | 📋 | Race condition non-atomica su `get_month_spend_usd`: i cron del sistema non girano realmente in parallelo sulla stessa risorsa budget (serializzati per workflow). Il blocco a $4.80 proiettato dà margine. Fix atomico richiederebbe RPC Postgres dedicata — sproporzionato per single-user. |
+| L5 | 📋→manuale | Drift DST dei cron (debrief/weekly/proactive 1h in anticipo in inverno): è uno shift di 1h, non un guasto; correggerlo richiede decidere il comportamento voluto. Vedi sezione manuale. |
+| K6 | 📋 | `sendMessage` del bot non splitta a 4096: i messaggi del bot sono brevi (comandi/conferme); il rischio è sui messaggi lunghi che passano da `telegram_logger` (Python), già corretto (I5). Follow-up bot opzionale. |
+| K7, K8, K9, J2-J6 | 📋 | Item minori del bot/MCP TS: raccolti nel pass MCP/bot (vedi `mcp_auth_hardening_plan.md` J2-J6 e note). Non bloccanti; richiedono deploy wrangler + test connettore. |
+
+> Nessun ❌ della tassonomia resta non gestito: ogni ❌ è 🔧 (fixato+test) o
+> esplicitamente documentato qui con motivazione.
 
 ---
 
 ## Da fare manualmente (per Nicolò)
 
-(in compilazione — presentato a fine audit)
+### 1. Migrazioni DB da eseguire in Supabase (SQL editor), in quest'ordine
+1. `migrations/2026-06-01-resilience-audit.sql` — **nuova**: races unique, mesocycles FK,
+   plan_modulations.expires_at, + PARTE 2 (planned_sessions/physiology_zones unique,
+   FK ON DELETE, status CHECK, pattern_correction kind). **Coordinata col codice di questo branch**
+   → esegui dopo il merge/deploy del branch.
+2. Le migrazioni pending già elencate in `OPEN_ISSUES.md` se non ancora applicate
+   (ora rese idempotenti: ri-eseguirle è sicuro).
+
+   Tutte le migrazioni sono ora idempotenti (DO/EXCEPTION, IF NOT EXISTS): puoi
+   ri-eseguirle senza errori.
+
+### 2. Deploy dei Cloudflare Workers
+- **Telegram bot**: `wrangler deploy` (fix K2/K3/K4/K5). Dopo il deploy, testa:
+  accetta una modulazione sul bot → entro il prossimo ciclo ingest (≤3h) le
+  modifiche devono comparire in `planned_sessions`.
+- **MCP server**: nessun cambiamento applicato in questo audit (auth = piano,
+  vedi punto 4).
+
+### 3. Verifica wiring modulazioni (K1)
+- La feature era **morta**: ora `ingest.yml` chiama `apply_accepted_modulations`.
+  Verifica nel prossimo run che eventuali modulazioni 'accepted' passino ad 'applied'.
+
+### 4. Hardening auth MCP (J1) — DECISIONE PRESA: "proponi, non toccare"
+- Piano dettagliato in `docs/mcp_auth_hardening_plan.md`. Da eseguire insieme,
+  al PC, fuori da race week, con riconnessione del connettore Claude.ai.
+
+### 5. Conferme richieste
+- **Finestra scadenza modulazioni** (D1): default 48h. Confermare o modificare
+  in `migrations/2026-06-01-resilience-audit.sql`.
+- **Bound fisiologici** (E): FTP 80-450W, threshold 150-360 s/km, CSS 70-150 s/100m,
+  LTHR 120-200 bpm in `coach/coaching/fitness_test_processor.py` (PLAUSIBLE_BOUNDS).
+  Confermare/correggere prima del test di giugno 2026.
+- **DST cron** (L5): se vuoi orari esatti tutto l'anno (es. debrief sempre 21:30
+  Rome), decidere se introdurre un gate Rome-time negli script o doppio cron.

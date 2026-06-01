@@ -124,6 +124,20 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 | `migrations/2026-05-14-season-year.sql` | Phase 2.7 | ⏳ Run once (multi-race architecture) |
 | `migrations/2026-05-14-hypothesis-and-audit.sql` | Phase 3.1+3.4 | ⏳ Run once (hypothesis_tests + decision_audit tables) |
 | `migrations/2026-05-14-cognitive-mvp.sql` | Phase 4.3+4.4 | ⏳ Run once (beliefs + beliefs_history + recommendations tables) |
+| `migrations/2026-06-01-resilience-audit.sql` | Audit resilienza 2026-06-01 | ⏳ Run once (races/mesocycles/plan_modulations/physiology_zones/planned_sessions constraints + expires_at + FK ON DELETE + status/kind CHECK). **Coordinata col codice del branch audit-resilience-2026-06-01** |
+
+---
+
+## Audit di resilienza 2026-06-01
+
+Audit sistematico completo in `docs/audit_resilience_2026-06-01.md` (15 aree,
+tassonomia guasti, ~45 fix con test di regressione). Vedi quel file per lo stato
+per-area e la lista "Da fare manualmente".
+
+- **Branch**: `audit-resilience-2026-06-01`
+- **Auth MCP**: piano in `docs/mcp_auth_hardening_plan.md` (non ancora applicato).
+- **Deploy richiesti**: Telegram bot (`wrangler deploy`) per K2/K3/K4/K5.
+- **Migration**: `2026-06-01-resilience-audit.sql` (vedi sopra).
 
 ---
 
