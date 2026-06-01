@@ -388,6 +388,9 @@ class _ModFakeQuery:
     def execute(self):
         if self._op == "update" and self.table == "plan_modulations":
             self.parent.mod_update = self._payload
+            # rifletti l'update sul mod condiviso (così i re-read vedono lo status nuovo)
+            if self.parent.mod:
+                self.parent.mod.update(self._payload)
         if self.table == "plan_modulations":
             return types.SimpleNamespace(data=[self.parent.mod] if self.parent.mod else [])
         if self.table == "planned_sessions":
@@ -438,7 +441,7 @@ def test_d2_full_apply_accepted():
     sb = _ModFakeSB(mod)
     mt = _load_modulation(sb)
     assert mt.apply_modulation("m2") is True
-    assert sb.mod_update["status"] == "accepted"
+    assert sb.mod_update["status"] == "applied"
     # niente literal "now()" — deve essere un ISO timestamp
     assert "now()" != sb.mod_update["resolved_at"]
 
@@ -604,6 +607,7 @@ def test_g2_empty_llm_text_does_not_overwrite(tmp_path):
     f = tmp_path / "obs.md"
     f.write_text("CONTENUTO IMPORTANTE", encoding="utf-8")
     mod.OBSERVATIONS_FILE = f
+    mod.today_rome = lambda: date(2026, 5, 30)  # robusto a pollution globale di today_rome
     mod.extract_biometric_patterns = lambda days=28: {}  # niente biometrico → niente fallback
 
     class _Client:
@@ -750,3 +754,18 @@ def test_d1_null_expires_still_applies():
     sb = _ModFakeSB(mod)
     mt = _load_modulation(sb)
     assert mt.apply_modulation("mok") is True
+
+
+# ===========================================================================
+# K1 — apply_accepted_modulations applica le modulazioni accettate dal bot
+# ===========================================================================
+def test_k1_accepted_modulation_gets_applied():
+    # bot ha settato status='accepted'; il cron deve applicarla
+    mod = {"id": "acc1", "status": "accepted", "expires_at": None,
+           "proposed_changes": [{"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}}]}
+    sb = _ModFakeSB(mod)
+    mt = _load_modulation(sb)
+    summary = mt.apply_accepted_modulations()
+    assert summary["applied"] == 1
+    assert mod["status"] == "applied"  # transizione accepted → applied
+    assert sb.upserts, "le modifiche devono essere scritte sul piano"

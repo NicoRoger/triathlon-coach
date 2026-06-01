@@ -92,6 +92,13 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+      - name: Apply accepted modulations (audit K1)
+        # Il bot Telegram setta status='accepted' al tap; qui le applichiamo
+        # davvero al piano (apply_accepted_modulations → status 'applied').
+        if: always()
+        continue-on-error: true
+        run: python -m coach.coaching.modulation --apply-accepted
+
       - name: ETL health check
         if: always()
         run: python scripts/etl_health_check.py

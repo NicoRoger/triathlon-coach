@@ -26,6 +26,17 @@ CLAUDE_MD_PATH = Path(__file__).resolve().parent.parent.parent / "CLAUDE.md"
 
 SPORT_MAP = {"bike": "bike", "run": "run", "swim": "swim"}
 
+# Bound di plausibilità fisiologica per test_type (audit E — confermati
+# dall'atleta, 2026-06-01). Risultati fuori range = estrazione errata
+# (unità/split sbagliati) → scartati per non corrompere le zone.
+PLAUSIBLE_BOUNDS = {
+    "ftp_bike_20min": (80, 450),       # W
+    "ftp_bike_ramp": (80, 450),        # W
+    "threshold_run_30min": (150, 360), # s/km
+    "css_swim_400_200": (70, 150),     # s/100m
+    "lthr_run": (120, 200),            # bpm
+}
+
 TEST_CYCLE_ORDER = ["ftp_bike_20min", "ftp_bike_ramp", "threshold_run_30min", "css_swim_400_200", "lthr_run"]
 TEST_CYCLE_NEXT = {
     "ftp_bike_20min": "threshold_run_30min",
@@ -79,11 +90,28 @@ class FitnessTestProcessor:
             )
             return {"status": "fallback_failed", "test_type": test_type}
 
+        # Audit E: bound di plausibilità. Un risultato fuori range indica
+        # estrazione errata (unità/split) → NON sovrascrivere le zone con dati corrotti.
+        bounds = PLAUSIBLE_BOUNDS.get(test_type)
+        if bounds and not (bounds[0] <= result <= bounds[1]):
+            logger.warning(
+                "Fitness test %s: risultato %s fuori range plausibile %s, scartato",
+                test_type, result, bounds,
+            )
+            self._notify_telegram(
+                test_type, result, {}, success=False,
+                error_msg=f"Risultato estratto ({result}) fuori range plausibile {bounds}. "
+                          f"Probabile errore di rilevamento split. Verifica manualmente su Claude.ai.",
+            )
+            return {"status": "implausible_result", "test_type": test_type, "result": result}
+
         zone_system = structured.get("zone_system", "coggan_7zone")
         zones = self._compute_zones(zone_system, result)
 
         sport = _test_type_to_sport(test_type)
-        activity_date = str(activity.get("started_at", ""))[:10]
+        from coach.utils.dt import to_rome_date
+        _d = to_rome_date(activity.get("started_at"))
+        activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
 
         self._upsert_physiology_zones(
             sport=sport,

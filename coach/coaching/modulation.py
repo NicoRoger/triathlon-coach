@@ -106,7 +106,11 @@ def apply_modulation(modulation_id: str) -> bool:
         return False
 
     mod = res.data[0]
-    if mod.get("status") != "proposed":
+    # Audit K1: accetta sia 'proposed' (applicazione diretta) sia 'accepted'
+    # (il bot Telegram setta 'accepted' al tap; il cron in ingest.yml chiama
+    # apply_accepted_modulations che porta 'accepted' → 'applied'). Stati
+    # terminali (applied/rejected/expired/...) non vengono riprocessati.
+    if mod.get("status") not in ("proposed", "accepted"):
         logger.info("Modulation %s already %s", modulation_id, mod.get("status"))
         return False
 
@@ -148,8 +152,9 @@ def apply_modulation(modulation_id: str) -> bool:
     # Bug fix audit D2: lo status riflette l'esito reale. Non dichiarare
     # "accepted" se alcune modifiche sono fallite o sono state saltate (così
     # l'atleta non viene informato di un successo con piano dimezzato).
+    # Stato terminale 'applied' su pieno successo (evita riprocessamento dal cron).
     if failed == 0 and skipped == 0 and applied > 0:
-        new_status = "accepted"
+        new_status = "applied"
     elif applied == 0:
         new_status = "failed"
     else:
@@ -164,7 +169,34 @@ def apply_modulation(modulation_id: str) -> bool:
         "Modulation %s → %s (%d applied, %d skipped, %d failed)",
         modulation_id, new_status, applied, skipped, failed,
     )
-    return new_status == "accepted"
+    return new_status == "applied"
+
+
+def apply_accepted_modulations() -> dict:
+    """Trova le modulazioni accettate (dal tap Telegram) ma non ancora applicate
+    e le applica al piano. Wired in ingest.yml (audit K1).
+
+    Ritorna un riepilogo {applied, partial, failed, expired}.
+    """
+    sb = get_supabase()
+    res = sb.table("plan_modulations").select("id").eq("status", "accepted").execute()
+    rows = res.data or []
+    summary = {"applied": 0, "partial": 0, "failed": 0, "expired": 0}
+    for row in rows:
+        mid = row["id"]
+        try:
+            ok = apply_modulation(mid)
+            # rileggi lo status finale per il conteggio
+            st = sb.table("plan_modulations").select("status").eq("id", mid).limit(1).execute()
+            final = (st.data[0]["status"] if st.data else "failed")
+            if final in summary:
+                summary[final] += 1
+        except Exception:
+            logger.exception("apply_accepted_modulations: errore su %s", mid)
+            summary["failed"] += 1
+    if rows:
+        logger.info("apply_accepted_modulations: %s", summary)
+    return summary
 
 
 def reject_modulation(modulation_id: str) -> bool:
@@ -320,3 +352,23 @@ def generate_modulation_proposal(
     except Exception:
         logger.exception("Modulation proposal generation failed")
         return []
+
+
+def main() -> None:
+    """CLI: applica le modulazioni accettate ma non ancora applicate.
+
+    Uso (wired in ingest.yml): python -m coach.coaching.modulation --apply-accepted
+    """
+    import argparse
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--apply-accepted", action="store_true",
+                        help="Applica le modulazioni con status='accepted'")
+    args = parser.parse_args()
+    if args.apply_accepted:
+        summary = apply_accepted_modulations()
+        logger.info("apply_accepted_modulations summary: %s", summary)
+
+
+if __name__ == "__main__":
+    main()
