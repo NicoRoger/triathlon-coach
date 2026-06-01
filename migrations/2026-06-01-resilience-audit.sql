@@ -11,6 +11,32 @@
 --        retro-compatibile). CONFERMARE la finestra di 48h con l'atleta.
 
 -- ── O4: races UNIQUE(name, race_date) ───────────────────────────────────────
+-- DEDUP PRELIMINARE: la tabella può già contenere duplicati (es. Lavarone
+-- inserito due volte da seed/fix data). Prima ripuntiamo eventuali mesocicli al
+-- record sopravvissuto, poi eliminiamo i duplicati, infine aggiungiamo il vincolo.
+
+-- 1) ripunta mesocycles dai duplicati al sopravvissuto (min ctid per name+date)
+WITH survivors AS (
+    SELECT name, race_date, MIN(ctid) AS keep_ctid
+    FROM races GROUP BY name, race_date
+),
+dups AS (
+    SELECT r.id AS dup_id, keep.id AS keep_id
+    FROM races r
+    JOIN survivors sv ON r.name = sv.name AND r.race_date = sv.race_date AND r.ctid <> sv.keep_ctid
+    JOIN races keep ON keep.ctid = sv.keep_ctid
+)
+UPDATE mesocycles m SET target_race_id = d.keep_id
+FROM dups d WHERE m.target_race_id = d.dup_id;
+
+-- 2) elimina i duplicati (tiene il record con ctid minimo)
+DELETE FROM races r USING (
+    SELECT name, race_date, MIN(ctid) AS keep_ctid
+    FROM races GROUP BY name, race_date
+) sv
+WHERE r.name = sv.name AND r.race_date = sv.race_date AND r.ctid <> sv.keep_ctid;
+
+-- 3) ora il vincolo unique può essere creato
 DO $$
 BEGIN
     ALTER TABLE races ADD CONSTRAINT races_name_date_unique UNIQUE (name, race_date);
@@ -20,6 +46,12 @@ EXCEPTION
 END $$;
 
 -- ── O5: mesocycles.target_race_id FK → races(id) ON DELETE SET NULL ──────────
+-- Azzera eventuali target_race_id orfani (puntano a gare non più esistenti)
+-- altrimenti l'aggiunta della FK fallirebbe.
+UPDATE mesocycles SET target_race_id = NULL
+WHERE target_race_id IS NOT NULL
+  AND target_race_id NOT IN (SELECT id FROM races);
+
 DO $$
 BEGIN
     ALTER TABLE mesocycles
