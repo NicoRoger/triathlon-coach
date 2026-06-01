@@ -452,7 +452,7 @@ class TestTelegramLogger(unittest.TestCase):
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"result": {"message_id": 42}}
+        mock_resp.json.return_value = {"ok": True, "result": {"message_id": 42}}
         mock_post = MagicMock(return_value=mock_resp)
 
         mock_sb = MagicMock()
@@ -474,7 +474,7 @@ class TestTelegramLogger(unittest.TestCase):
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"result": {"message_id": 99}}
+        mock_resp.json.return_value = {"ok": True, "result": {"message_id": 99}}
         mock_post = MagicMock(return_value=mock_resp)
 
         mock_table = MagicMock()

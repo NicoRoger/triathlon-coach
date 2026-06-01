@@ -26,30 +26,60 @@ def send_and_log_message(
     Returns:
         message_id Telegram se successo, None altrimenti
     """
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = int(os.environ["TELEGRAM_CHAT_ID"])
-
-    payload: dict = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-
+    # Bug fix audit I5: env var con .get + validazione, niente KeyError/ValueError
+    # non gestiti fuori dal try.
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id_raw = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id_raw:
+        logger.error("Telegram non configurato (TELEGRAM_BOT_TOKEN/CHAT_ID mancanti)")
+        return None
     try:
-        resp = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json=payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        msg_id: Optional[int] = resp.json().get("result", {}).get("message_id")
+        chat_id = int(chat_id_raw)
+    except ValueError:
+        logger.error("TELEGRAM_CHAT_ID non numerico: %r", chat_id_raw)
+        return None
 
-        if msg_id:
+    # Bug fix audit I5: split a ~4000 char (limite Telegram 4096) — un messaggio
+    # lungo (es. weekly analysis) altrimenti riceve HTTP 400 e viene perso.
+    chunks = _split_message(message, 4000)
+
+    first_msg_id: Optional[int] = None
+    markup_msg_id: Optional[int] = None
+    try:
+        for i, chunk in enumerate(chunks):
+            payload: dict = {
+                "chat_id": chat_id,
+                "text": chunk,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            }
+            # reply_markup solo sull'ultimo chunk (bottoni in fondo)
+            if reply_markup and i == len(chunks) - 1:
+                payload["reply_markup"] = reply_markup
+
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json=payload,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            # Bug fix audit I5: Telegram può rispondere HTTP 200 con ok:false.
+            if not body.get("ok"):
+                logger.error("Telegram ok:false (purpose=%s): %s", purpose, body)
+                return first_msg_id
+            mid = body.get("result", {}).get("message_id")
+            if i == 0:
+                first_msg_id = mid
+            if reply_markup and i == len(chunks) - 1:
+                markup_msg_id = mid
+
+        # Logga il messaggio rilevante per il reply threading: quello con i
+        # bottoni se presente, altrimenti il primo.
+        log_id = markup_msg_id or first_msg_id
+        if log_id:
             _log_bot_message(
-                telegram_message_id=msg_id,
+                telegram_message_id=log_id,
                 chat_id=chat_id,
                 purpose=purpose,
                 context_data=context_data,
@@ -57,11 +87,35 @@ def send_and_log_message(
                 expires_at=expires_at,
             )
 
-        return msg_id
+        return markup_msg_id or first_msg_id
 
     except Exception:
         logger.exception("Failed to send/log Telegram message (purpose=%s)", purpose)
-        return None
+        return first_msg_id
+
+
+def _split_message(text: str, limit: int) -> list[str]:
+    """Divide un messaggio in chunk <= limit, preferendo i confini di riga."""
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    current = ""
+    for line in text.split("\n"):
+        # riga singola più lunga del limite → hard split
+        while len(line) > limit:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.append(line[:limit])
+            line = line[limit:]
+        if len(current) + len(line) + 1 > limit:
+            chunks.append(current)
+            current = line
+        else:
+            current = f"{current}\n{line}" if current else line
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _log_bot_message(

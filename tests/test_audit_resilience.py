@@ -18,9 +18,14 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Cattura il modulo briefing REALE all'import di questo file (collezionato per
-# primo, prima che altri test stubbino il package coach.planning in sys.modules).
+# Cattura i moduli REALI all'import di questo file (collezionato per primo,
+# prima che altri test stubbino package/moduli in sys.modules).
 from coach.planning import briefing as _briefing_mod  # noqa: E402
+import coach.utils.telegram_logger as _tl_mod  # noqa: E402
+import coach.utils.health as _health_mod  # noqa: E402
+# cattura la funzione REALE (altri test mutano l'attributo in un MagicMock)
+_real_send_and_log = _tl_mod.send_and_log_message
+_real_split_message = _tl_mod._split_message
 
 
 def _load(mod_name: str, rel_path: str):
@@ -785,3 +790,74 @@ def test_k1_accepted_modulation_gets_applied():
     assert summary["applied"] == 1
     assert mod["status"] == "applied"  # transizione accepted → applied
     assert sb.upserts, "le modifiche devono essere scritte sul piano"
+
+
+# ===========================================================================
+# I5 — telegram_logger: split messaggi > 4096, env guard
+# ===========================================================================
+def test_i5_split_message():
+    _split_message = _real_split_message
+    short = "ciao"
+    assert _split_message(short, 4000) == [short]
+    # messaggio lungo → più chunk, ognuno <= limite
+    long = "\n".join(["riga " + str(i) * 50 for i in range(300)])
+    chunks = _split_message(long, 1000)
+    assert len(chunks) > 1
+    assert all(len(c) <= 1000 for c in chunks)
+    # nessuna perdita di contenuto sostanziale (le righe ci sono tutte)
+    assert "riga 0" in chunks[0]
+
+
+def test_i5_missing_env_returns_none(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    # niente token → None, nessuna eccezione (usa la funzione reale catturata)
+    assert _real_send_and_log("test", purpose="generic") is None
+
+
+# ===========================================================================
+# I4 — record_health best-effort: errore DB non deve crashare il caller
+# ===========================================================================
+def test_i4_record_health_does_not_raise_on_db_error():
+    health = _health_mod
+
+    def _boom():
+        raise RuntimeError("supabase down")
+
+    orig = health.get_supabase
+    health.get_supabase = _boom  # type: ignore
+    try:
+        # non deve sollevare
+        health.record_health("garmin_sync", success=False, error="x")
+        health.record_health("garmin_sync", success=True)
+    finally:
+        health.get_supabase = orig  # type: ignore
+
+
+# ===========================================================================
+# I6 — Gemini concatena tutti i messaggi (non solo l'ultimo)
+# ===========================================================================
+def test_i6_gemini_concatenates_all_messages():
+    src = (ROOT / "coach" / "utils" / "llm_client.py").read_text(encoding="utf-8")
+    # il fix concatena i messaggi; non deve usare solo messages[-1] come contents
+    assert "messages[-1][\"content\"] if messages else \"\"" not in src
+    assert "response.text or \"\"" in src  # I7 coercizione None
+
+
+# ===========================================================================
+# H3 — race_calendar_optimizer: mesocicli non si sovrappongono
+# ===========================================================================
+def test_h3_no_overlapping_mesocycles():
+    rc = _load("coach.coaching.race_calendar_optimizer", "coach/coaching/race_calendar_optimizer.py")
+    today = date(2026, 1, 5)
+    rc.today_rome = lambda: today  # type: ignore
+    # due gare A vicine → forza over-allocation potenziale
+    rc._fetch_future_races = lambda t, h=365: [  # type: ignore
+        {"id": "r1", "name": "Race A1", "race_date": "2026-04-06", "priority": "A"},
+        {"id": "r2", "name": "Race A2", "race_date": "2026-05-25", "priority": "A"},
+    ]
+    rc._fetch_current_ctl = lambda t: 30.0  # type: ignore
+    plan = rc.optimize_calendar(today=today)
+    mesos = sorted(plan.mesocycles, key=lambda m: m.start_date)
+    for a, b in zip(mesos, mesos[1:]):
+        assert a.end_date < b.start_date, f"overlap: {a.phase}({a.end_date}) vs {b.phase}({b.start_date})"
