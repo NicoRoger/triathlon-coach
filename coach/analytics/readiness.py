@@ -39,9 +39,9 @@ class WellnessHistory:
 
 @dataclass
 class TrainingState:
-    ctl: float
-    atl: float
-    tsb: float
+    ctl: Optional[float]
+    atl: Optional[float]
+    tsb: Optional[float]
     days_since_hard_session: Optional[int]
 
 
