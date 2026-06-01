@@ -160,7 +160,8 @@ const TOOLS = [
         target_zones: { type: "object" },
         description: { type: "string" },
         structured: { type: "object" },
-        mesocycle_id: { type: "string" },
+        status: { type: "string", enum: ["planned", "completed", "skipped", "modified", "cancelled"], description: "Default 'planned'. Per cancellare preferisci il tool delete_session." },
+        mesocycle_id: { type: "string", description: "Opzionale: se omesso viene agganciato automaticamente il mesociclo attivo per quella data." },
         calendar_event_id: { type: "string" },
       },
     },
@@ -226,6 +227,34 @@ const TOOLS = [
         method: { type: "string" },
         test_activity_id: { type: "string" },
         notes: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "delete_session",
+    description: "Cancella una sessione pianificata. Identifica la sessione per session_id (preferito) oppure per date+sport. Default: cancellazione soft (status='cancelled', resta nello storico ma sparisce dal piano). Usa hard=true SOLO per duplicati/errori da rimuovere davvero (es. una sessione fantasma creata per sbaglio). Restituisce il calendar_event_id della sessione: se presente, rimuovi tu l'evento da Google Calendar con gcal:delete_event. Da chiamare SOLO dopo conferma esplicita dell'atleta.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "ID della sessione (preferito se lo conosci)" },
+        date: { type: "string", format: "date", description: "Data della sessione (usa con sport se non hai session_id)" },
+        sport: { type: "string", enum: ["swim", "bike", "run", "brick", "strength"] },
+        hard: { type: "boolean", default: false, description: "true = elimina la riga dal DB (per duplicati/errori); false = soft-cancel" },
+      },
+    },
+  },
+  {
+    name: "reschedule_session",
+    description: "Sposta una sessione pianificata esistente a una nuova data (e opzionalmente nuovo sport), mantenendo descrizione, TSS, zone, struttura e calendar_event_id. Identifica la sessione per session_id (preferito) o date+sport. Se la data/sport di destinazione e' gia' occupata da un'altra sessione attiva, restituisce status='conflict' senza modificare nulla: in quel caso decidi con l'atleta se cancellarla prima. Restituisce il calendar_event_id: se presente, aggiorna tu l'evento su Google Calendar con la nuova data. Da chiamare SOLO dopo conferma esplicita dell'atleta.",
+    inputSchema: {
+      type: "object",
+      required: ["new_date"],
+      properties: {
+        session_id: { type: "string", description: "ID della sessione da spostare (preferito)" },
+        date: { type: "string", format: "date", description: "Data attuale (usa con sport se non hai session_id)" },
+        sport: { type: "string", enum: ["swim", "bike", "run", "brick", "strength"] },
+        new_date: { type: "string", format: "date", description: "Nuova data di destinazione" },
+        new_sport: { type: "string", enum: ["swim", "bike", "run", "brick", "strength"], description: "Opzionale: nuovo sport se cambia" },
       },
     },
   },
@@ -453,6 +482,10 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return proposePlan(args);
     case "commit_plan_change":
       return commitPlanChange(args, env);
+    case "delete_session":
+      return deleteSession(args, env);
+    case "reschedule_session":
+      return rescheduleSession(args, env);
     case "get_physiology_zones":
       return getPhysiologyZones(args.discipline || "all", env);
     case "get_technique_history":
@@ -568,8 +601,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `daily_wellness?date=gte.${metricsSince}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score,avg_sleep_stress`),
       sb(env, `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss`),
       sb(env, `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc&select=logged_at,kind,rpe,sleep_quality,motivation,soreness,illness_flag,injury_flag,injury_details,raw_text`),
-      sb(env, `planned_sessions?planned_date=gte.${since}&planned_date=lt.${today}&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,description,status,completed_activity_id`),
-      sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,description,status,completed_activity_id`),
+      sb(env, `planned_sessions?planned_date=gte.${since}&planned_date=lt.${today}&status=neq.cancelled&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,description,status,completed_activity_id`),
+      sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&status=neq.cancelled&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,description,status,completed_activity_id`),
       sb(env, `session_analyses?created_at=gte.${since}T00:00:00Z&order=created_at.desc&select=activity_id,analysis_text,created_at&limit=8`),
       // limit=5: le proposte aperte si accumulano (se non risolte). Per la review
       // bastano le piu' recenti; il JSONB proposed_changes e' grosso.
@@ -684,7 +717,7 @@ async function getUpcomingPlan(days: number, env: Env) {
   days = clampInt(days, 1, 60);
   const today = todayRomeISO();
   const until = daysFromISO(days);
-  return sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`);
+  return sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&status=neq.cancelled&order=planned_date.asc`);
 }
 
 async function getHealth(env: Env) {
@@ -697,7 +730,7 @@ async function getRecentMetrics(days: number, env: Env) {
 }
 
 async function getPlannedSession(date: string, env: Env) {
-  return sb(env, `planned_sessions?planned_date=eq.${date}`);
+  return sb(env, `planned_sessions?planned_date=eq.${date}&status=neq.cancelled`);
 }
 
 async function getActivityHistory(sport: string, days: number, env: Env) {
@@ -736,19 +769,34 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
     throw new Error(`Invalid sport: ${args.sport}. Must be one of ${validSports.join(", ")}`);
   }
 
+  const validStatuses = ["planned", "completed", "skipped", "modified", "cancelled"];
+  const status = args.status ?? "planned";
+  if (!validStatuses.includes(status)) {
+    throw new Error(`Invalid status: ${status}. Must be one of ${validStatuses.join(", ")}`);
+  }
+
   const payload: any = {
     planned_date: args.planned_date,
     sport: args.sport,
     session_type: args.session_type,
     duration_s: args.duration_s,
     description: args.description,
-    status: "planned",
+    status,
   };
   if (args.target_tss !== undefined) payload.target_tss = args.target_tss;
   if (args.target_zones !== undefined) payload.target_zones = args.target_zones;
   if (args.structured !== undefined) payload.structured = args.structured;
-  if (args.mesocycle_id !== undefined) payload.mesocycle_id = args.mesocycle_id;
   if (args.calendar_event_id !== undefined) payload.calendar_event_id = args.calendar_event_id;
+
+  // mesocycle_id: usa quello fornito, altrimenti aggancia automaticamente il
+  // mesociclo attivo per quella data (evita le sessioni con mesocycle_id=null
+  // che il coach segnalava come "non catalogate").
+  if (args.mesocycle_id !== undefined) {
+    payload.mesocycle_id = args.mesocycle_id;
+  } else {
+    const meso = await activeMesocycleId(args.planned_date, env);
+    if (meso) payload.mesocycle_id = meso;
+  }
 
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}`,
@@ -785,6 +833,136 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
     const result = (await insertResp.json()) as any[];
     return { status: "created", session_id: result[0]?.id, payload };
   }
+}
+
+/** ID del mesociclo che copre la data indicata (start <= date <= end), o null. */
+async function activeMesocycleId(dateISO: string, env: Env): Promise<string | null> {
+  const rows = await sb(
+    env,
+    `mesocycles?start_date=lte.${dateISO}&end_date=gte.${dateISO}&order=start_date.desc&limit=1&select=id`
+  );
+  return rows?.[0]?.id ?? null;
+}
+
+/** Risolve una sessione da session_id oppure da date+sport. Esclude le cancelled. */
+async function resolveSession(args: any, env: Env): Promise<any | null> {
+  let rows: any[];
+  if (args.session_id) {
+    rows = await sb(env, `planned_sessions?id=eq.${args.session_id}&limit=1`);
+  } else if (args.date && args.sport) {
+    rows = await sb(env, `planned_sessions?planned_date=eq.${args.date}&sport=eq.${args.sport}&status=neq.cancelled&limit=1`);
+  } else {
+    throw new Error("Indica session_id, oppure date + sport.");
+  }
+  return rows?.[0] ?? null;
+}
+
+async function deleteSession(args: any, env: Env): Promise<any> {
+  const session = await resolveSession(args, env);
+  if (!session) {
+    return { status: "not_found", message: "Nessuna sessione corrispondente (session_id o date+sport)." };
+  }
+
+  const id = session.id;
+  const calendarEventId = session.calendar_event_id ?? null;
+  const headers = {
+    "apikey": env.SUPABASE_SERVICE_KEY,
+    "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  if (args.hard === true) {
+    const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${id}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!resp.ok) throw new Error(`Delete failed: ${resp.status} ${await resp.text()}`);
+    return {
+      status: "deleted_hard",
+      session_id: id,
+      deleted: { planned_date: session.planned_date, sport: session.sport, session_type: session.session_type },
+      calendar_event_id: calendarEventId,
+    };
+  }
+
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { ...headers, "Prefer": "return=representation" },
+    body: JSON.stringify({ status: "cancelled" }),
+  });
+  if (!resp.ok) throw new Error(`Cancel failed: ${resp.status} ${await resp.text()}`);
+  return {
+    status: "cancelled",
+    session_id: id,
+    cancelled: { planned_date: session.planned_date, sport: session.sport, session_type: session.session_type },
+    calendar_event_id: calendarEventId,
+  };
+}
+
+async function rescheduleSession(args: any, env: Env): Promise<any> {
+  if (!args.new_date) throw new Error("new_date è obbligatorio.");
+
+  const session = await resolveSession(args, env);
+  if (!session) {
+    return { status: "not_found", message: "Nessuna sessione corrispondente (session_id o date+sport)." };
+  }
+
+  const targetSport = args.new_sport ?? session.sport;
+  const targetDate = args.new_date;
+
+  if (targetDate === session.planned_date && targetSport === session.sport) {
+    return { status: "noop", message: "La destinazione coincide con la posizione attuale.", session_id: session.id };
+  }
+
+  // La UNIQUE (planned_date, sport) impedisce due righe sullo stesso slot.
+  // Verifica l'occupazione della destinazione.
+  const occupants = await sb(
+    env,
+    `planned_sessions?planned_date=eq.${targetDate}&sport=eq.${targetSport}&select=id,status,session_type`
+  );
+  const blocking = (occupants || []).filter((o: any) => o.id !== session.id);
+
+  const headers = {
+    "apikey": env.SUPABASE_SERVICE_KEY,
+    "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  if (blocking.length > 0) {
+    const cancelledOccupant = blocking.find((o: any) => o.status === "cancelled");
+    const activeOccupant = blocking.find((o: any) => o.status !== "cancelled");
+    if (activeOccupant) {
+      return {
+        status: "conflict",
+        message: `La destinazione ${targetDate} (${targetSport}) è già occupata da una sessione attiva (${activeOccupant.session_type || "?"}). Cancellala o scegli un'altra data prima di spostare.`,
+        conflicting_session_id: activeOccupant.id,
+      };
+    }
+    // Solo una sessione cancelled occupa lo slot: liberalo (hard delete) per non
+    // violare la UNIQUE, poi sposta.
+    if (cancelledOccupant) {
+      const del = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${cancelledOccupant.id}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!del.ok) throw new Error(`Slot cleanup failed: ${del.status} ${await del.text()}`);
+    }
+  }
+
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${session.id}`, {
+    method: "PATCH",
+    headers: { ...headers, "Prefer": "return=representation" },
+    body: JSON.stringify({ planned_date: targetDate, sport: targetSport }),
+  });
+  if (!resp.ok) throw new Error(`Reschedule failed: ${resp.status} ${await resp.text()}`);
+
+  return {
+    status: "rescheduled",
+    session_id: session.id,
+    from: { planned_date: session.planned_date, sport: session.sport },
+    to: { planned_date: targetDate, sport: targetSport },
+    calendar_event_id: session.calendar_event_id ?? null,
+  };
 }
 
 // ============================================================================

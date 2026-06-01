@@ -13,8 +13,9 @@ Dashboard Supabase → progetto `triathlon-coach` → SQL Editor → New Query �
 ed esegui, **in ordine**. Sono idempotenti.
 
 Nuove di questo ciclo:
-- [ ] `migrations/2026-05-30-rls-and-fk-integrity.sql` — sicurezza (RLS sulle 8 tabelle scoperte) + integrità FK. Risponde anche all'email Supabase.
-- [ ] `migrations/2026-05-30-seed-run-zones-provisional.sql` — carica le zone corsa dal test del 30/05 (soglia 4:23/km, LTHR 183).
+- [x] `migrations/2026-05-30-rls-and-fk-integrity.sql` — eseguita ✅ (RLS verificata true su tutte e 8).
+- [x] `migrations/2026-05-30-seed-run-zones-provisional.sql` — eseguita ✅ (zone corsa caricate).
+- [ ] `migrations/2026-06-01-planned-sessions-cancelled-status.sql` — aggiunge lo stato `cancelled` a planned_sessions (serve ai nuovi tool delete/reschedule del coach). **Esegui PRIMA del redeploy del worker.**
 
 (Niente migration per lo stato `expired` delle modulazioni: la colonna non ha
 CHECK constraint, quindi il nuovo stato è già valido. Le 14 proposte appese
@@ -36,10 +37,11 @@ WHERE relname IN ('predictions','outcomes','beliefs','beliefs_history',
 ## 🔴 2. Redeploy dei Cloudflare Workers
 Le modifiche al codice dei worker hanno effetto **solo dopo il deploy**.
 
-- [ ] **mcp-server** (weekly review più snella + nuovo tool `commit_physiology_zones`):
+- [ ] **mcp-server** (weekly review più snella + tool `commit_physiology_zones` + nuovi tool `delete_session`/`reschedule_session` + auto-aggancio mesociclo):
   ```bash
   cd workers/mcp-server && wrangler deploy
   ```
+  ⚠️ Esegui prima la migration `2026-06-01-planned-sessions-cancelled-status.sql` (sopra), altrimenti `delete_session` soft fallisce sul CHECK constraint.
 - [ ] **telegram-bot** — solo se in futuro tocchiamo quel worker (per ora non serve).
 
 ---

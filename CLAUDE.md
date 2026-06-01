@@ -259,7 +259,7 @@ richiede:
 - `weekly_review`: protocollo review settimanale (7 fasi con sync + gcal)
 - `race_week_protocol`: gestione settimana gara T-7 → T+1
 - `race_prediction`: predizione performance con confidence interval
-- `delete_session`: cancellazione sessione pianificata + cleanup Google Calendar
+- `delete_session`: cancellazione (soft/hard) o spostamento (`reschedule_session`) di una sessione pianificata + cleanup Google Calendar
 - `fitness_test`: proponi e gestisci test fitness (FTP, soglia, CSS, LTHR) con auto-detection
 - `video_analysis`: analisi tecnica video nuoto/corsa/bici con feedback strutturato e drill
 
