@@ -110,3 +110,13 @@ BEGIN
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ── K3: subjective_log.kind — aggiunge 'pattern_correction' ──────────────────
+-- Il bot Telegram inserisce kind='pattern_correction' (correzione pattern) ma
+-- non era nel CHECK → insert falliva e la correzione andava persa.
+ALTER TABLE subjective_log DROP CONSTRAINT IF EXISTS subjective_log_kind_check;
+ALTER TABLE subjective_log ADD CONSTRAINT subjective_log_kind_check CHECK (kind IN (
+    'post_session', 'morning', 'evening_debrief', 'illness', 'injury',
+    'free_note', 'proactive_response', 'brief_response', 'video_analysis',
+    'pattern_correction'
+));

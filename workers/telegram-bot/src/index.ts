@@ -109,7 +109,14 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method !== "POST") return new Response("OK", { status: 200 });
 
-    const update = (await req.json()) as TelegramUpdate;
+    // Bug fix audit K4: body non-JSON/vuoto non deve generare un 500 → Telegram
+    // ritenterebbe lo stesso update all'infinito (retry storm). Rispondiamo 200.
+    let update: TelegramUpdate;
+    try {
+      update = (await req.json()) as TelegramUpdate;
+    } catch {
+      return new Response("OK", { status: 200 });
+    }
 
     // Dedup update (Telegram retry)
     const seenKey = `upd:${update.update_id}`;
@@ -784,8 +791,14 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     else if (action === "reject") { status = "rejected"; msg = "❌ Modulazione rifiutata. Piano invariato."; }
     else { status = "discussing"; msg = "💬 D'accordo. Apri Claude Code quando vuoi per discutere."; }
 
-    await supabaseFetch(env, `/rest/v1/plan_modulations?id=eq.${modId}`, "PATCH",
+    // Bug fix audit K5: verifica l'esito della PATCH prima di confermare all'utente.
+    const modResp = await supabaseFetch(env, `/rest/v1/plan_modulations?id=eq.${modId}`, "PATCH",
       { status, resolved_at: new Date().toISOString() }, { Prefer: "return=minimal" });
+    if (!modResp.ok) {
+      console.error(`plan_modulations PATCH failed: ${modResp.status} ${await modResp.text()}`);
+      await sendMessage(env, chatId, "⚠️ Errore nel salvataggio della scelta. Riprova tra poco.");
+      return;
+    }
     await sendMessage(env, chatId, msg);
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
@@ -877,7 +890,10 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     const pending = await getPendingConfirmation(env, pendingId);
     if (!pending || pending.status !== "pending") return;
 
-    await resolvePendingConfirmation(env, pendingId, `routed_${routeType}`);
+    // Bug fix audit K2: 'routed_*' violava il CHECK su pending_confirmations.status
+    // (la PATCH falliva e la riga restava 'pending' per sempre). Usiamo 'confirmed'
+    // (valore valido); il tipo di routing è già veicolato dall'azione eseguita.
+    await resolvePendingConfirmation(env, pendingId, "confirmed");
 
     if (routeType === "weekly") {
       await sendMessage(env, chatId, "📋 Nota taggata per la prossima weekly review. Il coach la vedrà domenica.");
@@ -1180,8 +1196,14 @@ async function getPendingConfirmation(env: Env, id: string): Promise<PendingConf
 }
 
 async function resolvePendingConfirmation(env: Env, id: string, status: string): Promise<void> {
-  await supabaseFetch(env, `/rest/v1/pending_confirmations?id=eq.${id}`, "PATCH",
+  // Bug fix audit K5: controlla resp.ok — una PATCH fallita (constraint, RLS,
+  // rete) lasciava la riga 'pending' mentre l'UI mostrava successo.
+  const resp = await supabaseFetch(env, `/rest/v1/pending_confirmations?id=eq.${id}`, "PATCH",
     { status, resolved_at: new Date().toISOString() }, { Prefer: "return=minimal" });
+  if (!resp.ok) {
+    console.error(`resolvePendingConfirmation PATCH failed: ${resp.status} ${await resp.text()}`);
+    throw new Error(`pending_confirmations PATCH failed: ${resp.status}`);
+  }
 }
 
 // ============================================================================
