@@ -48,6 +48,31 @@
 - [ ] **PIPELINE-03**: Il DR snapshot aborta su tabelle critiche vuote invece di committare un backup corrotto — fix L3 verificato
 - [ ] **PIPELINE-04**: Il brief mattutino arriva una sola volta ogni mattina (idempotency check) — no doppio invio
 
+### Qualità Prescrizioni Sessioni (WORKOUT)
+
+> **Priorità massima** — le sessioni proposte devono essere allenamenti strutturati, sensati, professionali e calibrati su Nicolò.
+
+- [ ] **WORKOUT-01**: Ogni sessione proposta include struttura completa: riscaldamento (durata + intensità), set principale (intervalli specifici con target watt/pace/HR per zona), defatigamento — mai solo "60 min Z2"
+- [ ] **WORKOUT-02**: Le zone prescritte usano sempre i valori misurati di `physiology_zones` (FTP bici, soglia corsa, CSS nuoto) — mai stime hard-coded o valori di default
+- [ ] **WORKOUT-03**: Ogni sessione rispetta i vincoli medici attivi: nuoto max Z1-Z2 (spalla destra), corsa +10% volume/settimana max con cap 14-15km, nessun Z4+ con spalla
+- [ ] **WORKOUT-04**: Il TSS atteso per ogni sessione è coerente con il target settimanale del mesociclo e la progressione CTL pianificata — non proposto in modo arbitrario
+- [ ] **WORKOUT-05**: La distribuzione delle sessioni settimanali rispetta l'80/20 del block periodization (Seiler/Laursen) — Z3 "grigio" minimizzato, qualità solo in blocchi dedicati
+
+### Intelligenza Adattamento Fisiologico (ADAPT)
+
+- [ ] **ADAPT-01**: Il sistema distingue il cedimento muscolare da quello cardiovascolare dai dati Garmin (HR drift, decoupling aerobico, RPE vs pace) — distinzione usata nelle prescrizioni e nell'analisi post-sessione
+- [ ] **ADAPT-02**: I beliefs sull'adattamento di Nicolò (atleta endurance puro, primo cedimento muscolare non cardiovascolare) sono integrati esplicitamente in ogni proposta di sessione e modulazione
+- [ ] **ADAPT-03**: Dopo pattern ripetuti (≥3 sessioni della stessa tipologia), il sistema aggiorna la stima di risposta fisiologica e aggiusta progressione e volume nelle sessioni future
+
+### Resilienza Situazionale & Automazione (RESILIENCE)
+
+- [ ] **RESILIENCE-01**: Una richiesta di spostare una sessione (via Telegram o MCP) produce una settimana ribilanciata — il carico viene ridistribuito coerentemente, non solo la sessione spostata nel calendario
+- [ ] **RESILIENCE-02**: Una sessione saltata viene gestita automaticamente: se TSB > -10, la settimana viene ricalibrata; se TSB < -20, viene proposta una settimana alleggerita — proposta entro il ciclo ingest successivo senza che l'atleta debba chiederla
+- [ ] **RESILIENCE-03**: Le trasferte in Croazia NON riducono il carico — il sistema adatta solo gli orari delle sessioni (Nicolò recupera meglio in trasferta: §2 CLAUDE.md)
+- [ ] **RESILIENCE-04**: In caso di malattia (symptom flag o T° elevata), il sistema propone automaticamente il protocollo: stop intensità finché baseline non recupera 48h+, con re-entry plan graduale
+- [ ] **AUTO-01**: La modulazione di una sessione saltata o spostata è proposta automaticamente entro il ciclo ingest successivo (via `plan_modulations` + Telegram button), senza richiedere input esplicito dell'atleta
+- [ ] **AUTO-02**: Il piano settimanale viene proposto automaticamente ogni domenica sera come draft ready-to-confirm — Nicolò conferma o aggiusta, il sistema non aspetta la weekly review manuale per generare le sessioni
+
 ### Qualità Coaching — Brief & Sessioni (QUALITY-BRIEF)
 
 - [ ] **QUALITY-BRIEF-01**: Il brief mattutino mostra TSB/HRV z-score/readiness con valori numerici reali — non placeholder o None
@@ -135,23 +160,37 @@
 | VERIFY-05 | Phase 4 | Pending |
 | VERIFY-06 | Phase 4 | Pending |
 | FITNESS-04 | Phase 4 | Pending |
-| QUALITY-BRIEF-01 | Phase 5 | Pending |
-| QUALITY-BRIEF-02 | Phase 5 | Pending |
-| QUALITY-BRIEF-03 | Phase 5 | Pending |
-| QUALITY-BRIEF-04 | Phase 5 | Pending |
-| QUALITY-ANALYSIS-01 | Phase 6 | Pending |
-| QUALITY-ANALYSIS-02 | Phase 6 | Pending |
-| QUALITY-ANALYSIS-03 | Phase 6 | Pending |
-| QUALITY-ANALYSIS-04 | Phase 6 | Pending |
-| QUALITY-WEEKLY-01 | Phase 7 | Pending |
-| QUALITY-WEEKLY-02 | Phase 7 | Pending |
-| QUALITY-WEEKLY-03 | Phase 7 | Pending |
-| MCP-01 | Phase 8 | Pending |
-| MCP-02 | Phase 8 | Pending |
+| WORKOUT-01 | Phase 5 | Pending |
+| WORKOUT-02 | Phase 5 | Pending |
+| WORKOUT-03 | Phase 5 | Pending |
+| WORKOUT-04 | Phase 5 | Pending |
+| WORKOUT-05 | Phase 5 | Pending |
+| ADAPT-01 | Phase 6 | Pending |
+| ADAPT-02 | Phase 6 | Pending |
+| ADAPT-03 | Phase 6 | Pending |
+| RESILIENCE-01 | Phase 7 | Pending |
+| RESILIENCE-02 | Phase 7 | Pending |
+| RESILIENCE-03 | Phase 7 | Pending |
+| RESILIENCE-04 | Phase 7 | Pending |
+| AUTO-01 | Phase 7 | Pending |
+| AUTO-02 | Phase 7 | Pending |
+| QUALITY-BRIEF-01 | Phase 8 | Pending |
+| QUALITY-BRIEF-02 | Phase 8 | Pending |
+| QUALITY-BRIEF-03 | Phase 8 | Pending |
+| QUALITY-BRIEF-04 | Phase 8 | Pending |
+| QUALITY-ANALYSIS-01 | Phase 9 | Pending |
+| QUALITY-ANALYSIS-02 | Phase 9 | Pending |
+| QUALITY-ANALYSIS-03 | Phase 9 | Pending |
+| QUALITY-ANALYSIS-04 | Phase 9 | Pending |
+| QUALITY-WEEKLY-01 | Phase 10 | Pending |
+| QUALITY-WEEKLY-02 | Phase 10 | Pending |
+| QUALITY-WEEKLY-03 | Phase 10 | Pending |
+| MCP-01 | Phase 11 | Pending |
+| MCP-02 | Phase 11 | Pending |
 
 **Coverage:**
-- v1 requirements: 36 total
-- Mapped to phases: 36
+- v1 requirements: 50 total
+- Mapped to phases: 50
 - Unmapped: 0 ✓
 
 ---
