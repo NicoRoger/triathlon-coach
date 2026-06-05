@@ -205,6 +205,28 @@ def test_b3_missing_pmc_does_not_score_tsb_optimal():
     assert m["readiness_factors"]["tsb"] == 50
 
 
+def test_b3_readiness_label_not_null():
+    """ANALYTICS-04: compute_for must write readiness_label non-null and
+    readiness_score 0-100 even when PMC is absent (no activities)."""
+    day = date(2026, 5, 30)
+    wellness = [{"date": day.isoformat(), "hrv_rmssd": 55.0, "sleep_score": 80,
+                 "body_battery_max": 80, "resting_hr": 50}]
+    sb = _FakeSupabase({"activities": [], "daily_wellness": wellness, "subjective_log": []})
+    daily = _make_daily_module(sb)
+    daily.compute_for(day)
+    m = sb.last_upsert
+    assert m["ctl"] is None  # PMC absent (no activities)
+    assert m["readiness_label"] in {"ready", "caution", "rest"}, (
+        f"readiness_label must be non-null string, got: {m['readiness_label']!r}"
+    )
+    assert isinstance(m["readiness_score"], int), (
+        f"readiness_score must be int, got: {type(m['readiness_score'])}"
+    )
+    assert 0 <= m["readiness_score"] <= 100, (
+        f"readiness_score must be 0-100, got: {m['readiness_score']}"
+    )
+
+
 # ===========================================================================
 # B11 — _score_sleep non clampava 0-100
 # ===========================================================================
