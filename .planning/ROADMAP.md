@@ -60,10 +60,14 @@ Plans:
   4. La query `physiology_zones` per FTP, CSS e soglia corsa ritorna righe non null con timestamp aggiornato post-test
 
 **Plans**: 3 plans
+Plans:
+**Wave 1**
 
-Plans:
 - [ ] 02-01-PLAN.md — Script verify_physiology.py: mostra zones DB vs CLAUDE.md con bounds check
 - [ ] 02-02-PLAN.md — Script cleanup_physiology_zones.py: dry-run + --confirm DELETE righe fuori bounds
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-03-PLAN.md — Trigger processore giugno 2026 + checkpoint verifica finale physiology_zones
 
 ### Phase 3: Deploy & Pipeline Resilience

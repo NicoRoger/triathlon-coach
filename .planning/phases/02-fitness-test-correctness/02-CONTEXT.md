@@ -44,15 +44,15 @@ Non rientra in Phase 2: migrazione E4 (UNIQUE constraint) → Phase 3, deploy, q
 
 ### Migrazione E4 (decisione di scope)
 
-- **D-13:** La migrazione `physiology_zones UNIQUE(discipline, valid_from, method)` rimane in **Phase 3** insieme a tutte le altre migrazioni pending
-- **D-14:** Phase 2 NON esegue la migrazione. Conseguenza accettata: se Nicolò runnasse il processore con il constraint mancante e il primo test avesse già una riga in DB, l'upsert fallirebbe. Da tener presente ma rischio basso con tabella vuota/pulita
+- **D-13:** [informational] La migrazione `physiology_zones UNIQUE(discipline, valid_from, method)` rimane in **Phase 3** insieme a tutte le altre migrazioni pending
+- **D-14:** [informational] Phase 2 NON esegue la migrazione. Conseguenza accettata: se Nicolò runnasse il processore con il constraint mancante e il primo test avesse già una riga in DB, l'upsert fallirebbe. Da tener presente ma rischio basso con tabella vuota/pulita
 
 ### Test fitness (decisioni contestuali)
 
-- **D-15:** I test FTP bici, soglia corsa, CSS nuoto sono **già stati eseguiti** su Garmin a giugno 2026 (confermato dall'atleta)
+- **D-15:** [informational] I test FTP bici, soglia corsa, CSS nuoto sono **già stati eseguiti** su Garmin a giugno 2026 (confermato dall'atleta)
 - **D-16:** Lo stato del DB (`physiology_zones` vuota o popolata) è ignoto — il primo task di Phase 2 è runnare `verify_physiology.py`
 - **D-17:** Se il processore non ha elaborato i test, Phase 2 include il trigger manuale (D-10/D-11)
-- **D-18:** Nessun LTHR test in scope per Phase 2 — solo FTP bici, soglia corsa, CSS nuoto
+- **D-18:** [informational] Nessun LTHR test in scope per Phase 2 — solo FTP bici, soglia corsa, CSS nuoto
 
 </decisions>
 
