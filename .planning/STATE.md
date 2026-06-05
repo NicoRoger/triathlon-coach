@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Not started
-last_updated: "2026-06-05T13:33:33.730Z"
+status: executing
+last_updated: "2026-06-05T13:36:49.480Z"
 progress:
   total_phases: 11
   completed_phases: 0
-  total_plans: 0
+  total_plans: 2
   completed_plans: 0
   percent: 0
 ---
@@ -18,7 +18,7 @@ progress:
 
 **Core Value:** Ogni mattina Nicolò riceve dati corretti, analisi attendibili e prescrizioni allineate all'allenamento élite — e può fidarsi ciecamente del sistema per prepararsi alla gara.
 
-**Current Focus:** Phase 1 — Test Suite & Analytics Correctness
+**Current Focus:** Phase 01 — test-suite-analytics-correctness
 
 **Milestone:** Integrità & Qualità Elite (audit-resilience-2026-06-01 verification + coaching quality elevation)
 
@@ -26,10 +26,12 @@ progress:
 
 ## Current Position
 
+Phase: 01 (test-suite-analytics-correctness) — EXECUTING
+Plan: 1 of 2
 **Phase:** 1
 **Phase Name:** Test Suite & Analytics Correctness
 **Plan:** Not started
-**Status:** Not started
+**Status:** Executing Phase 01
 
 ```
 Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]

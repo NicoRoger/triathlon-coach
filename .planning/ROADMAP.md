@@ -10,7 +10,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Test Suite & Analytics Correctness** — La suite pytest è verde e le logiche analytics (HRV, PMC, readiness, risk) si comportano correttamente su dati reali
+- [x] **Phase 1: Test Suite & Analytics Correctness** — La suite pytest è verde e le logiche analytics (HRV, PMC, readiness, risk) si comportano correttamente su dati reali (completed 2026-06-05)
 - [ ] **Phase 2: Fitness Test Correctness** — I valori physiology_zones (FTP, CSS, soglia corsa) nel DB sono corretti, plausibili e non corrotti dai bug E1/E2
 - [ ] **Phase 3: Deploy & Pipeline Resilience** — Migrazioni eseguite, Telegram bot ridistribuito, pipeline ingest resiliente con exit codes e DR corretti
 - [ ] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget
@@ -42,8 +42,8 @@
 
 **Plans**: 2 plansPlans:
 
-- [ ] 01-01-PLAN.md — Test ANALYTICS-04 (readiness_label/score) + gate suite pytest verde
-- [ ] 01-02-PLAN.md — Script verify_analytics.py: verifica live HRV/PMC/readiness/risk su dati reali
+- [x] 01-01-PLAN.md — Test ANALYTICS-04 (readiness_label/score) + gate suite pytest verde
+- [x] 01-02-PLAN.md — Script verify_analytics.py: verifica live HRV/PMC/readiness/risk su dati reali
 
 ### Phase 2: Fitness Test Correctness
 
@@ -204,7 +204,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Test Suite & Analytics Correctness | 0/2 | Planned | - |
+| 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
 | 2. Fitness Test Correctness | 0/0 | Not started | - |
 | 3. Deploy & Pipeline Resilience | 0/0 | Not started | - |
 | 4. Live Behavior Verification | 0/0 | Not started | - |
