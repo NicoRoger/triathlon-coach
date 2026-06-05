@@ -43,7 +43,7 @@ Non rientra in Phase 1: deploy, migrazioni DB, qualità del brief, verifica del 
 
 ### Scope confini
 
-- **D-07:** Il bug C1 (label `(None)` in `briefing_v1.py`) è in codice morto — non toccare in Phase 1. Il brief attivo è `briefing.py` (v2) e non renderizza `readiness_label`
+- **D-07 [informational]:** Il bug C1 (label `(None)` in `briefing_v1.py`) è in codice morto — non toccare in Phase 1. Il brief attivo è `briefing.py` (v2) e non renderizza `readiness_label`
 - **D-08:** La verifica "dati reali" per ANALYTICS-01 è separata dai test pytest — lo script è un tool operativo, non un test automatizzato
 
 </decisions>

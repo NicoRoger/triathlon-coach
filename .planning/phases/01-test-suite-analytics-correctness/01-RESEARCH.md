@@ -391,7 +391,7 @@ def _fetch_risk_volumes(sb):
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Posizione del nuovo test: nuovo metodo vs nuovo file?**
    - What we know: D-06 dice "nel test B3 esistente o in un test dedicato"
