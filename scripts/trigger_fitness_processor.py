@@ -1,7 +1,7 @@
 """Trigger manuale del FitnessTestProcessor su attività di giugno 2026.
 
 Bypassa il cutoff 6h di check_recent() e processa tutti i test fitness
-nel range 2026-06-01 → 2026-06-30 matchati con planned_sessions.
+nel range 2026-06-01 -> 2026-06-30 matchati con planned_sessions.
 
 Uso:
   PYTHONPATH=. python scripts/trigger_fitness_processor.py --dry-run
@@ -44,7 +44,7 @@ def main() -> None:
     cutoff_to = "2026-06-30T23:59:59+00:00"
 
     print("=== Trigger Fitness Processor (June 2026) ===")
-    print(f"Finestra: 2026-06-01 → 2026-06-30")
+    print("Finestra: 2026-06-01 -> 2026-06-30")
     if args.dry_run:
         print("Modalità: --dry-run (nessuna scrittura su DB)")
     print()
@@ -105,7 +105,7 @@ def main() -> None:
                 if args.dry_run:
                     print("  [dry-run] Salto process_fitness_test()")
                 else:
-                    print("  → processando...")
+                    print("  -> processando...")
                     result = processor.process_fitness_test(activity, planned_session)
                     print(f"  Risultato: {json.dumps(result, default=str)}")
                     processed_count += 1

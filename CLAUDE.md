@@ -53,14 +53,14 @@ stato_attuale:
 
 discipline:
   nuoto:
-    css_attuale_per_100m: da testare (test CSS giugno 2026)
+    css_attuale_per_100m: 1:20/100m (80 s/100m, metodo: css_swim_400_200, data: 2026-06-04)
     debolezze: tecnica post-pausa, spalla destra
     vincolo: zero Z4+ con spalla, distanza 72h tra sessioni nuoto
   bici:
     ftp_attuale_w: da testare (FTP test giugno 2026)
     debolezze: muscular endurance post-pausa (primo cedimento muscolare, non cardiovascolare)
   corsa:
-    threshold_pace_per_km: da testare (soglia test giugno 2026)
+    threshold_pace_per_km: 4:23/km (263 s/km, metodo: threshold_run_20min_provisional, data: 2026-05-30)
     debolezze: muscular endurance, carico progressivo limitato da fascite plantare sx
     vincolo_fascite: max +10% volume/settimana, cap 14-15km/settimana attuale
 
@@ -68,7 +68,7 @@ fisiologia:
   tipo_atleta: endurance puro — primo cedimento muscolare, non cardiovascolare
   hr_riposo_tipica: 48-51 bpm (da daily_wellness)
   hrv_baseline_rmssd: ~69ms (baseline 28d, in risalita)
-  note: soglie fisiologiche (FTP, threshold pace, CSS) da misurare a giugno 2026 post stabilizzazione
+  note: CSS e threshold run misurati (giugno 2026). FTP bici da testare.
 
 infortuni_attivi:
 
