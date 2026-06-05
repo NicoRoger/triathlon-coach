@@ -40,7 +40,8 @@
   4. Il PMC riporta `None` (non 0) per giorni senza dati, e il readiness score mostra label leggibili (non `None`)
   5. Il risk module non crasha su `started_at` come datetime e usa la timezone Rome per il bucketing dei volumi
 
-**Plans**: 2 plansPlans:
+**Plans**: 2 plans
+Plans:
 
 - [x] 01-01-PLAN.md — Test ANALYTICS-04 (readiness_label/score) + gate suite pytest verde
 - [x] 01-02-PLAN.md — Script verify_analytics.py: verifica live HRV/PMC/readiness/risk su dati reali
@@ -58,7 +59,12 @@
   3. Il CSS è calcolato con guard `t400 > t200 > 0` — nessun valore negativo o assurdo in DB
   4. La query `physiology_zones` per FTP, CSS e soglia corsa ritorna righe non null con timestamp aggiornato post-test
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Script verify_physiology.py: mostra zones DB vs CLAUDE.md con bounds check
+- [ ] 02-02-PLAN.md — Script cleanup_physiology_zones.py: dry-run + --confirm DELETE righe fuori bounds
+- [ ] 02-03-PLAN.md — Trigger processore giugno 2026 + checkpoint verifica finale physiology_zones
 
 ### Phase 3: Deploy & Pipeline Resilience
 
@@ -205,7 +211,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
-| 2. Fitness Test Correctness | 0/0 | Not started | - |
+| 2. Fitness Test Correctness | 0/3 | Not started | - |
 | 3. Deploy & Pipeline Resilience | 0/0 | Not started | - |
 | 4. Live Behavior Verification | 0/0 | Not started | - |
 | 5. Workout Prescription Quality | 0/0 | Not started | - |
