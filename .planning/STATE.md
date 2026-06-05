@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-05T21:17:16Z"
+last_updated: "2026-06-06T00:00:00.000Z"
 progress:
   total_phases: 11
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
   completed_plans: 5
-  percent: 9
+  percent: 18
 ---
 
 # State: Triathlon AI Coach — Integrità & Qualità Elite
@@ -18,7 +18,7 @@ progress:
 
 **Core Value:** Ogni mattina Nicolò riceve dati corretti, analisi attendibili e prescrizioni allineate all'allenamento élite — e può fidarsi ciecamente del sistema per prepararsi alla gara.
 
-**Current Focus:** Phase 02 — fitness-test-correctness
+**Current Focus:** Phase 03 — deploy-pipeline-resilience (next)
 
 **Milestone:** Integrità & Qualità Elite (audit-resilience-2026-06-01 verification + coaching quality elevation)
 
@@ -26,12 +26,11 @@ progress:
 
 ## Current Position
 
-Phase: 02 (fitness-test-correctness) — EXECUTING
-Plan: 2 of 3
-**Phase:** 2
-**Phase Name:** Fitness Test Correctness
-**Plan:** 02-01 complete — 02-02 next
-**Status:** Executing Phase 02
+Phase: 02 (fitness-test-correctness) — COMPLETE ✓
+Phase: 03 (deploy-pipeline-resilience) — NEXT
+**Phase:** 3
+**Phase Name:** Deploy & Pipeline Resilience
+**Status:** Phase 02 verified and complete — ready to start Phase 03
 
 ```
 Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
@@ -87,8 +86,8 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-05T21:17:16Z
-**Next action:** Execute 02-02-PLAN.md (cleanup_physiology_zones.py)
+**Last session:** 2026-06-06
+**Next action:** Execute Phase 03 — read OPEN_ISSUES.md and docs/audit_resilience_2026-06-01.md §Da fare manualmente first
 
 **Context to reload next session:**
 

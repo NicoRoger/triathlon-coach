@@ -11,7 +11,7 @@
 ## Phases
 
 - [x] **Phase 1: Test Suite & Analytics Correctness** — La suite pytest è verde e le logiche analytics (HRV, PMC, readiness, risk) si comportano correttamente su dati reali (completed 2026-06-05)
-- [ ] **Phase 2: Fitness Test Correctness** — I valori physiology_zones (FTP, CSS, soglia corsa) nel DB sono corretti, plausibili e non corrotti dai bug E1/E2
+- [x] **Phase 2: Fitness Test Correctness** — I valori physiology_zones (FTP, CSS, soglia corsa) nel DB sono corretti, plausibili e non corrotti dai bug E1/E2 (completed 2026-06-05)
 - [ ] **Phase 3: Deploy & Pipeline Resilience** — Migrazioni eseguite, Telegram bot ridistribuito, pipeline ingest resiliente con exit codes e DR corretti
 - [ ] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget
 - [ ] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò
@@ -68,7 +68,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-03-PLAN.md — Trigger processore giugno 2026 + checkpoint verifica finale physiology_zones
+- [x] 02-03-PLAN.md — Trigger processore giugno 2026 + checkpoint verifica finale physiology_zones
 
 ### Phase 3: Deploy & Pipeline Resilience
 
@@ -215,7 +215,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
-| 2. Fitness Test Correctness | 2/3 | In Progress|  |
+| 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
 | 3. Deploy & Pipeline Resilience | 0/0 | Not started | - |
 | 4. Live Behavior Verification | 0/0 | Not started | - |
 | 5. Workout Prescription Quality | 0/0 | Not started | - |
