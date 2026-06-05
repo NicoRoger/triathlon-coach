@@ -63,8 +63,8 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Script verify_physiology.py: mostra zones DB vs CLAUDE.md con bounds check
-- [ ] 02-02-PLAN.md — Script cleanup_physiology_zones.py: dry-run + --confirm DELETE righe fuori bounds
+- [x] 02-01-PLAN.md — Script verify_physiology.py: mostra zones DB vs CLAUDE.md con bounds check
+- [x] 02-02-PLAN.md — Script cleanup_physiology_zones.py: dry-run + --confirm DELETE righe fuori bounds
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -215,7 +215,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
-| 2. Fitness Test Correctness | 0/3 | Not started | - |
+| 2. Fitness Test Correctness | 2/3 | In Progress|  |
 | 3. Deploy & Pipeline Resilience | 0/0 | Not started | - |
 | 4. Live Behavior Verification | 0/0 | Not started | - |
 | 5. Workout Prescription Quality | 0/0 | Not started | - |
