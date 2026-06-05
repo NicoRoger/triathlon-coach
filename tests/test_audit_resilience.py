@@ -54,9 +54,11 @@ class _FakeQuery:
         return self
 
     def eq(self, col, val):
-        # filtro semplice per illness_flag
-        self._rows = [r for r in self._rows if r.get(col) == val]
-        return self
+        # filtro non-distruttivo: ritorna un nuovo _FakeQuery con le righe filtrate
+        filtered = [r for r in self._rows if r.get(col) == val]
+        clone = _FakeQuery(filtered)
+        clone.upserted = self.upserted
+        return clone
 
     def order(self, *a, **k):
         return self
