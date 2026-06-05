@@ -314,6 +314,20 @@ def test_i2_days_in_month_correct_all_months():
             # days_remaining = days_in_month - day(15)
             assert stats["days_remaining"] == exp - 15, f"month {month}"
 
+    # Anno bisestile: febbraio 2028 ha 29 giorni (distingue lookup statico da calendar.monthrange)
+    fake_now_leap = datetime(2028, 2, 15, tzinfo=timezone.utc)
+
+    class _DT_leap(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fake_now_leap
+
+    with patch.object(budget, "datetime", _DT_leap),          patch("coach.utils.budget.get_supabase") as mock_sb:
+        mock_sb.return_value.table.return_value.select.return_value.gte.return_value.execute.return_value.data = []
+        stats_leap = budget.get_month_stats()
+        # febbraio 2028 bisestile: 29 giorni - 15 = 14 giorni rimanenti
+        assert stats_leap["days_remaining"] == 29 - 15, "febbraio anno bisestile deve avere 29 giorni"
+
 
 # ===========================================================================
 # I9 — alert budget su OGNI chiamata (spam) invece che all'attraversamento
