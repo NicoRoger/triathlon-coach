@@ -169,21 +169,29 @@ def test_b2_two_consecutive_low_days_warn():
 
 def test_b2_daily_excludes_today_from_recent_z():
     """daily.compute_for: recent_z_scores non deve includere oggi.
-    Con solo oggi basso e storico stabile, NON deve esserci fatigue_warning."""
+    Con solo oggi basso e storico stabile, NON deve esserci fatigue_warning.
+
+    Storia con SD realistica (~0.65): media=60.8, SD≈0.65.
+    hrv_today=59.9 → z≈-1.38 → in banda warning (-2 < z < -1), NON fatigue_critical.
+    Con bug B2 (oggi incluso in recent_z): fatigue_warning scatterebbe già al primo giorno.
+    Con fix B2 (oggi escluso): nessun giorno precedente in warning → nessun fatigue_warning.
+    """
     day = date(2026, 5, 30)
     wellness = []
     for i in range(15, 0, -1):
         d = (day - timedelta(days=i)).isoformat()
-        wellness.append({"date": d, "hrv_rmssd": 60.0 + (i % 3), "sleep_score": 80,
+        # pattern SD realistica: valori 60.0, 60.8, 61.6 ripetuti → media=60.8, SD≈0.65
+        wellness.append({"date": d, "hrv_rmssd": 60.0 + (i % 3) * 0.8, "sleep_score": 80,
                          "body_battery_max": 80, "resting_hr": 50})
-    # oggi crollo singolo
-    wellness.append({"date": day.isoformat(), "hrv_rmssd": 35.0, "sleep_score": 80,
+    # oggi in banda warning: z≈-1.38 → NON fatigue_critical (z > -2.0)
+    wellness.append({"date": day.isoformat(), "hrv_rmssd": 59.9, "sleep_score": 80,
                      "body_battery_max": 80, "resting_hr": 50})
     sb = _FakeSupabase({"activities": [], "daily_wellness": wellness, "subjective_log": []})
     daily = _make_daily_module(sb)
     daily.compute_for(day)
     m = sb.last_upsert
-    # crollo singolo molto basso → fatigue_critical possibile, ma NON fatigue_warning da 1 giorno
+    # 1 solo giorno in banda warning (oggi) → con fix B2 (oggi escluso da recent_z)
+    # non ci sono giorni precedenti in warning → fatigue_warning NON deve scattare
     assert "fatigue_warning" not in m["flags"]
 
 
