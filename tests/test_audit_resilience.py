@@ -573,9 +573,6 @@ def test_h2_pick_test_date_bounded():
     class _SB:
         def table(self, *a, **k): return _Q()
 
-    for n in ["coach.utils.supabase_client", "coach.utils.dt"]:
-        if n in sys.modules and not hasattr(sys.modules[n], "today_rome") and n.endswith("dt"):
-            pass
     # dt reale serve; supabase non usato da _pick_test_date direttamente (sb passato)
     ts = _load("coach.coaching.test_scheduler", "coach/coaching/test_scheduler.py")
     result = ts._pick_test_date(_SB(), date(2026, 6, 1))
