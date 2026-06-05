@@ -33,19 +33,18 @@ decisions:
   - "PMC section shows TSB with +/- sign when values are present for readability"
 metrics:
   completed_date: "2026-06-05"
-  status: "CHECKPOINT - awaiting human-verify at Task 3"
-  tasks_completed: 2
+  status: "COMPLETE"
+  tasks_completed: 3
   tasks_total: 3
-  checkpoint_task: 3
 ---
 
 # Phase 01 Plan 02: verify_analytics.py (Live Analytics Verification) Summary
 
 **One-liner:** Operational script `scripts/verify_analytics.py` with 4 sections (HRV baseline+z-score, PMC, Readiness, Risk volume bucketing) connecting to production Supabase to verify fixes B1/B3/B4 on real data.
 
-## Status: CHECKPOINT at Task 3
+## Status: COMPLETE
 
-Tasks 1 and 2 are complete and committed. Task 3 is a `checkpoint:human-verify` — awaiting operator to run `python scripts/verify_analytics.py` against production Supabase and confirm output.
+All 3 tasks are complete. Task 3 (human-verify checkpoint) was approved by the operator after running `python scripts/verify_analytics.py` against production Supabase on 2026-06-05.
 
 ## Tasks Completed
 
@@ -53,6 +52,7 @@ Tasks 1 and 2 are complete and committed. Task 3 is a `checkpoint:human-verify` 
 |------|------|--------|-------|
 | 1 | Create scripts/verify_analytics.py with HRV + PMC sections | 9e4bb75 | scripts/verify_analytics.py (220 lines, created) |
 | 2 | Readiness + Risk sections + main() wiring | 9e4bb75 | (included in Task 1 commit -- all 4 sections implemented together) |
+| 3 | Verifica live dell'output su dati reali di Nicolò | checkpoint:human-verify APPROVED | Operator ran script on 2026-06-05; all acceptance criteria met |
 
 ## What Was Built
 
@@ -89,19 +89,37 @@ Tasks 1 and 2 are complete and committed. Task 3 is a `checkpoint:human-verify` 
 
 **Risk section output format note:** The plan's PATTERNS.md template shows `swim: 2800m | bike: 145km | run: 18.5km` using distance units. Since `activities` table has `duration_s` but not a universal distance column, the script uses minutes instead: `swim: 45min | bike: 90min | run: 30min`. This is functionally equivalent for volume bucketing verification (B4 is about date correctness, not unit display).
 
-## Checkpoint -- Task 3: Human Verify
+## Task 3: Live Verification -- APPROVED
 
-**Status:** AWAITING HUMAN VERIFICATION
+**Status:** APPROVED by operator on 2026-06-05
 
-**What to do:**
-1. From `C:\dev\triathlon-coach`, run: `python scripts/verify_analytics.py`
-2. Confirm all 4 sections print in order: HRV, PMC, Readiness, Risk
-3. Check B1: HRV line says "(N giorni, oggi escluso)"
-4. Check B3: PMC shows `None` (not `0.00`) when data is absent
-5. Check B4: Risk section prints with `(date: Europe/Rome)` suffix without crashing
-6. Check security: no Supabase URL or service key in output
+**Live output captured:**
+```
+=== HRV Analytics ===
+Baseline 28d: media=80.8ms, SD=5.9ms (28 giorni, oggi escluso)
+Z-score oggi: +1.57σ → OK
+Flag: nessuno
 
-**Resume signal:** "approved" if output is correct, or describe the anomaly.
+=== PMC ===
+CTL: None | ATL: None | TSB: None
+PMC non disponibile (test FTP/soglia non ancora eseguiti — vedi Phase 2)
+
+=== Readiness ===
+Score: 75/100 | Label: ready
+
+=== Risk: Volume Bucketing (settimana corrente) ===
+run: 44min | swim: 55min (date: Europe/Rome)
+```
+
+**Acceptance criteria confirmed:**
+- [x] 4 sections printed in correct order: HRV, PMC, Readiness, Risk
+- [x] B1 fix verified: HRV shows "(28 giorni, oggi escluso)" -- today excluded by date
+- [x] B3 fix verified: PMC shows `None` (not `0.00`) when FTP/threshold tests not yet run
+- [x] Readiness: 75/100, label "ready" -- correct score and label format
+- [x] B4 fix verified: Risk section uses `(date: Europe/Rome)` -- no crash, correct timezone bucketing
+- [x] Security: no SUPABASE_URL or SUPABASE_SERVICE_KEY in output
+
+**HRV context:** Baseline 80.8ms ± 5.9ms, z-score +1.57σ = above average recovery. No flags. Consistent with Nicolò's improving HRV trend noted in CLAUDE.md (baseline ~69ms rising).
 
 ## Known Stubs
 
@@ -118,5 +136,8 @@ None identified beyond what is already in the plan threat model (T-02-01 through
 
 ### Commits
 - `9e4bb75`: feat(01-02): create scripts/verify_analytics.py with HRV + PMC sections (contains all 4 sections + main())
+- Task 3: checkpoint:human-verify -- APPROVED by operator (no code commit needed; live output confirmed)
 
 ## Self-Check: PASSED
+
+**Plan 01-02 complete.** All 3 tasks done; all bug fixes B1, B3, B4 verified on production data.
