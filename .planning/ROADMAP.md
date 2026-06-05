@@ -37,7 +37,10 @@
   3. Il flag `fatigue_warning` scatta esattamente dopo 2 giorni consecutivi con HRV z < -1.0 SD, e `fatigue_critical` dopo 1 giorno con z < -2.0 SD
   4. Il PMC riporta `None` (non 0) per giorni senza dati, e il readiness score mostra label leggibili (non `None`)
   5. Il risk module non crasha su `started_at` come datetime e usa la timezone Rome per il bucketing dei volumi
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — Test ANALYTICS-04 (readiness_label/score) + gate suite pytest verde
+- [ ] 01-02-PLAN.md — Script verify_analytics.py: verifica live HRV/PMC/readiness/risk su dati reali
 
 ### Phase 2: Fitness Test Correctness
 **Goal**: I valori FTP, CSS e soglia corsa nel DB derivano dai test fitness eseguiti da Nicolò a giugno 2026, sono entro bounds fisiologici plausibili, e non sono stati corrotti dai bug E1/E2
@@ -168,7 +171,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Test Suite & Analytics Correctness | 0/0 | Not started | - |
+| 1. Test Suite & Analytics Correctness | 0/2 | Planned | - |
 | 2. Fitness Test Correctness | 0/0 | Not started | - |
 | 3. Deploy & Pipeline Resilience | 0/0 | Not started | - |
 | 4. Live Behavior Verification | 0/0 | Not started | - |
