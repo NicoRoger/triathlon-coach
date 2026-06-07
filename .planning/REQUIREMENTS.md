@@ -14,10 +14,10 @@
 
 - [ ] **VERIFY-01**: L'intera test suite pytest passa verde localmente senza failures su logiche critiche (HRV, PMC, readiness, fitness test, modulation, budget, DR, watchdog)
 - [x] **VERIFY-02**: I valori di `physiology_zones` nel DB per FTP, CSS e soglia corsa corrispondono ai test fitness eseguiti da Nicolò a giugno 2026 — valori plausibili e non corrotti da bug E1/E2
-- [ ] **VERIFY-03**: Il brief mattutino inviato via Telegram mostra la sessione del giorno con zone corrette basate su physiology_zones misurate (non stime)
-- [ ] **VERIFY-04**: Le analisi post-sessione in `session_analyses` vengono generate dopo ogni sync Garmin e contengono testo non vuoto e `model_used = gemini-2.5-flash`
-- [ ] **VERIFY-05**: Le modulazioni proposte via Telegram compaiono con inline buttons ✅/❌, e quelle accettate vengono applicate a `planned_sessions` nel ciclo ingest successivo
-- [ ] **VERIFY-06**: Il budget tracker riflette la spesa reale Anthropic — non si supera €5/mese e il degrado Sonnet→Haiku scatta a €4.00 correttamente
+- [x] **VERIFY-03**: Il brief mattutino inviato via Telegram mostra la sessione del giorno con zone corrette basate su physiology_zones misurate (non stime)
+- [x] **VERIFY-04**: Le analisi post-sessione in `session_analyses` vengono generate dopo ogni sync Garmin e contengono testo non vuoto e `model_used = gemini-2.5-flash`
+- [x] **VERIFY-05**: Le modulazioni proposte via Telegram compaiono con inline buttons ✅/❌, e quelle accettate vengono applicate a `planned_sessions` nel ciclo ingest successivo
+- [x] **VERIFY-06**: Il budget tracker riflette la spesa reale Anthropic — non si supera €5/mese e il degrado Sonnet→Haiku scatta a €4.00 correttamente
 
 ### Deploy & Migrazioni (DEPLOY)
 
@@ -39,7 +39,7 @@
 - [ ] **FITNESS-01**: `fitness_test_processor.py` non usa fallback `averageSpeed`→watt né `averagePace` come threshold — fix E1/E2 verificati su dati reali
 - [x] **FITNESS-02**: FTP, CSS e soglia corsa in `physiology_zones` sono entro i bound fisiologici plausibili (FTP 80-450W, threshold 150-360 s/km, CSS 70-150 s/100m)
 - [x] **FITNESS-03**: Il CSS è calcolato correttamente con guard `t400 > t200 > 0` — nessun valore negativo o assurdo
-- [ ] **FITNESS-04**: Il brief mostra le zone precise (Z1/Z2/Z3/Z4/Z5) basate su physiology_zones misurate per ogni disciplina
+- [x] **FITNESS-04**: Il brief mostra le zone precise (Z1/Z2/Z3/Z4/Z5) basate su physiology_zones misurate per ogni disciplina
 
 ### Resilienza Pipeline (PIPELINE)
 
@@ -155,11 +155,11 @@
 | PIPELINE-02 | Phase 3 | Pending |
 | PIPELINE-03 | Phase 3 | Pending |
 | PIPELINE-04 | Phase 3 | Pending |
-| VERIFY-03 | Phase 4 | Pending |
-| VERIFY-04 | Phase 4 | Pending |
-| VERIFY-05 | Phase 4 | Pending |
-| VERIFY-06 | Phase 4 | Pending |
-| FITNESS-04 | Phase 4 | Pending |
+| VERIFY-03 | Phase 4 | Complete |
+| VERIFY-04 | Phase 4 | Complete |
+| VERIFY-05 | Phase 4 | Complete |
+| VERIFY-06 | Phase 4 | Complete |
+| FITNESS-04 | Phase 4 | Complete |
 | WORKOUT-01 | Phase 5 | Pending |
 | WORKOUT-02 | Phase 5 | Pending |
 | WORKOUT-03 | Phase 5 | Pending |
