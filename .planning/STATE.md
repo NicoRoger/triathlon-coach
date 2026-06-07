@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-07T11:05:53.968Z"
+last_updated: "2026-06-07T11:19:12.307Z"
 progress:
   total_phases: 11
   completed_phases: 2
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 03 (deploy-pipeline-resilience) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Phase: 03 (deploy-pipeline-resilience) — NEXT
 **Phase:** 3
 **Phase Name:** Deploy & Pipeline Resilience
@@ -52,6 +52,7 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 | Blockers | None | 2026-06-05 |
 
 ---
+| Phase 03 P04 | 12min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -88,7 +89,7 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-07T11:05:53.900Z
+**Last session:** 2026-06-07T11:19:12.253Z
 **Next action:** Execute Phase 03 Plan 04 (03-04-PLAN.md) — live behavior verification checkpoint
 
 **Context to reload next session:**
@@ -102,3 +103,7 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 *State initialized: 2026-06-05*
 *Last updated: 2026-06-05 after roadmap creation*
+
+## Decisions
+
+- [Phase 03]: DEPLOY-03: bot deployato con K2/K3/K4/K5 live dopo migrazioni confermate (D-01 rispettato); wrangler deploy v604ae1fc

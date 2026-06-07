@@ -23,7 +23,7 @@
 
 - [x] **DEPLOY-01**: Tutte le migrazioni pending in `OPEN_ISSUES.md` sono state eseguite in Supabase e verificate (CHECK constraint, UNIQUE, FK ON DELETE, expires_at, kind values)
 - [x] **DEPLOY-02**: La migrazione `2026-06-01-resilience-audit.sql` è stata eseguita e il suo contenuto è live sul DB
-- [ ] **DEPLOY-03**: Il Telegram bot è stato ridistribuito con `wrangler deploy` e i fix K2/K3/K4/K5 sono attivi (status routing, kind constraint, webhook guard, resp.ok check)
+- [x] **DEPLOY-03**: Il Telegram bot è stato ridistribuito con `wrangler deploy` e i fix K2/K3/K4/K5 sono attivi (status routing, kind constraint, webhook guard, resp.ok check)
 - [ ] **DEPLOY-04**: `apply_accepted_modulations` è chiamato da `ingest.yml` e nel primo run post-deploy una modulazione accepted transita ad applied
 
 ### Correttezza Logiche Analytics (ANALYTICS)
@@ -149,7 +149,7 @@
 | VERIFY-02 | Phase 2 | Complete |
 | DEPLOY-01 | Phase 3 | Complete |
 | DEPLOY-02 | Phase 3 | Complete |
-| DEPLOY-03 | Phase 3 | Pending |
+| DEPLOY-03 | Phase 3 | Complete |
 | DEPLOY-04 | Phase 3 | Pending |
 | PIPELINE-01 | Phase 3 | Pending |
 | PIPELINE-02 | Phase 3 | Pending |
