@@ -82,7 +82,7 @@ def _verify_brief_zones(sb) -> bool:
         else:
             disc_list = ", ".join(f"{d}={v}" for d, v in sorted(by_disc.items()))
             print(f"  [OK] physiology_zones: {disc_list}")
-            print(f"  [OK] briefing.py legge physiology_zones → Zone misurate nel brief")
+            print(f"  [OK] briefing.py legge physiology_zones -> Zone misurate nel brief")
 
     except Exception as exc:
         print(f"  ERRORE sezione BRIEF ZONES: {exc}")
@@ -186,9 +186,9 @@ def _verify_plan_modulations(sb) -> bool:
             # Verifica che ci sia almeno una riga applied (VERIFY-05)
             applied_count = breakdown.get("applied", 0)
             if applied_count > 0:
-                print(f"  [OK] {applied_count} modulazione(i) applicata(e) — flusso accepted→applied OK")
+                print(f"  [OK] {applied_count} modulazione(i) applicata(e) — flusso accepted->applied OK")
             else:
-                print("  [ATTENZIONE] Nessuna modulazione con status='applied' — verificare flusso Telegram→planned_sessions")
+                print("  [ATTENZIONE] Nessuna modulazione con status='applied' — verificare flusso Telegram->planned_sessions")
                 ok = False
 
     except Exception as exc:
