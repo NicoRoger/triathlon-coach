@@ -738,22 +738,25 @@ Commit struttura JSONB con `commit_plan_change` includendo:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Seed idempotenza per `active_constraints`**
    - What we know: ON CONFLICT DO NOTHING richiede un UNIQUE constraint
    - What's unclear: Usare UNIQUE (discipline, type) o WHERE NOT EXISTS pattern
    - Recommendation: UNIQUE (discipline, type) se si assume un solo vincolo per disciplina per tipo — altrimenti WHERE NOT EXISTS. Il planner dovrebbe scegliere WHERE NOT EXISTS per flessibilità futura (Nicolò potrebbe avere due vincoli swim simultanei).
+   - RESOLVED: 05-01-PLAN.md Task 1 usa esplicitamente `WHERE NOT EXISTS` con guard su `(type='injury' AND discipline='swim' AND resolved_at IS NULL)` — flessibilità futura preservata.
 
 2. **`current_progression_step` quando mesocycle null**
    - What we know: Se nessun mesociclo è attivo, `active_mesocycle` è null
    - What's unclear: Cosa deve fare il skill quando non c'è progressione in DB
    - Recommendation: Il skill deve avere fallback esplicito nel prompt: "Se `current_progression_step` è null o non disponibile, usa progressione conservativa (volume minore della media)."
+   - RESOLVED: 05-02-PLAN.md `deriveProgressionStep` ritorna `null` se mesocycle/progression_plan/start_date assenti; 05-03-PLAN.md task per propose_session include istruzione fallback esplicita nel prompt quando `current_progression_step` è null.
 
 3. **Deploy Worker — wrangler deploy necessario**
    - What we know: CLAUDE.md e ROADMAP confermano che ogni modifica al Worker richiede `wrangler deploy`
    - What's unclear: Il planner deve includere un task esplicito di deploy post-modifica
    - Recommendation: Includere task `wrangler deploy` come ultimo task di ogni wave che modifica `index.ts`.
+   - RESOLVED: 05-02-PLAN.md contiene un task `checkpoint:human-action` esplicito con istruzioni `wrangler deploy` — nessun task autonomo può deployare senza credenziali Cloudflare.
 
 ---
 
