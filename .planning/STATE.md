@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-07T14:32:45.523Z"
+last_updated: "2026-06-07T14:36:45.693Z"
 progress:
   total_phases: 11
   completed_phases: 3
-  total_plans: 9
+  total_plans: 13
   completed_plans: 9
   percent: 27
 ---
@@ -18,7 +18,7 @@ progress:
 
 **Core Value:** Ogni mattina Nicolò riceve dati corretti, analisi attendibili e prescrizioni allineate all'allenamento élite — e può fidarsi ciecamente del sistema per prepararsi alla gara.
 
-**Current Focus:** Phase 04 — Live Behavior Verification
+**Current Focus:** Phase 04 — live-behavior-verification
 
 **Milestone:** Integrità & Qualità Elite (audit-resilience-2026-06-01 verification + coaching quality elevation)
 
@@ -26,11 +26,12 @@ progress:
 
 ## Current Position
 
-Phase: 03 (deploy-pipeline-resilience) — COMPLETED (4/4 piani completati)
+Phase: 04 (live-behavior-verification) — EXECUTING
+Plan: 1 of 4
 Phase: 04 (live-behavior-verification) — NEXT
 **Phase:** 4
 **Phase Name:** Live Behavior Verification
-**Status:** Ready to execute
+**Status:** Executing Phase 04
 
 ```
 Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
@@ -88,8 +89,8 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-07T12:21:55.368Z
-**Next action:** Phase 04 — Live Behavior Verification (plans TBD, dipende da Phase 3 completata)
+**Last session:** 2026-06-07T14:55:00.000Z
+**Next action:** Phase 04 — Plan 04 (verify_live_behavior.py + checkpoint finale 4/4 OK)
 
 **Context to reload next session:**
 
@@ -108,3 +109,5 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 - [Phase 03]: DEPLOY-03: bot deployato con K2/K3/K4/K5 live dopo migrazioni confermate (D-01 rispettato); wrangler deploy v604ae1fc
 - [Phase 03]: K4 no-500 confermato live via Telegram; K5 accept-tap deferito a Phase 4 VERIFY-05 (nessuna proposta disponibile per test)
 - [Phase 03]: Phase 3 completa — 4/4 piani completati (03-01 migrazioni, 03-02 modulation wiring, 03-03 pipeline guards, 03-04 bot deploy)
+- [Phase 04-03]: BUDGET_DEGRADED = 4.00 (era 4.50) — ROADMAP SC4 allineato; select_model ristrutturato per evitare ramo irraggiungibile con BUDGET_WARNING == BUDGET_DEGRADED
+- [Phase 04-03]: VERIFY-06 completato: soglia degrado €4.00 verificata via test (23/23 passati, 7 nuovi test VERIFY-06)

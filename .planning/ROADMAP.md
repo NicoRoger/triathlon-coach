@@ -108,7 +108,7 @@ Plans:
 
 - [ ] 04-01-PLAN.md — Brief zone misurate (VERIFY-03 + FITNESS-04): physiology_zones → Z1-Z5 inline nel brief
 - [ ] 04-02-PLAN.md — Pipeline session_analyses + modulazione end-to-end (VERIFY-04 + VERIFY-05 + DEPLOY-04): routing Gemini, accepted→applied
-- [ ] 04-03-PLAN.md — Budget tracker (VERIFY-06): soglia degrado Sonnet→Haiku allineata a €4.00
+- [x] 04-03-PLAN.md — Budget tracker (VERIFY-06): soglia degrado Sonnet→Haiku allineata a €4.00
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
