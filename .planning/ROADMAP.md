@@ -13,7 +13,8 @@
 - [x] **Phase 1: Test Suite & Analytics Correctness** — La suite pytest è verde e le logiche analytics (HRV, PMC, readiness, risk) si comportano correttamente su dati reali (completed 2026-06-05)
 - [x] **Phase 2: Fitness Test Correctness** — I valori physiology_zones (FTP, CSS, soglia corsa) nel DB sono corretti, plausibili e non corrotti dai bug E1/E2 (completed 2026-06-05)
 - [x] **Phase 3: Deploy & Pipeline Resilience** — Migrazioni eseguite, Telegram bot ridistribuito, pipeline ingest resiliente con exit codes e DR corretti (completed 2026-06-07)
-- [x] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget (completed 2026-06-07)
+- [x] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget
+ (completed 2026-06-07)
 - [ ] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò
 - [ ] **Phase 6: Physiological Adaptation Intelligence** — Il sistema distingue cedimento muscolare da cardiovascolare e integra i beliefs di adattamento nelle prescrizioni
 - [ ] **Phase 7: Situational Resilience & Automation** — Gestione automatica di spostamenti, sessioni saltate, trasferte Croazia e malattia — senza aumentare i costi LLM
@@ -128,7 +129,24 @@ Plans:
   4. Il TSS atteso di ogni sessione è documentato ed è coerente con il budget settimanale del mesociclo corrente
   5. Il mix settimanale rispetta l'80/20: almeno 80% delle sessioni è Z1-Z2, i blocchi di qualità (Z4-Z5) sono programmati su giorni non consecutivi
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Migration active_constraints + progression_plan + test WORKOUT-03 + scaffold verify script
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 05-02-PLAN.md — MCP Worker: age_days, active_constraints, current_progression_step, update_constraint, progression_plan + deploy
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 05-03-PLAN.md — Skill prompts: propose_session/generate_mesocycle/fitness_test (gate fisiologico, vincoli dinamici, drill, contesto mesociclo, race-pace)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 05-04-PLAN.md — Phase gate: apply migration + verify script completo + suite pytest + checkpoint output LLM (WORKOUT-01..05)
 
 ### Phase 6: Physiological Adaptation Intelligence
 
