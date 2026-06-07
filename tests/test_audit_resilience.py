@@ -996,3 +996,102 @@ def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
     sn.main()
     assert len(sent) == 1, "alle 21:30 Rome con gate 21 deve inviare"
+
+
+# ===========================================================================
+# PIPELINE-04 — brief idempotency: _brief_already_sent_today() unit test
+# (Wave 0 test gap — copertura esplicita per il guard di briefing.py main())
+# ===========================================================================
+
+class _IdempotencyFakeQuery:
+    """Fake supabase chained-builder per _brief_already_sent_today.
+
+    Implementa: .table("bot_messages").select(...).eq(col, val).gte(...).limit(1).execute()
+    Traccia gli argomenti passati a .eq() per verificare che il filtro corretto
+    venga applicato (purpose == 'morning_brief').
+    """
+
+    def __init__(self, rows: list[dict]):
+        self._rows = rows
+        self.eq_calls: list[tuple[str, str]] = []  # traccia (col, val) di ogni .eq()
+
+    def select(self, *a, **k) -> "_IdempotencyFakeQuery":
+        return self
+
+    def eq(self, col: str, val: str) -> "_IdempotencyFakeQuery":
+        self.eq_calls.append((col, val))
+        return self
+
+    def gte(self, *a, **k) -> "_IdempotencyFakeQuery":
+        return self
+
+    def limit(self, *a, **k) -> "_IdempotencyFakeQuery":
+        return self
+
+    def execute(self):
+        return types.SimpleNamespace(data=list(self._rows))
+
+
+class _IdempotencyFakeSupabase:
+    """Fake supabase client per _brief_already_sent_today.
+
+    Espone .table() che ritorna sempre lo stesso _IdempotencyFakeQuery
+    configurato con le righe simulate, così i test possono ispezionare
+    eq_calls dopo l'esecuzione della funzione.
+    """
+
+    def __init__(self, rows: list[dict]):
+        self._query = _IdempotencyFakeQuery(rows)
+
+    def table(self, name: str) -> _IdempotencyFakeQuery:
+        return self._query
+
+
+def test_pipeline04_brief_idempotency_skips_when_already_sent():
+    """_brief_already_sent_today restituisce True quando esiste una riga morning_brief recente.
+
+    Assicura che il guard in briefing.main() blocchi correttamente un secondo invio
+    quando un brief è già stato spedito nella finestra di 6 ore.
+    Questo test chiude il gap di copertura PIPELINE-04 (Wave 0 VALIDATION.md).
+    """
+    from coach.planning.briefing import _brief_already_sent_today
+
+    fake_sb = _IdempotencyFakeSupabase(
+        rows=[{"id": "abc123", "sent_at": "2026-06-07T06:00:00+00:00"}]
+    )
+    result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+    assert result is True, (
+        "_brief_already_sent_today deve restituire True quando una riga morning_brief esiste"
+    )
+
+
+def test_pipeline04_brief_idempotency_sends_when_none():
+    """_brief_already_sent_today restituisce False quando non esistono righe morning_brief recenti.
+
+    Assicura che il guard non blocchi il primo invio mattutino.
+    """
+    from coach.planning.briefing import _brief_already_sent_today
+
+    fake_sb = _IdempotencyFakeSupabase(rows=[])
+    result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+    assert result is False, (
+        "_brief_already_sent_today deve restituire False quando nessuna riga morning_brief esiste"
+    )
+
+
+def test_pipeline04_brief_idempotency_filters_on_morning_brief_purpose():
+    """_brief_already_sent_today filtra esplicitamente su purpose == 'morning_brief'.
+
+    Verifica che il guard non si attivi per qualsiasi messaggio bot, ma solo
+    per quelli con purpose='morning_brief', evitando falsi positivi.
+    """
+    from coach.planning.briefing import _brief_already_sent_today
+
+    fake_sb = _IdempotencyFakeSupabase(rows=[])
+    _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+
+    eq_calls = fake_sb._query.eq_calls
+    assert ("purpose", "morning_brief") in eq_calls, (
+        f"_brief_already_sent_today deve filtrare su purpose='morning_brief'; "
+        f"eq_calls trovate: {eq_calls}"
+    )
