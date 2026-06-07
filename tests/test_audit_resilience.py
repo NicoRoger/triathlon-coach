@@ -1056,10 +1056,12 @@ def test_pipeline04_brief_idempotency_skips_when_already_sent():
     quando un brief è già stato spedito nella finestra di 6 ore.
     Questo test chiude il gap di copertura PIPELINE-04 (Wave 0 VALIDATION.md).
     """
+    from datetime import datetime, timezone, timedelta
     from coach.planning.briefing import _brief_already_sent_today
 
+    recent_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     fake_sb = _IdempotencyFakeSupabase(
-        rows=[{"id": "abc123", "sent_at": "2026-06-07T06:00:00+00:00"}]
+        rows=[{"id": "abc123", "sent_at": recent_ts}]
     )
     result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
     assert result is True, (
