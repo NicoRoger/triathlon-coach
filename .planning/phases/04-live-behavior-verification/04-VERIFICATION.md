@@ -1,8 +1,8 @@
 ---
 phase: 04-live-behavior-verification
 verified: 2026-06-07T18:00:00Z
-status: human_needed
-score: 4/5 must-haves verified
+status: passed
+score: 5/5 must-haves verified
 overrides_applied: 0
 human_verification:
   - test: "Aprire l'ultimo brief ricevuto su Telegram (2026-06-07) e confermare visivamente che il testo contenga la riga 'Zone misurate:' con watt/pace/HR numerici reali per la disciplina della sessione del giorno"
