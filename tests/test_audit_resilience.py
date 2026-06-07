@@ -1022,7 +1022,9 @@ class _IdempotencyFakeQuery:
         self.eq_calls.append((col, val))
         return self
 
-    def gte(self, *a, **k) -> "_IdempotencyFakeQuery":
+    def gte(self, field: str, value: str) -> "_IdempotencyFakeQuery":
+        """Filtra le righe mantenendo solo quelle con row[field] >= value (confronto stringa ISO 8601)."""
+        self._rows = [r for r in self._rows if r.get(field, "") >= value]
         return self
 
     def limit(self, *a, **k) -> "_IdempotencyFakeQuery":
@@ -1094,4 +1096,32 @@ def test_pipeline04_brief_idempotency_filters_on_morning_brief_purpose():
     assert ("purpose", "morning_brief") in eq_calls, (
         f"_brief_already_sent_today deve filtrare su purpose='morning_brief'; "
         f"eq_calls trovate: {eq_calls}"
+    )
+
+
+def test_pipeline04_brief_idempotency_old_brief_does_not_block():
+    """Una riga morning_brief con sent_at > 6h fa non deve bloccare il nuovo invio.
+
+    Verifica che la finestra temporale di 6h sia effettivamente applicata dal guard:
+    un brief inviato 8 ore fa non deve essere considerato "recente" e non deve
+    impedire un nuovo invio mattutino. Complemento di
+    test_pipeline04_brief_idempotency_skips_when_already_sent.
+    """
+    from unittest.mock import patch
+    from datetime import datetime, timezone, timedelta
+    from coach.planning.briefing import _brief_already_sent_today
+
+    # Timestamp fisso "ora" per rendere il test deterministico
+    frozen_now = datetime(2026, 6, 7, 9, 0, 0, tzinfo=timezone.utc)
+    # sent_at = 8h prima di frozen_now → fuori dalla finestra di 6h
+    old_ts = (frozen_now - timedelta(hours=8)).isoformat()
+    fake_sb = _IdempotencyFakeSupabase(rows=[{"id": "old", "sent_at": old_ts}])
+
+    with patch("coach.planning.briefing.datetime") as mock_dt:
+        mock_dt.now.return_value = frozen_now
+        result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+
+    assert result is False, (
+        "_brief_already_sent_today deve restituire False per brief inviato 8h fa "
+        "(fuori dalla finestra di 6h)"
     )
