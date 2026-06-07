@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 
 # ---------------------------------------------------------------------------
-# Stub dipendenze esterne per fitness_test_processor
+# Stub dipendenze esterne
 # ---------------------------------------------------------------------------
 def _make_stub(name: str) -> types.ModuleType:
     mod = types.ModuleType(name)
@@ -25,6 +25,13 @@ for _name in [
     "coach.utils.dt", "coach.utils.health",
     "coach.utils.telegram_logger",
     "coach.coaching",
+    "coach.utils.health",
+    "coach.planning",
+    "coach.planning.personalized_insert",
+    "coach.analytics",
+    "coach.analytics.belief_engine",
+    "coach.analytics.risk",
+    "coach.coaching.modulation",
 ]:
     if _name not in sys.modules:
         sys.modules[_name] = _make_stub(_name)
@@ -32,10 +39,17 @@ for _name in [
 sys.modules["coach.utils.supabase_client"].get_supabase = MagicMock(return_value=MagicMock())  # type: ignore
 sys.modules["coach.utils.dt"].today_rome = MagicMock(return_value="2026-06-15")  # type: ignore
 sys.modules["coach.utils.telegram_logger"].send_and_log_message = MagicMock()  # type: ignore
+sys.modules["coach.utils.health"].record_health = MagicMock()  # type: ignore
+
+# Mock requests per evitare import errors in briefing
+if "requests" not in sys.modules:
+    sys.modules["requests"] = MagicMock()
 
 import importlib.util as _ilu
 
-# Load fitness_test_processor
+# ---------------------------------------------------------------------------
+# Carica fitness_test_processor
+# ---------------------------------------------------------------------------
 _ftp_spec = _ilu.spec_from_file_location(
     "coach.coaching.fitness_test_processor",
     Path(__file__).resolve().parent.parent / "coach" / "coaching" / "fitness_test_processor.py",
@@ -45,6 +59,27 @@ sys.modules["coach.coaching.fitness_test_processor"] = _ftp_mod
 _ftp_spec.loader.exec_module(_ftp_mod)  # type: ignore
 
 derive_zones_for_discipline = _ftp_mod.derive_zones_for_discipline
+
+
+# ---------------------------------------------------------------------------
+# Helper lazy per briefing.py (evita errori a collection time se non ancora
+# implementato)
+# ---------------------------------------------------------------------------
+_br_mod = None
+
+
+def _get_briefing():
+    global _br_mod
+    if _br_mod is not None:
+        return _br_mod
+    _br_spec = _ilu.spec_from_file_location(
+        "coach.planning.briefing",
+        Path(__file__).resolve().parent.parent / "coach" / "planning" / "briefing.py",
+    )
+    _br_mod = _ilu.module_from_spec(_br_spec)  # type: ignore
+    sys.modules["coach.planning.briefing"] = _br_mod
+    _br_spec.loader.exec_module(_br_mod)  # type: ignore
+    return _br_mod
 
 
 # ---------------------------------------------------------------------------
@@ -88,47 +123,13 @@ def test_derive_bike_ftp_none_returns_empty():
 
 
 # ---------------------------------------------------------------------------
-# Stub dipendenze extra per briefing.py (Task 2)
-# ---------------------------------------------------------------------------
-
-# Stub per briefing.py - evita connessioni DB e import pesanti
-for _name in [
-    "coach.utils.health",
-    "coach.planning",
-    "coach.planning.personalized_insert",
-    "coach.analytics",
-    "coach.analytics.belief_engine",
-    "coach.analytics.risk",
-    "coach.coaching.modulation",
-]:
-    if _name not in sys.modules:
-        sys.modules[_name] = _make_stub(_name)
-
-sys.modules["coach.utils.health"].record_health = MagicMock()  # type: ignore
-
-# Mock requests per evitare import errors in briefing
-if "requests" not in sys.modules:
-    sys.modules["requests"] = MagicMock()
-
-# Load briefing.py
-_br_spec = _ilu.spec_from_file_location(
-    "coach.planning.briefing",
-    Path(__file__).resolve().parent.parent / "coach" / "planning" / "briefing.py",
-)
-_br_mod = _ilu.module_from_spec(_br_spec)  # type: ignore
-sys.modules["coach.planning.briefing"] = _br_mod
-_br_spec.loader.exec_module(_br_mod)  # type: ignore
-
-_format_session_zones = _br_mod._format_session_zones
-
-
-# ---------------------------------------------------------------------------
-# Task 2 — test 5-8: _format_session_zones
+# Task 2 — test 5-8: _format_session_zones (lazy load di briefing.py)
 # ---------------------------------------------------------------------------
 
 def test_format_session_zones_run_contains_pace():
     """Test 5: run con threshold 263s/km -> stringa non vuota con '/km'."""
-    result = _format_session_zones("run", {"run": {"threshold_pace_s_per_km": 263}})
+    fn = _get_briefing()._format_session_zones
+    result = fn("run", {"run": {"threshold_pace_s_per_km": 263}})
     assert result is not None and result != "", "Deve ritornare stringa non vuota per run"
     assert "/km" in result, f"Deve contenere '/km', trovato: {result!r}"
     assert "4:" in result or "5:" in result, f"Atteso pace intorno a 4-5 min/km, trovato: {result!r}"
@@ -136,14 +137,16 @@ def test_format_session_zones_run_contains_pace():
 
 def test_format_session_zones_swim_contains_per100m():
     """Test 6: swim con CSS 80s/100m -> stringa con '/100m'."""
-    result = _format_session_zones("swim", {"swim": {"css_pace_s_per_100m": 80}})
+    fn = _get_briefing()._format_session_zones
+    result = fn("swim", {"swim": {"css_pace_s_per_100m": 80}})
     assert result is not None and result != "", "Deve ritornare stringa non vuota per nuoto"
     assert "/100m" in result, f"Deve contenere '/100m', trovato: {result!r}"
 
 
 def test_format_session_zones_bike_ftp_none_placeholder():
     """Test 7: bike con ftp_w=None -> placeholder con 'FTP' e 'non'."""
-    result = _format_session_zones("bike", {"bike": {"ftp_w": None}})
+    fn = _get_briefing()._format_session_zones
+    result = fn("bike", {"bike": {"ftp_w": None}})
     assert result is not None, "Non deve ritornare None per bici senza FTP"
     assert "FTP" in result, f"Deve contenere 'FTP', trovato: {result!r}"
     assert "non" in result.lower(), f"Deve contenere 'non', trovato: {result!r}"
@@ -151,8 +154,9 @@ def test_format_session_zones_bike_ftp_none_placeholder():
 
 def test_format_session_zones_bike_no_data_no_crash():
     """Test 8: bike con dict vuoto -> None o stringa vuota, nessun crash."""
+    fn = _get_briefing()._format_session_zones
     try:
-        result = _format_session_zones("bike", {})
+        result = fn("bike", {})
         assert result is None or result == "", f"Atteso None o stringa vuota, trovato: {result!r}"
     except Exception as e:
         raise AssertionError(f"Non deve sollevare eccezione, trovato: {e}") from e

@@ -425,6 +425,45 @@ def _format_result(test_type: str, result: float) -> str:
     return str(result)
 
 
+# ── Zone derivation (module-level, reusable) ──────────────────────────────
+
+def derive_zones_for_discipline(
+    discipline: str,
+    ftp_w: Optional[float] = None,
+    threshold_pace_s_per_km: Optional[float] = None,
+    css_pace_s_per_100m: Optional[float] = None,
+    lthr: Optional[float] = None,
+) -> dict:
+    """Deriva le zone fisiologiche Z1-Z5 per la disciplina specificata.
+
+    Riusa i @staticmethod esistenti di FitnessTestProcessor senza istanziare
+    il processore. Ritorna {} se il valore richiesto per la disciplina e' None.
+
+    Args:
+        discipline: "bike", "run" o "swim"
+        ftp_w: FTP in watt (per bici)
+        threshold_pace_s_per_km: passo soglia in s/km (per corsa)
+        css_pace_s_per_100m: CSS in s/100m (per nuoto)
+        lthr: soglia HR in bpm (parametro accettato, riservato a uso futuro)
+
+    Returns:
+        dict con chiavi zona (es. "Z2_endurance") o {} se dato mancante
+    """
+    if discipline == "bike":
+        if ftp_w is None:
+            return {}
+        return FitnessTestProcessor._compute_coggan_7zone(float(ftp_w))
+    if discipline == "run":
+        if threshold_pace_s_per_km is None:
+            return {}
+        return FitnessTestProcessor._compute_pace_5zone(float(threshold_pace_s_per_km))
+    if discipline == "swim":
+        if css_pace_s_per_100m is None:
+            return {}
+        return FitnessTestProcessor._compute_css_3zone(float(css_pace_s_per_100m))
+    return {}
+
+
 # ── CLI entry point ────────────────────────────────────────────────────────
 
 def check_recent() -> list[dict]:
