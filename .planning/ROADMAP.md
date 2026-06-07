@@ -12,7 +12,7 @@
 
 - [x] **Phase 1: Test Suite & Analytics Correctness** — La suite pytest è verde e le logiche analytics (HRV, PMC, readiness, risk) si comportano correttamente su dati reali (completed 2026-06-05)
 - [x] **Phase 2: Fitness Test Correctness** — I valori physiology_zones (FTP, CSS, soglia corsa) nel DB sono corretti, plausibili e non corrotti dai bug E1/E2 (completed 2026-06-05)
-- [ ] **Phase 3: Deploy & Pipeline Resilience** — Migrazioni eseguite, Telegram bot ridistribuito, pipeline ingest resiliente con exit codes e DR corretti
+- [x] **Phase 3: Deploy & Pipeline Resilience** — Migrazioni eseguite, Telegram bot ridistribuito, pipeline ingest resiliente con exit codes e DR corretti (completed 2026-06-07)
 - [ ] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget
 - [ ] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò
 - [ ] **Phase 6: Physiological Adaptation Intelligence** — Il sistema distingue cedimento muscolare da cardiovascolare e integra i beliefs di adattamento nelle prescrizioni
@@ -216,7 +216,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
-| 3. Deploy & Pipeline Resilience | 3/4 | In Progress|  |
+| 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 0/0 | Not started | - |
 | 5. Workout Prescription Quality | 0/0 | Not started | - |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
@@ -242,11 +242,11 @@ Plans:
 | FITNESS-02 | Phase 2 | Pending |
 | FITNESS-03 | Phase 2 | Pending |
 | VERIFY-02 | Phase 2 | Pending |
-| DEPLOY-01 | Phase 3 | Pending |
-| DEPLOY-02 | Phase 3 | Pending |
-| DEPLOY-03 | Phase 3 | Pending |
-| DEPLOY-04 | Phase 3 | Pending |
-| PIPELINE-01 | Phase 3 | Pending |
+| DEPLOY-01 | Phase 3 | Complete |
+| DEPLOY-02 | Phase 3 | Complete |
+| DEPLOY-03 | Phase 3 | Complete |
+| DEPLOY-04 | Phase 3 | Complete |
+| PIPELINE-01 | Phase 3 | Complete |
 | PIPELINE-02 | Phase 3 | Complete |
 | PIPELINE-03 | Phase 3 | Complete |
 | PIPELINE-04 | Phase 3 | Complete |

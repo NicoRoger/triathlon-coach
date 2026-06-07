@@ -8,8 +8,8 @@ progress:
   total_phases: 11
   completed_phases: 2
   total_plans: 9
-  completed_plans: 8
-  percent: 18
+  completed_plans: 9
+  percent: 20
 ---
 
 # State: Triathlon AI Coach — Integrità & Qualità Elite
@@ -18,7 +18,7 @@ progress:
 
 **Core Value:** Ogni mattina Nicolò riceve dati corretti, analisi attendibili e prescrizioni allineate all'allenamento élite — e può fidarsi ciecamente del sistema per prepararsi alla gara.
 
-**Current Focus:** Phase 03 — deploy-pipeline-resilience (Plan 4 of 4 remaining)
+**Current Focus:** Phase 04 — Live Behavior Verification
 
 **Milestone:** Integrità & Qualità Elite (audit-resilience-2026-06-01 verification + coaching quality elevation)
 
@@ -26,11 +26,10 @@ progress:
 
 ## Current Position
 
-Phase: 03 (deploy-pipeline-resilience) — EXECUTING
-Plan: 3 of 4
-Phase: 03 (deploy-pipeline-resilience) — NEXT
-**Phase:** 3
-**Phase Name:** Deploy & Pipeline Resilience
+Phase: 03 (deploy-pipeline-resilience) — COMPLETED (4/4 piani completati)
+Phase: 04 (live-behavior-verification) — NEXT
+**Phase:** 4
+**Phase Name:** Live Behavior Verification
 **Status:** Ready to execute
 
 ```
@@ -89,8 +88,8 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-07T11:19:12.253Z
-**Next action:** Execute Phase 03 Plan 04 (03-04-PLAN.md) — live behavior verification checkpoint
+**Last session:** 2026-06-07
+**Next action:** Phase 04 — Live Behavior Verification (plans TBD, dipende da Phase 3 completata)
 
 **Context to reload next session:**
 
@@ -107,3 +106,5 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 ## Decisions
 
 - [Phase 03]: DEPLOY-03: bot deployato con K2/K3/K4/K5 live dopo migrazioni confermate (D-01 rispettato); wrangler deploy v604ae1fc
+- [Phase 03]: K4 no-500 confermato live via Telegram; K5 accept-tap deferito a Phase 4 VERIFY-05 (nessuna proposta disponibile per test)
+- [Phase 03]: Phase 3 completa — 4/4 piani completati (03-01 migrazioni, 03-02 modulation wiring, 03-03 pipeline guards, 03-04 bot deploy)
