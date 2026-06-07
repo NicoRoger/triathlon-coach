@@ -68,7 +68,6 @@ jobs:
         #run: python -m coach.ingest.strava
 
       - name: Compute daily metrics
-        if: always()
         run: python -m coach.analytics.daily
 
       - name: Post-session analysis
