@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-06-06T00:00:00.000Z"
+status: verifying
+last_updated: "2026-06-07T09:41:24.146Z"
 progress:
   total_phases: 11
   completed_phases: 2
@@ -86,7 +86,7 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-06
+**Last session:** 2026-06-05T22:18:49.247Z
 **Next action:** Execute Phase 03 — read OPEN_ISSUES.md and docs/audit_resilience_2026-06-01.md §Da fare manualmente first
 
 **Context to reload next session:**

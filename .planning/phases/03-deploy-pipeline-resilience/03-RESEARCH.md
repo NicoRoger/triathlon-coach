@@ -496,22 +496,25 @@ def main():
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`if: always()` on apply_accepted_modulations step (A3)**
    - What we know: D-06 says "remove `if: always()`". Current `ingest.yml` has `if: always()`.
    - What's unclear: Whether the current code is the intended final state (tracking decision) or a bug
    - Recommendation: Planner should include a task to change to `if: success()` per D-06. Low risk change.
+   - RESOLVED: 03-02 Task 1 removes `if: always()` from the apply-accepted step (one-line deletion).
 
 2. **information_schema access method for verify_migrations.py (A1)**
    - What we know: `supabase-py >= 2.0` has `sb.schema()` method
    - What's unclear: Whether PostgREST on Supabase managed exposes `information_schema` schema
    - Recommendation: Implement with `sb.schema("information_schema")` as primary; add try/except with RPC fallback
+   - RESOLVED: 03-01 Task 1 implements primary `sb.schema("information_schema")` path with mandatory `sb.rpc()` fallback and Pitfall 4 recovery instructions.
 
 3. **OPEN_ISSUES.md does not exist**
    - What we know: `STATE.md` references reading `OPEN_ISSUES.md` before Phase 3. The file does not exist on disk.
    - What's unclear: Whether migrations from `OPEN_ISSUES.md` were already tracked inside `audit_resilience_2026-06-01.md` (which comprehensively lists all migrations) or if there's a separate list
    - Recommendation: `audit_resilience_2026-06-01.md §Da fare manualmente` is the authoritative migration list. The single migration file `2026-06-01-resilience-audit.sql` covers all Phase 3 schema changes. No additional OPEN_ISSUES.md action needed.
+   - RESOLVED: Plans use `docs/audit_resilience_2026-06-01.md §Da fare manualmente` as the authoritative migration list; 03-01 Task 2 references the full 11-migration sequence from that document.
 
 ---
 
