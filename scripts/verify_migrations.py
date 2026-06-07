@@ -10,6 +10,8 @@ Uso:
 import logging
 import sys
 
+from supabase import Client
+
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -40,8 +42,8 @@ EXPECTED_COLUMNS = [
 ]
 
 
-def _fetch_constraints(sb) -> set:
-    """Recupera i nomi dei vincoli presenti in information_schema.table_constraints.
+def _fetch_constraints(sb: Client) -> set[tuple[str, str]]:
+    """Recupera le coppie (table_name, constraint_name) da information_schema.table_constraints.
 
     Prova prima via PostgREST schema('information_schema'); se non esposto (Pitfall 4
     — PostgREST non mostra information_schema via REST), ricade su RPC
@@ -56,7 +58,7 @@ def _fetch_constraints(sb) -> set:
             .execute()
         )
         if resp.data:
-            return {row["constraint_name"] for row in resp.data}
+            return {(row["table_name"], row["constraint_name"]) for row in resp.data}
         # Risposta vuota può indicare che information_schema non è esposto
         raise ValueError("information_schema query returned empty — trying RPC fallback")
     except Exception as exc:
@@ -67,11 +69,11 @@ def _fetch_constraints(sb) -> set:
         )
         resp = sb.rpc("get_public_constraints").execute()
         if resp.data:
-            return {row["constraint_name"] for row in resp.data}
+            return {(row["table_name"], row["constraint_name"]) for row in resp.data}
         return set()
 
 
-def _fetch_columns(sb) -> set:
+def _fetch_columns(sb: Client) -> set[tuple[str, str]]:
     """Recupera le coppie (table_name, column_name) presenti in information_schema.columns.
 
     Stessa strategia primaria/fallback di _fetch_constraints.
@@ -110,16 +112,19 @@ def main() -> None:
         results: list[tuple[str, bool]] = []
 
         # Vincoli UNIQUE
-        for _table, name in EXPECTED_UNIQUE_CONSTRAINTS:
-            results.append((name, name in live_constraints))
+        for table, name in EXPECTED_UNIQUE_CONSTRAINTS:
+            label = f"{table}.{name}"
+            results.append((label, (table, name) in live_constraints))
 
         # Vincoli FK
-        for _table, name in EXPECTED_FK_CONSTRAINTS:
-            results.append((name, name in live_constraints))
+        for table, name in EXPECTED_FK_CONSTRAINTS:
+            label = f"{table}.{name}"
+            results.append((label, (table, name) in live_constraints))
 
         # Vincoli CHECK
-        for _table, name in EXPECTED_CHECK_CONSTRAINTS:
-            results.append((name, name in live_constraints))
+        for table, name in EXPECTED_CHECK_CONSTRAINTS:
+            label = f"{table}.{name}"
+            results.append((label, (table, name) in live_constraints))
 
         # Colonne
         for table, col in EXPECTED_COLUMNS:
