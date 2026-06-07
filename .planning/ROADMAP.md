@@ -13,7 +13,7 @@
 - [x] **Phase 1: Test Suite & Analytics Correctness** — La suite pytest è verde e le logiche analytics (HRV, PMC, readiness, risk) si comportano correttamente su dati reali (completed 2026-06-05)
 - [x] **Phase 2: Fitness Test Correctness** — I valori physiology_zones (FTP, CSS, soglia corsa) nel DB sono corretti, plausibili e non corrotti dai bug E1/E2 (completed 2026-06-05)
 - [x] **Phase 3: Deploy & Pipeline Resilience** — Migrazioni eseguite, Telegram bot ridistribuito, pipeline ingest resiliente con exit codes e DR corretti (completed 2026-06-07)
-- [ ] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget
+- [x] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget (completed 2026-06-07)
 - [ ] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò
 - [ ] **Phase 6: Physiological Adaptation Intelligence** — Il sistema distingue cedimento muscolare da cardiovascolare e integra i beliefs di adattamento nelle prescrizioni
 - [ ] **Phase 7: Situational Resilience & Automation** — Gestione automatica di spostamenti, sessioni saltate, trasferte Croazia e malattia — senza aumentare i costi LLM
@@ -106,14 +106,13 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — Brief zone misurate (VERIFY-03 + FITNESS-04): physiology_zones → Z1-Z5 inline nel brief
-- [ ] 04-02-PLAN.md — Pipeline session_analyses + modulazione end-to-end (VERIFY-04 + VERIFY-05 + DEPLOY-04): routing Gemini, accepted→applied
+- [x] 04-01-PLAN.md — Brief zone misurate (VERIFY-03 + FITNESS-04): physiology_zones → Z1-Z5 inline nel brief
+- [x] 04-02-PLAN.md — Pipeline session_analyses + modulazione end-to-end (VERIFY-04 + VERIFY-05 + DEPLOY-04): routing Gemini, accepted→applied
 - [x] 04-03-PLAN.md — Budget tracker (VERIFY-06): soglia degrado Sonnet→Haiku allineata a €4.00
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-04-PLAN.md — Script verify_live_behavior.py read-only + checkpoint finale 4/4 OK
-
+- [x] 04-04-PLAN.md — Script verify_live_behavior.py read-only + checkpoint finale 4/4 OK
 
 ### Phase 5: Workout Prescription Quality
 
@@ -229,7 +228,7 @@ Plans:
 | 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
-| 4. Live Behavior Verification | 0/4 | Planned | - |
+| 4. Live Behavior Verification | 4/4 | Complete   | 2026-06-07 |
 | 5. Workout Prescription Quality | 0/0 | Not started | - |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
