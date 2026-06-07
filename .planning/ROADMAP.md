@@ -216,7 +216,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
-| 3. Deploy & Pipeline Resilience | 0/0 | Not started | - |
+| 3. Deploy & Pipeline Resilience | 3/4 | Executing | - |
 | 4. Live Behavior Verification | 0/0 | Not started | - |
 | 5. Workout Prescription Quality | 0/0 | Not started | - |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
@@ -247,9 +247,9 @@ Plans:
 | DEPLOY-03 | Phase 3 | Pending |
 | DEPLOY-04 | Phase 3 | Pending |
 | PIPELINE-01 | Phase 3 | Pending |
-| PIPELINE-02 | Phase 3 | Pending |
-| PIPELINE-03 | Phase 3 | Pending |
-| PIPELINE-04 | Phase 3 | Pending |
+| PIPELINE-02 | Phase 3 | Complete |
+| PIPELINE-03 | Phase 3 | Complete |
+| PIPELINE-04 | Phase 3 | Complete |
 | VERIFY-03 | Phase 4 | Pending |
 | VERIFY-04 | Phase 4 | Pending |
 | VERIFY-05 | Phase 4 | Pending |

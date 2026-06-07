@@ -18,7 +18,7 @@ progress:
 
 **Core Value:** Ogni mattina Nicolò riceve dati corretti, analisi attendibili e prescrizioni allineate all'allenamento élite — e può fidarsi ciecamente del sistema per prepararsi alla gara.
 
-**Current Focus:** Phase 03 — deploy-pipeline-resilience
+**Current Focus:** Phase 03 — deploy-pipeline-resilience (Plan 4 of 4 remaining)
 
 **Milestone:** Integrità & Qualità Elite (audit-resilience-2026-06-01 verification + coaching quality elevation)
 
@@ -64,6 +64,7 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 | Phase 3 before Phase 4 | Migrations must be live and bot deployed before verifying live behavior | Pre-start |
 | Phase 8 decoupled from main sequence | MCP auth is a security concern independent of coaching quality; depends only on deploy infra (Phase 3) | Pre-start |
 | Import PLAUSIBLE_BOUNDS from fitness_test_processor | Avoids duplication; bounds must be single source of truth across processor and verifier scripts | 02-01 |
+| PIPELINE-04 Wave 0 gap chiuso con 3 test espliciti (_IdempotencyFakeQuery/_IdempotencyFakeSupabase) | Coverage esplicita preferita a quella indiretta per guard critici di idempotency | 03-03 |
 
 ### Active Todos
 
@@ -87,8 +88,8 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-05T22:18:49.247Z
-**Next action:** Execute Phase 03 — read OPEN_ISSUES.md and docs/audit_resilience_2026-06-01.md §Da fare manualmente first
+**Last session:** 2026-06-07T10:32:59Z
+**Next action:** Execute Phase 03 Plan 04 (03-04-PLAN.md) — live behavior verification checkpoint
 
 **Context to reload next session:**
 
