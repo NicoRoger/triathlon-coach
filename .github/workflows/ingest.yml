@@ -95,7 +95,8 @@ jobs:
       - name: Apply accepted modulations (audit K1)
         # Il bot Telegram setta status='accepted' al tap; qui le applichiamo
         # davvero al piano (apply_accepted_modulations → status 'applied').
-        if: always()
+        # D-06: nessun if: su questo step → defaults a success(). Il step gira solo
+        # se il Garmin sync ha avuto successo (exit 0), mai su dati stantii.
         continue-on-error: true
         run: python -m coach.coaching.modulation --apply-accepted
 
