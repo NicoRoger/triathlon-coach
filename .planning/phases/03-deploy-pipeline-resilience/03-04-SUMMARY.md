@@ -34,22 +34,23 @@ decisions:
   - "Deploy gated da: (1) 03-01 SUMMARY conferma migration live, (2) tsc --noEmit clean"
 
 metrics:
-  duration: ~12min
+  duration: ~14min
   completed: 2026-06-07
-  tasks_completed: 2/3 (checkpoint raggiunto al Task 3)
+  tasks_completed: 3/3
   files_modified: 1 (package-lock.json generato da npm install)
+requirements: [DEPLOY-03]
 ---
 
 # Phase 03 Plan 04: Telegram Bot Deploy (K2-K5) — Summary
 
-**Bot Worker redeployato via wrangler con K2/K3/K4/K5 live su Cloudflare; tsc --noEmit pulito; attesa verifica manuale Telegram (Task 3 checkpoint).**
+**Bot Worker redeployato via wrangler con K2/K3/K4/K5 live su Cloudflare; tsc --noEmit pulito; verifica manuale Telegram completata (K4 no-500 confermato, K5 accept-tap deferito a Phase 4 VERIFY-05).**
 
 ## Performance
 
-- **Duration:** ~12 min (Task 1 + Task 2)
+- **Duration:** ~14 min
 - **Started:** 2026-06-07
-- **Completed:** 2026-06-07 (Task 1 e 2 completati; Task 3 in attesa human-verify)
-- **Tasks:** 2/3 completati; Task 3 = checkpoint:human-verify
+- **Completed:** 2026-06-07
+- **Tasks:** 3/3 completati
 - **Files modified:** 1 (package-lock.json creato)
 
 ## Accomplishments
@@ -64,16 +65,19 @@ metrics:
 |------|------|--------|-------|
 | 1 | TypeScript type-check (tsc --noEmit) | `484ca52` | workers/telegram-bot/package-lock.json |
 | 2 | Wrangler deploy K2-K5 live (DEPLOY-03) | `680ff3c` | (nessun file modificato — deploy only) |
-| 3 | checkpoint:human-verify | — | In attesa atleta |
+| 3 | Verifica manuale K4/K5 via Telegram (D-08) | *(checkpoint human-verify — nessun file modificato)* | - |
 
-## Checkpoint: Task 3 — Verifica manuale Telegram
+## Task 3 Detail: Verifica live Telegram (D-08)
 
-**Status:** BLOCCATO — attesa verifica Nicolò
+**Risposta atleta:** `"verified, step 2 (K5 accept-tap) è deferito alla Phase 4 (VERIFY-05)"`
 
-**Cosa verificare:**
-1. Manda `/status` o `/budget` al bot Telegram → deve rispondere (redeploy live, K4 funzionante)
-2. Se disponibile un bottone ✅ su una proposta di modulazione → tappalo e verifica che il bot confermi senza falso successo (K5 live). Se non disponibile, la verifica K5 è deferita alla Phase 4 (VERIFY-05).
-3. Opzionale: `wrangler tail` da `workers/telegram-bot/` per monitorare che nessun 500 venga loggato.
+| Check | Esito |
+|-------|-------|
+| Bot risponde a comando normale (redeploy live e sano) | CONFERMATO |
+| Nessun 500 / reply mancante su interazione normale (K4 live) | CONFERMATO |
+| Accept-tap ✅ (K5 PATCH resp.ok guard live) | DEFERITO a Phase 4 VERIFY-05 |
+
+**Motivazione deferral K5:** Nessuna proposta `plan_modulations` con inline buttons ✅/❌ disponibile nel momento della verifica. K5 è confermato presente nel sorgente (`index.ts` linee 803, 1215-1219 — guard `if (!resp.ok)` sul PATCH). La verifica live del flusso accept è pianificata in Phase 4 VERIFY-05 come parte del test end-to-end delle modulazioni.
 
 ## Known Stubs
 
@@ -82,6 +86,8 @@ Nessuno — questo piano non crea nuovi componenti con UI o placeholder.
 ## Deviations from Plan
 
 **Nessuna** — piano eseguito esattamente come scritto. `npm install` ha generato `package-lock.json` (artefatto atteso, committato).
+
+Il deferral del Task 3 step 2 (K5 accept-tap) non è una deviazione: il piano stesso prevedeva esplicitamente questa possibilità nell'acceptance criteria ("OR the athlete explicitly defers the accept-tap to Phase 4 VERIFY-05 with K5 confirmed present in source"). Condizione soddisfatta: K5 confermato in source, deferral esplicito da Nicolò.
 
 ## Self-Check
 
@@ -92,5 +98,7 @@ Nessuno — questo piano non crea nuovi componenti con UI o placeholder.
 - [x] K2/K3/K4/K5 marker confermati in index.ts linee 112, 270, 803, 909, 1215
 - [x] wrangler deployments list mostra `604ae1fc` del 2026-06-07T11:14:48Z
 - [x] D-01 ordering rispettato: 03-01 SUMMARY conferma migration live prima del deploy
+- [x] Task 3 checkpoint human-verify: Nicolò ha confermato "verified" con K5 deferito a Phase 4 VERIFY-05
+- [x] DEPLOY-03 requirement soddisfatto: Worker live con K2/K3/K4/K5, K4 no-500 confermato su Telegram
 
 ## Self-Check: PASSED
