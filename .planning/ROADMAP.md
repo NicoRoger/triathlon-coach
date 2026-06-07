@@ -60,7 +60,8 @@ Plans:
   4. La query `physiology_zones` per FTP, CSS e soglia corsa ritorna righe non null con timestamp aggiornato post-test
 
 **Plans**: 3 plans
-Plans:
+
+Plans:
 **Wave 1**
 
 - [x] 02-01-PLAN.md — Script verify_physiology.py: mostra zones DB vs CLAUDE.md con bounds check
@@ -101,7 +102,18 @@ Plans:
   4. Il budget tracker in DB mostra la spesa Anthropic reale — la soglia di degrado a €4.00 (Sonnet→Haiku) è configurata e verificata nei log
   5. Il brief mostra le zone Z1-Z5 per ogni disciplina derivate da physiology_zones misurate (non hard-coded)
 
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Brief zone misurate (VERIFY-03 + FITNESS-04): physiology_zones → Z1-Z5 inline nel brief
+- [ ] 04-02-PLAN.md — Pipeline session_analyses + modulazione end-to-end (VERIFY-04 + VERIFY-05 + DEPLOY-04): routing Gemini, accepted→applied
+- [ ] 04-03-PLAN.md — Budget tracker (VERIFY-06): soglia degrado Sonnet→Haiku allineata a €4.00
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-04-PLAN.md — Script verify_live_behavior.py read-only + checkpoint finale 4/4 OK
+
 
 ### Phase 5: Workout Prescription Quality
 
@@ -217,7 +229,7 @@ Plans:
 | 1. Test Suite & Analytics Correctness | 2/2 | Complete   | 2026-06-05 |
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
-| 4. Live Behavior Verification | 0/0 | Not started | - |
+| 4. Live Behavior Verification | 0/4 | Planned | - |
 | 5. Workout Prescription Quality | 0/0 | Not started | - |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
