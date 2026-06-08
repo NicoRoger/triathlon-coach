@@ -160,9 +160,22 @@ Le citazioni rendono auditabile la pianificazione e si auto-loggano in `training
 
 ## Output prediction (Fase 2.1)
 
-Dopo aver definito CTL target per ogni settimana, registra una prediction in DB via il modulo Python:
+**NOTA: la registrazione delle predizioni CTL avviene SOLO quando il mesociclo viene generato
+via CLI Python (es. `python -m coach.coaching.generate_mesocycle`). Non è eseguibile da Claude.ai
+via MCP — non esiste un tool `record_prediction` nel server MCP.**
+
+Quando operi come Claude.ai via MCP: **logga la predizione come nota testuale in `training_journal.md`**
+usando il formato seguente (includi nel tuo output scritto, non come tool call):
+
+```
+[PREDIZIONE CTL] Settimana X: CTL target ~42.5 (confidence 0.70)
+Rationale: Settimana di build: +5 TSS/d -> CTL +3
+```
+
+Quando il mesociclo viene generato via CLI Python, il modulo registra la predizione in DB:
 
 ```python
+# CLI-only — NON eseguire come tool call via MCP
 from coach.coaching.outcome_verification import record_prediction
 # Per ogni settimana del mesociclo:
 record_prediction(
