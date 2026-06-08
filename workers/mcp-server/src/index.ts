@@ -261,6 +261,7 @@ export default {
         issuer: url.origin,
         authorization_endpoint: `${url.origin}/oauth/authorize`,
         token_endpoint: `${url.origin}/oauth/token`,
+        registration_endpoint: `${url.origin}/oauth/register`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code"],
         code_challenge_methods_supported: ["S256"],
@@ -335,6 +336,25 @@ export default {
           <p style="font-size:12px;color:#94a3b8">Redirect non disponibile: ${redirectUri}</p>
         `);
       }
+    }
+
+    // ── OAuth: dynamic client registration (RFC 7591) ─────────────────────
+    // Single-athlete system: accept any registration, return a stable client_id.
+    // We don't validate client_id during the auth flow (PKCE-only), so no KV needed.
+    if (url.pathname === "/oauth/register" && req.method === "POST") {
+      let body: Record<string, unknown> = {};
+      try { body = await req.json(); } catch { /* empty body */ }
+      const redirectUris: string[] = Array.isArray(body["redirect_uris"])
+        ? (body["redirect_uris"] as string[])
+        : [];
+      return new Response(JSON.stringify({
+        client_id: "claude-ai",
+        client_id_issued_at: Math.floor(Date.now() / 1000),
+        redirect_uris: redirectUris,
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }), { status: 201, headers: { "Content-Type": "application/json", ...corsHeaders() } });
     }
 
     // ── OAuth: token endpoint ──────────────────────────────────────────────
