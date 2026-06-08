@@ -304,7 +304,16 @@ export default {
       const redirectUri = url.searchParams.get("redirect_uri") || "";
       const state = url.searchParams.get("state") || "";
 
-      const code = btoa(`auth_code_${Date.now()}`).replace(/=/g, "");
+      // SECURITY: generate a short-lived HMAC-signed code so the token endpoint
+      // can verify it was issued by this server (no KV storage required).
+      const ts = Date.now().toString();
+      const hmacKey = await crypto.subtle.importKey(
+        "raw", new TextEncoder().encode(env.MCP_BEARER_TOKEN),
+        { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(ts));
+      const sigHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const code = `${ts}.${sigHex}`;
 
       // Se redirect_uri è vuota o invalida, mostra pagina di successo
       if (!redirectUri) {
@@ -330,12 +339,37 @@ export default {
 
     // ── OAuth: token endpoint ──────────────────────────────────────────────
     if (url.pathname === "/oauth/token" && req.method === "POST") {
-      return jsonResponse({
-        access_token: env.MCP_BEARER_TOKEN,
-        token_type: "bearer",
-        expires_in: 31536000,
-        scope: "mcp",
-      });
+      // SECURITY: verify the code was signed by this server (HMAC-SHA256 via MCP_BEARER_TOKEN).
+      // Codes expire after 5 minutes to limit the replay window.
+      let body: Record<string, string> = {};
+      try { body = Object.fromEntries(await req.formData()); } catch { /* empty body */ }
+      const code = (body["code"] as string) || "";
+      const dotIdx = code.indexOf(".");
+      if (dotIdx < 1) {
+        return new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+      const ts = code.slice(0, dotIdx);
+      const receivedSig = code.slice(dotIdx + 1);
+      const tsNum = parseInt(ts, 10);
+      if (!tsNum || Date.now() - tsNum > 5 * 60 * 1000) {
+        return new Response(JSON.stringify({ error: "invalid_grant", error_description: "code expired or invalid" }), {
+          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+      const hmacKey = await crypto.subtle.importKey(
+        "raw", new TextEncoder().encode(env.MCP_BEARER_TOKEN),
+        { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(ts));
+      const expectedSig = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+      if (receivedSig !== expectedSig) {
+        return new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+      return jsonResponse({ access_token: env.MCP_BEARER_TOKEN, token_type: "bearer", expires_in: 3600, scope: "mcp" });
     }
 
     // ── Dashboard data endpoint ────────────────────────────────────────────
