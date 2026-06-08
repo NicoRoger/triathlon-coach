@@ -437,7 +437,9 @@ async function handleRpc(rpc: JsonRpcRequest, env: Env): Promise<JsonRpcResponse
       return ok(rpc.id, { tools: TOOLS });
     }
     if (rpc.method === "tools/call") {
-      const { name, arguments: args } = rpc.params;
+      const params = rpc.params ?? {};
+      const { name, arguments: args } = params;
+      if (!name) return err(rpc.id, -32602, "Missing required field: params.name");
       const out = await callTool(name, args || {}, env);
       return ok(rpc.id, { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] });
     }
