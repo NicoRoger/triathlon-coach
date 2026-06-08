@@ -248,7 +248,7 @@ Plans:
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 4/4 | Complete    | 2026-06-07 |
-| 5. Workout Prescription Quality | 4/4 | Complete   | 2026-06-08 |
+| 5. Workout Prescription Quality | 4/4 | Complete    | 2026-06-08 |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
 | 8. Brief Quality | 0/0 | Not started | - |

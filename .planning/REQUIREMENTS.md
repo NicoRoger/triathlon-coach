@@ -52,11 +52,11 @@
 
 > **Priorità massima** — le sessioni proposte devono essere allenamenti strutturati, sensati, professionali e calibrati su Nicolò.
 
-- [ ] **WORKOUT-01**: Ogni sessione proposta include struttura completa: riscaldamento (durata + intensità), set principale (intervalli specifici con target watt/pace/HR per zona), defatigamento — mai solo "60 min Z2"
-- [ ] **WORKOUT-02**: Le zone prescritte usano sempre i valori misurati di `physiology_zones` (FTP bici, soglia corsa, CSS nuoto) — mai stime hard-coded o valori di default
-- [ ] **WORKOUT-03**: Ogni sessione rispetta i vincoli medici attivi: nuoto max Z1-Z2 (spalla destra), corsa +10% volume/settimana max con cap 14-15km, nessun Z4+ con spalla
-- [ ] **WORKOUT-04**: Il TSS atteso per ogni sessione è coerente con il target settimanale del mesociclo e la progressione CTL pianificata — non proposto in modo arbitrario
-- [ ] **WORKOUT-05**: La distribuzione delle sessioni settimanali rispetta l'80/20 del block periodization (Seiler/Laursen) — Z3 "grigio" minimizzato, qualità solo in blocchi dedicati
+- [x] **WORKOUT-01**: Ogni sessione proposta include struttura completa: riscaldamento (durata + intensità), set principale (intervalli specifici con target watt/pace/HR per zona), defatigamento — mai solo "60 min Z2"
+- [x] **WORKOUT-02**: Le zone prescritte usano sempre i valori misurati di `physiology_zones` (FTP bici, soglia corsa, CSS nuoto) — mai stime hard-coded o valori di default
+- [x] **WORKOUT-03**: Ogni sessione rispetta i vincoli medici attivi: nuoto max Z1-Z2 (spalla destra), corsa +10% volume/settimana max con cap 14-15km, nessun Z4+ con spalla
+- [x] **WORKOUT-04**: Il TSS atteso per ogni sessione è coerente con il target settimanale del mesociclo e la progressione CTL pianificata — non proposto in modo arbitrario
+- [x] **WORKOUT-05**: La distribuzione delle sessioni settimanali rispetta l'80/20 del block periodization (Seiler/Laursen) — Z3 "grigio" minimizzato, qualità solo in blocchi dedicati
 
 ### Intelligenza Adattamento Fisiologico (ADAPT)
 
@@ -160,11 +160,11 @@
 | VERIFY-05 | Phase 4 | Complete |
 | VERIFY-06 | Phase 4 | Complete |
 | FITNESS-04 | Phase 4 | Complete |
-| WORKOUT-01 | Phase 5 | Pending |
-| WORKOUT-02 | Phase 5 | Pending |
-| WORKOUT-03 | Phase 5 | Pending |
-| WORKOUT-04 | Phase 5 | Pending |
-| WORKOUT-05 | Phase 5 | Pending |
+| WORKOUT-01 | Phase 5 | Complete |
+| WORKOUT-02 | Phase 5 | Complete |
+| WORKOUT-03 | Phase 5 | Complete |
+| WORKOUT-04 | Phase 5 | Complete |
+| WORKOUT-05 | Phase 5 | Complete |
 | ADAPT-01 | Phase 6 | Pending |
 | ADAPT-02 | Phase 6 | Pending |
 | ADAPT-03 | Phase 6 | Pending |
