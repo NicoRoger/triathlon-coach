@@ -63,6 +63,14 @@ class ReadinessReport:
     rationale: str                   # spiegazione human-readable per brief
 
 
+@dataclass
+class FatigueResult:
+    failure_type: Optional[str]   # 'muscular' | 'cardiovascular' | 'mixed' | None
+    confidence: float             # 0.0–1.0
+    signal_used: str              # 'hr_drift+pace' | 'rpe_only' | 'insufficient'
+    notes: Optional[str] = None
+
+
 # ============================================================================
 # HRV z-score
 # ============================================================================
@@ -272,3 +280,168 @@ def _build_rationale(
         parts.append("Tutti gli indicatori OK: green light.")
 
     return " ".join(parts) or f"Score {score}."
+
+
+# ============================================================================
+# Fatigue type classification (ADAPT-01)
+# ============================================================================
+
+def _compute_hr_drift(activity: dict, splits: list) -> Optional[float]:
+    """Calcola HR drift seconda metà vs prima metà della sessione.
+
+    Estrae avg_hr per split (con fallback a 'hr' key), scarta None.
+    Richiede almeno 4 valori validi.
+    Ritorna differenza fmean(seconda_metà) - fmean(prima_metà).
+    Positivo = HR sale nella seconda parte (segnale cardiovascolare).
+    """
+    hrs = [s.get("avg_hr") or s.get("hr") for s in splits]
+    hrs = [h for h in hrs if h is not None]
+    if len(hrs) < 4:
+        return None
+    mid = len(hrs) // 2
+    first_half = hrs[:mid]
+    second_half = hrs[mid:]
+    if not first_half or not second_half:
+        return None
+    return statistics.fmean(second_half) - statistics.fmean(first_half)
+
+
+def _compute_pace_drop(sport: str, splits: list) -> Optional[float]:
+    """Calcola degradazione pace/potenza nella seconda metà rispetto alla prima.
+
+    Disciplina-specifica:
+    - run: avg_pace_s_per_km — (second - first) / first, positivo = peggiora
+    - swim: avg_pace_s_per_100m — (second - first) / first, positivo = peggiora
+    - bike: avg_power_w — (first - second) / first, positivo = potenza scende
+      (Claude's Discretion: soglia 5% per bici coerente con run/swim; evita falsi negativi
+       sugli atleti la cui potenza decade gradualmente per cedimento muscolare — D-03)
+
+    Ritorna None se dati insufficienti.
+    """
+    if sport in ("run",):
+        key = "avg_pace_s_per_km"
+        higher_is_worse = True
+    elif sport in ("swim",):
+        key = "avg_pace_s_per_100m"
+        higher_is_worse = True
+    elif sport in ("bike", "cycling"):
+        key = "avg_power_w"
+        higher_is_worse = False  # potenza scende = peggiora
+    else:
+        # Disciplina sconosciuta: fallback run-like se la key esiste
+        key = "avg_pace_s_per_km"
+        higher_is_worse = True
+
+    values = [s.get(key) for s in splits]
+    values = [v for v in values if v is not None]
+    if len(values) < 2:
+        return None
+
+    mid = len(values) // 2
+    first_half = values[:mid]
+    second_half = values[mid:]
+    if not first_half or not second_half:
+        return None
+
+    first_mean = statistics.fmean(first_half)
+    second_mean = statistics.fmean(second_half)
+
+    if first_mean == 0:
+        return None
+
+    if higher_is_worse:
+        # pace/tempo: valore più alto = più lento = peggiora
+        return (second_mean - first_mean) / first_mean
+    else:
+        # potenza: valore più basso = meno potenza = peggiora
+        return (first_mean - second_mean) / first_mean
+
+
+def classify_fatigue_type(
+    activity: dict,
+    splits: Optional[list],
+    debrief_rpe: Optional[int],
+) -> FatigueResult:
+    """Classifica il tipo di cedimento in una sessione (ADAPT-01, D-03).
+
+    Decision tree:
+    1. Sessione < 30min → insufficient (dati troppo corti per segnali affidabili)
+    2. Splits assenti → fallback RPE-only (confidence 0.4 se RPE>=8, altrimenti None/0.3)
+    3. Calcola HR drift e pace drop. Applica soglie discipline-specifiche:
+       - cardiovascular: HR drift > 10bpm
+       - muscular: HR stabile (drift<=10) + RPE>=8 + pace drop > 5%
+       - mixed: entrambi i segnali veri
+       - None: segnali sotto soglia (confidence 0.3)
+
+    Non solleva mai eccezioni: ogni accesso a splits usa .get() con default.
+    """
+    # Guard 1: sessione troppo corta
+    duration_s = activity.get("duration_s") or 0
+    if duration_s < 1800:
+        return FatigueResult(
+            failure_type=None,
+            confidence=0.0,
+            signal_used="insufficient",
+            notes="Sessione < 30min",
+        )
+
+    sport = activity.get("sport", "other")
+    rpe = debrief_rpe  # può essere None
+
+    # Guard 2: splits assenti → fallback RPE-only
+    if not splits:
+        if rpe is not None and rpe >= 8:
+            return FatigueResult(
+                failure_type="muscular",
+                confidence=0.4,
+                signal_used="rpe_only",
+                notes="Dati insufficienti: solo RPE",
+            )
+        return FatigueResult(
+            failure_type=None,
+            confidence=0.3,
+            signal_used="rpe_only",
+            notes="Dati insufficienti: solo RPE, segnale sotto soglia",
+        )
+
+    # Calcola segnali oggettivi
+    hr_drift = _compute_hr_drift(activity, splits)
+    pace_drop = _compute_pace_drop(sport, splits)
+
+    # Segnali booleani
+    cardiovascular_signal = hr_drift is not None and hr_drift > 10.0
+    # Muscular: HR stabile (drift basso o mancante) + RPE alto + pace/potenza degrada
+    muscular_signal = (
+        (hr_drift is None or hr_drift <= 10.0)
+        and rpe is not None and rpe >= 8
+        and pace_drop is not None and pace_drop > 0.05
+    )
+
+    if cardiovascular_signal and muscular_signal:
+        return FatigueResult(
+            failure_type="mixed",
+            confidence=0.65,
+            signal_used="hr_drift+pace",
+        )
+    elif cardiovascular_signal:
+        # Confidence aumenta con l'entità del drift
+        conf = min(0.9, round(0.6 + (hr_drift - 10.0) * 0.02, 2))
+        return FatigueResult(
+            failure_type="cardiovascular",
+            confidence=conf,
+            signal_used="hr_drift+pace",
+        )
+    elif muscular_signal:
+        conf = 0.7 if (rpe is not None and rpe >= 9) else 0.6
+        return FatigueResult(
+            failure_type="muscular",
+            confidence=conf,
+            signal_used="hr_drift+pace",
+        )
+    else:
+        return FatigueResult(
+            failure_type=None,
+            confidence=0.3,
+            signal_used="hr_drift+pace",
+            notes="Segnali sotto soglia",
+        )
