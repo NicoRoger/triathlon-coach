@@ -865,12 +865,15 @@ async function getPhysiologyZones(discipline: string, env: Env) {
     }
   }
 
-  const todayDate = new Date(todayRomeISO());
+  // Force both dates to UTC midnight so age_days is never off by 1 due to
+  // Rome timezone offset (UTC+1/+2). todayRomeISO() returns "YYYY-MM-DD" in
+  // local Rome time; appending "T00:00:00Z" pins it to UTC midnight consistently.
+  const todayUTC = new Date(todayRomeISO() + "T00:00:00Z");
   for (const zone of current) {
     if (zone.valid_from) {
-      const validFrom = new Date(zone.valid_from);  // DATE string "2026-06-04" parsed as UTC midnight
-      const diffMs = todayDate.getTime() - validFrom.getTime();
-      zone.age_days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+      const validFromUTC = new Date(zone.valid_from + "T00:00:00Z");
+      const diffMs = todayUTC.getTime() - validFromUTC.getTime();
+      zone.age_days = Math.max(0, Math.floor(diffMs / 86400000));
     } else {
       zone.age_days = null;
     }
