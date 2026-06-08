@@ -23,7 +23,12 @@ CREATE TABLE IF NOT EXISTS active_constraints (
 );
 
 -- RLS: accesso solo via service_role (pattern single-user esistente, V4 ASVS L1)
+-- Stessa policy delle altre tabelle in sql/schema.sql: service_role bypass,
+-- tutti gli altri ruoli negati per default (nessuna policy = zero righe visibili).
+-- La policy esplicita rende l'intento auditabile e protegge da futuri ruoli authenticated.
 ALTER TABLE active_constraints ENABLE ROW LEVEL SECURITY;
+CREATE POLICY IF NOT EXISTS "service_role_full_access" ON active_constraints
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- ── mesocycles.progression_plan JSONB ────────────────────────────────────────
 -- Colonna JSONB per il piano di progressione qualità multi-sessione (D-27).
