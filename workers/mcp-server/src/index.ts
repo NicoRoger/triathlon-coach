@@ -822,6 +822,7 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
     `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}`,
     { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
   );
+  if (!existingResp.ok) throw new Error(`Supabase lookup failed: ${existingResp.status} ${await existingResp.text()}`);
   const existing = (await existingResp.json()) as any[];
 
   if (existing.length > 0) {
@@ -963,6 +964,7 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
     `${env.SUPABASE_URL}/rest/v1/mesocycles?start_date=eq.${args.start_date}`,
     { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
   );
+  if (!existingResp.ok) throw new Error(`Supabase lookup failed: ${existingResp.status} ${await existingResp.text()}`);
   const existing = (await existingResp.json()) as any[];
 
   if (existing.length > 1) {
