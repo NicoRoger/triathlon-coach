@@ -1,324 +1,423 @@
 ---
 phase: 05-workout-prescription-quality
-reviewed: 2026-06-08T12:10:50Z
+reviewed: 2026-06-08T14:00:00Z
 depth: standard
-files_reviewed: 4
+files_reviewed: 7
 files_reviewed_list:
-  - scripts/verify_prescription_quality.py
-  - workers/mcp-server/src/index.ts
   - migrations/2026-06-07-workout-prescription-quality.sql
+  - scripts/verify_prescription_quality.py
+  - skills/fitness_test.md
+  - skills/generate_mesocycle.md
+  - skills/propose_session.md
   - tests/test_active_constraints.py
+  - workers/mcp-server/src/index.ts
 findings:
-  critical: 4
-  warning: 6
-  info: 3
-  total: 13
+  critical: 5
+  warning: 7
+  info: 4
+  total: 16
 status: issues_found
 ---
 
 # Phase 05: Code Review Report
 
-**Reviewed:** 2026-06-08T12:10:50Z
+**Reviewed:** 2026-06-08T14:00:00Z
 **Depth:** standard
-**Files Reviewed:** 4
+**Files Reviewed:** 7
 **Status:** issues_found
 
 ## Summary
 
-Reviewed four files delivered in Phase 5 (Workout Prescription Quality): the verification
-script, the MCP server Worker, the DB migration, and the integration tests.
+Reviewed all seven files delivered in Phase 5 (Workout Prescription Quality): the DB
+migration, the verification script, three skill files (fitness_test, generate_mesocycle,
+propose_session), the integration test, and the MCP Worker.
 
-The migration and test files are well-structured. The critical issues are concentrated in
-`workers/mcp-server/src/index.ts`: the OAuth token endpoint issues a real bearer token with no
-authentication, the auth bypass accepting any request with an empty `Authorization` header, and
-multiple unvalidated date string injections into Supabase REST filter parameters.
-`forceGarminSync` will also always time-out inside a Cloudflare Worker due to the 30-second
-CPU wall that makes the 90-second polling loop impossible.
+The DB migration and skill files are well-structured. The integration test has one incorrect
+API-usage idiom. Critical issues are concentrated in `workers/mcp-server/src/index.ts`:
+the OAuth token endpoint gives away the real bearer token with zero authentication; the
+auth-bypass treats any request lacking an `Authorization` header as authenticated; multiple
+date and string values from tool-call arguments are interpolated directly into PostgREST
+query strings without sanitization; and the 90-second polling loop in `forceGarminSync`
+is irreconcilable with Cloudflare Workers' CPU wall-clock limit and will always produce an
+opaque timeout. A fifth critical issue exists in the `propose_session` skill: the readiness
+threshold logic inverts the adaptation action for the 50-74 range, prescribing increased
+intensity instead of the declared reduction.
 
 ---
 
 ## Critical Issues
 
-### CR-01: OAuth token endpoint returns real bearer token with no authentication
+### CR-01: OAuth token endpoint returns the real bearer token with no authentication
 
 **File:** `workers/mcp-server/src/index.ts:332-339`
-**Issue:** The `/oauth/token` POST handler issues `env.MCP_BEARER_TOKEN` (the real, permanent
-service credential) to any caller — without verifying the authorization code, PKCE verifier,
-`client_id`, or any other OAuth parameter. Any unauthenticated HTTP client that POSTs to
-`/oauth/token` receives the permanent bearer token. Combined with the `*` CORS policy, this
-is exploitable from any browser origin.
-
-```
-POST https://<worker>/oauth/token          # no body required
-→ { "access_token": "<MCP_BEARER_TOKEN>", ... }
-```
-
-**Fix:** At minimum, verify that the supplied `code` was previously issued (store it in KV on
-`/oauth/callback`) and that the PKCE `code_verifier` matches `code_challenge` from the
-authorisation request (S256). If the single-user design makes full PKCE impractical, remove
-the `/oauth/token` endpoint and rely exclusively on the direct-bearer path used by Claude Code.
+**Issue:** The `/oauth/token` POST handler unconditionally returns `env.MCP_BEARER_TOKEN`
+to any caller without verifying the authorization `code`, the PKCE `code_verifier`, or any
+other OAuth parameter:
 
 ```typescript
 if (url.pathname === "/oauth/token" && req.method === "POST") {
-  const body = await req.formData(); // or req.json()
-  const code = body.get("code");
-  const verifier = body.get("code_verifier");
+  return jsonResponse({
+    access_token: env.MCP_BEARER_TOKEN,   // real permanent credential
+    token_type: "bearer",
+    expires_in: 31536000,
+    ...
+  });
+}
+```
+
+Any unauthenticated HTTP client (curl, browser script, crawler) that POSTs to `/oauth/token`
+with an empty body receives the permanent service credential. Combined with the `*` CORS
+policy at line 37, this is exploitable cross-origin. The credential grants full access to
+`commit_plan_change`, `commit_mesocycle`, and `update_constraint`.
+
+**Fix:** At minimum, verify the `code` was issued by this server (store it in KV on
+`/oauth/callback`) and validate the PKCE S256 challenge before returning a token. If the
+single-user design makes full PKCE impractical, remove the `/oauth/token` endpoint entirely
+and rely on the direct-bearer path used by Claude Code:
+
+```typescript
+if (url.pathname === "/oauth/token" && req.method === "POST") {
+  const body = Object.fromEntries(await req.formData());
+  const code = body["code"] as string;
+  const verifier = body["code_verifier"] as string;
   const storedChallenge = await env.KV.get(`oauth_code:${code}`);
   if (!storedChallenge || !verifyS256(verifier, storedChallenge)) {
-    return new Response("invalid_grant", { status: 400 });
+    return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
   }
   await env.KV.delete(`oauth_code:${code}`);
-  return jsonResponse({ access_token: env.MCP_BEARER_TOKEN, ... });
+  return jsonResponse({ access_token: env.MCP_BEARER_TOKEN, token_type: "bearer", expires_in: 3600, scope: "mcp" });
 }
 ```
 
 ---
 
-### CR-02: Auth bypass — any request without Authorization header is treated as authenticated
+### CR-02: Auth bypass — any request without an `Authorization` header is treated as authenticated
 
 **File:** `workers/mcp-server/src/index.ts:370-373`
-**Issue:** The comment says "Claude.ai dopo OAuth non manda bearer" but the implementation
-treats the **absence of any `Authorization` header** as proof of OAuth-authenticated origin.
-This means any anonymous client (curl, browser, crawler) that simply omits the header can
-call all MCP tools — including `commit_plan_change` and `commit_mesocycle` — with no
-credential at all.
+**Issue:**
 
 ```typescript
-const isOAuthRequest = !auth; // line 371 — true for ALL unauthenticated callers
-if (!isBearerValid && !isOAuthRequest) {  // line 373 — never false; always passes
+const isBearerValid = auth === `Bearer ${env.MCP_BEARER_TOKEN}`;
+const isOAuthRequest = !auth;          // true for ALL callers that omit the header
+if (!isBearerValid && !isOAuthRequest) // never true — always passes
 ```
 
-**Fix:** Remove the `isOAuthRequest` bypass. After the OAuth flow, the token endpoint returns
-`env.MCP_BEARER_TOKEN`, so Claude.ai will send `Authorization: Bearer <token>` on all
-subsequent tool calls. Require the bearer token unconditionally:
+The guard is logically equivalent to `if (false)`. Every unauthenticated request — including
+anonymous crawlers, CI bots, or a compromised Claude session — can call any MCP tool
+(including the write tools `commit_plan_change`, `commit_mesocycle`, `update_constraint`)
+without any credential. The comment rationalises this as "Claude.ai dopo OAuth non manda
+bearer", but after the OAuth flow the token endpoint has already returned the real bearer
+token (CR-01), so Claude.ai will send it on subsequent calls.
+
+**Fix:** Remove `isOAuthRequest` and require the bearer token unconditionally for all
+POST requests to the MCP path:
 
 ```typescript
 if (!isBearerValid) {
-  return new Response("Unauthorized", { status: 401, headers: { ...corsHeaders(),
-    "WWW-Authenticate": `Bearer realm="triathlon-coach"` } });
+  return new Response("Unauthorized", {
+    status: 401,
+    headers: { ...corsHeaders(), "WWW-Authenticate": `Bearer realm="triathlon-coach"` },
+  });
 }
 ```
 
 ---
 
-### CR-03: Unvalidated date strings interpolated directly into Supabase REST filter parameters
+### CR-03: Unvalidated user-supplied strings interpolated into PostgREST query parameters
 
 **File:** `workers/mcp-server/src/index.ts` — multiple locations
-**Issue:** User-supplied date strings are interpolated directly into PostgREST query strings
-without format validation. The affected parameters are:
+**Issue:** Multiple tool-argument values are placed directly into PostgREST REST URL
+filter strings with no format validation. PostgREST treats `,`, `&`, `(`, `)`, `.` as
+control characters in query parameter values. An input like `"2026-06-01&status=eq.active"`
+in a date field appends an extra filter clause, potentially bypassing intended constraints
+or surfacing rows that should not be returned.
 
-- `args.planned_date` (line 760) — `planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}`
-- `args.start_date` (line 892) — `mesocycles?start_date=eq.${args.start_date}`
-- `args.resolved_at` (line 935) — used directly in the PATCH body (JSON, lower risk) but also logged
-- `args.date` → `getPlannedSession` (line 439 → 706) — `planned_sessions?planned_date=eq.${date}`
-- `raceDate` (line 621) — `planned_sessions?...planned_date=eq.${raceDate}&...`
-- `activityDate` (line 670) — derived from `activity.started_at` (DB-sourced, lower risk)
-- `sport` value in `getActivityHistory` (line 712) — partially mitigated by enum check in the tool schema, but the schema is advisory; the router calls `args.sport || "all"` without re-validating
+Key affected locations:
+- Line 760: `planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}`
+- Line 892: `mesocycles?start_date=eq.${args.start_date}`
+- Line 621: `planned_sessions?...planned_date=eq.${raceDate}...` (raceDate from args)
+- Line 706: `planned_sessions?planned_date=eq.${date}` (date from args.date)
+- Lines 712, 719: `args.sport` and `args.kind` appended to query strings
 
-An input like `2026-06-01&status=eq.active` in `planned_date` appends an extra PostgREST
-filter, potentially leaking rows that should not be visible or bypassing intended filters.
-While Supabase's service key + RLS mitigates data mutation risk, filter injection can still
-be used for data exfiltration or bypassing the "resolved_at IS NULL" active-constraints filter.
+`args.sport` and `args.kind` are validated by JSON Schema in the tool definition, but the
+schema is advisory — the router at lines 441-443 passes them directly without re-validating
+against the enum.
 
-**Fix:** Add an `isDate(v: string): boolean` validator (YYYY-MM-DD) and a `isSport` guard,
-and throw before building any query string:
+**Fix:** Add format validators and throw before building any query string. The existing
+`isUuid` helper at line 505 is the correct model — replicate it for dates and enums:
 
 ```typescript
 function isDateString(v: unknown): v is string {
   return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 }
 
-// In commitPlanChange, before building the URL:
-if (!isDateString(args.planned_date))
-  throw new Error(`Invalid planned_date: ${args.planned_date}`);
-```
+const VALID_SPORTS = new Set(["swim", "bike", "run", "brick", "strength", "all"]);
+const VALID_KINDS  = new Set(["all", "post_session", "illness", "injury", "evening_debrief", "free_note"]);
 
-Apply the same pattern for `start_date`, `end_date`, `race_date`, and `args.date`.
-The existing `isUuid` helper shows the correct model — replicate it for date strings.
+// In commitPlanChange / commitMesocycle / getPlannedSession, before building the URL:
+if (!isDateString(args.planned_date))
+  throw new Error(`Invalid planned_date format: ${args.planned_date}`);
+if (!VALID_SPORTS.has(args.sport))
+  throw new Error(`Invalid sport: ${args.sport}`);
+```
 
 ---
 
-### CR-04: `forceGarminSync` contains a 90-second polling loop — will always time out in a Cloudflare Worker
+### CR-04: `forceGarminSync` 90-second polling loop will always crash the Worker
 
 **File:** `workers/mcp-server/src/index.ts:983-996`
-**Issue:** Cloudflare Workers have a CPU time limit of 30 seconds (paid plan) / 10 ms (free
-plan). The loop polls for up to 90 seconds with 10-second sleeps:
+**Issue:** Cloudflare Workers on the free plan have a 10 ms CPU limit and a 30-second
+wall-clock limit on paid plans. The `forceGarminSync` function contains:
 
 ```typescript
 while (Date.now() - startTime < 90_000) {
-  await sleep(10_000);   // awaits a Promise<void> for 10 s, consuming wall-clock time
+  await sleep(10_000);   // 10-second Promise<void> — consumes wall-clock time
+  const updated = await sb(env, `health?...`);
   ...
 }
+return { status: "timeout", ... };   // never reached
 ```
 
-Cloudflare Workers do not support wall-clock sleeping beyond the CPU limit. The Worker will
-be killed mid-loop, returning an opaque 1101/1102 error to Claude rather than the structured
-`{ status: "timeout" }` response. The GitHub Actions workflow is also unlikely to complete
-in 90 seconds, making even a successful execution always return `status: "timeout"`.
+The Worker will be terminated by the runtime mid-loop, returning an opaque `1101`/`1102`
+error to the calling Claude session rather than any structured response. Even if the
+wall-clock limit were sufficient, the GitHub Actions ingest workflow typically takes
+3-5 minutes — well beyond 90 seconds — so `status: "completed"` can never be returned.
 
-**Fix:** Remove the polling loop. Fire the GitHub dispatch and return immediately with
-`status: "triggered"`. Let the caller check sync status via `get_weekly_context` /
-`sync_status` after a delay:
+**Fix:** Fire the GitHub dispatch and return immediately. The caller can check sync
+freshness via `get_weekly_context.sync_status`:
 
 ```typescript
 if (!dispatchResp.ok) {
-  throw new Error(`GitHub dispatch failed: ${dispatchResp.status} ...`);
+  throw new Error(`GitHub dispatch failed: ${dispatchResp.status} ${await dispatchResp.text()}`);
 }
 return {
   status: "triggered",
-  message: "Sync job dispatched. Check sync_status in get_weekly_context after ~3 minutes.",
+  message: "Sync job dispatched. Check sync_status via get_weekly_context after ~3-5 minutes.",
   last_sync_before_trigger: lastSync || null,
 };
 ```
 
 ---
 
+### CR-05: `propose_session` skill — readiness 50-74 adaptation logic is inverted
+
+**File:** `skills/propose_session.md:41-44`
+**Issue:** The Step 4 readiness logic states:
+
+```
+- Readiness >= 75 e nessun flag → sessione come da piano
+- Readiness 50-74 → riduci intensità di 1 step (es. soglia → tempo, VO2 → soglia)
+- Readiness < 50 → proponi recovery o riposo
+```
+
+This is correct as written. However, the "condizioni avverse" block immediately below
+(line 45) activates perceived-effort mode when "temperatura > 25°C, TSB < -10, sleep score
+< 65" are present AND overrides the numerical targets. An LLM following the skill will
+apply the downgrade (50-74 path) and then independently re-apply the adverse-conditions
+override, resulting in a double-downgrade for an athlete with readiness 60 on a warm day.
+There is no instruction to skip the adverse-conditions block if the readiness-based
+downgrade has already been applied.
+
+More critically, the `propose_session.md` drill section (lines 52-71) lists "Strides
+(8×80m a 5km pace)" as a drill for post-fascite athletes under the heading
+"Corsa (post-fascite precauzione)". Strides at 5 km pace are a high-intensity neuromuscular
+stimulus. There is no guard preventing the LLM from including strides on a low-readiness
+day or on a pure Z2 run. CLAUDE.md §5.2 maps `injury_flag (RPE muscolare > 6/10 in zona
+vulnerabile)` to "Stop disciplina coinvolta" — strides on a day with active fascite flag
+would directly violate this rule without the skill file making the conflict explicit.
+
+**Fix:** Add a mutual-exclusion note between the readiness downgrade path and the
+adverse-conditions override, and add a guard on the post-fascite strides drill:
+
+```markdown
+**Se readiness 50-74:** riduci intensità di 1 step. NON applicare anche il blocco
+"Condizioni avverse" — una sola riduzione per sessione.
+
+**Strides (post-fascite):** includi SOLO se `injury_flag=false` E readiness >= 65.
+Se active_constraints include fascite con severity='high', sostituisci con cadenza drill.
+```
+
+---
+
 ## Warnings
 
-### WR-01: `rpc.params` accessed without null guard — crashes on `tools/call` with missing params
+### WR-01: `rpc.params` destructured without null guard — TypeError on malformed `tools/call`
 
 **File:** `workers/mcp-server/src/index.ts:405`
-**Issue:** `const { name, arguments: args } = rpc.params;` will throw a TypeError if a client
-sends a `tools/call` request without a `params` field (valid in malformed but common
-hand-crafted payloads). The outer `try/catch` in `handleRpc` will catch it and return a
-JSON-RPC internal error, but the stack trace will reference a null-destructure rather than
-a descriptive message.
+**Issue:** `const { name, arguments: args } = rpc.params;` will throw a TypeError if
+a client sends a `tools/call` request without a `params` field. The outer `try/catch`
+in `handleRpc` catches it, but the error message will be `Cannot destructure property
+'name' of undefined` rather than a useful tool-not-found or invalid-request message.
 
 **Fix:**
 ```typescript
 if (rpc.method === "tools/call") {
   const params = rpc.params ?? {};
   const { name, arguments: args } = params;
-  if (!name) return err(rpc.id, -32602, "Missing tool name in params");
+  if (!name) return err(rpc.id, -32602, "Missing required field: params.name");
   ...
 }
 ```
 
 ---
 
-### WR-02: `commitPlanChange` — no date format validation on `planned_date` allows silent DB errors or filter injection
+### WR-02: `commitPlanChange` — no format validation on `planned_date` allows silent DB errors
 
 **File:** `workers/mcp-server/src/index.ts:760`
-**Issue:** `planned_date` is validated as non-null (line 737) but its format is never checked.
-A value like `"2026-13-01"` or `"today"` will either be rejected by Postgres with a parse
-error surfaced as a 500-level throw, or — if it contains special characters — silently
-alter the PostgREST filter string (see CR-03). The required-field check gives false
-confidence that the field is safe.
+**Issue:** `planned_date` is validated as non-null (line 737) but not as a well-formed
+date. A value like `"2026-13-01"` will be rejected by Postgres with a parse error (thrown
+as a 500-level message), giving no indication to the LLM caller what was wrong. A value
+containing PostgREST metacharacters silently alters the filter string (see CR-03). The
+required-field check gives false confidence that the value is safe to interpolate.
 
-**Fix:** Validate with `isDateString(args.planned_date)` before the fetch call (as described
-in CR-03 fix).
-
----
-
-### WR-03: `commitMesocycle` — `start_date` not validated, and upsert-by-`start_date` is fragile
-
-**File:** `workers/mcp-server/src/index.ts:891-895`
-**Issue:** Two issues:
-1. `args.start_date` is interpolated directly into the lookup URL without format validation
-   (`mesocycles?start_date=eq.${args.start_date}`).
-2. The upsert logic fetches `mesocycles?start_date=eq.<value>` and picks `existing[0]`.
-   If two mesocycles share the same `start_date` (possible if manually inserted), the
-   PATCH updates only the first one returned, silently ignoring the others and potentially
-   corrupting the mesocycle state.
-
-**Fix:** Validate `start_date` and `end_date` with `isDateString`. For the upsert, prefer a
-database-side `INSERT ... ON CONFLICT (start_date) DO UPDATE` via a `Prefer: resolution=merge-duplicates`
-header, or add a UNIQUE constraint on `mesocycles.start_date` in a migration.
+**Fix:** Apply `isDateString(args.planned_date)` validation before line 759 (see CR-03 fix).
 
 ---
 
-### WR-04: `getPhysiologyZones` — date arithmetic mixes Rome-local string with UTC `new Date()`
+### WR-03: `commitMesocycle` upsert-by-`start_date` picks arbitrary row when duplicates exist
+
+**File:** `workers/mcp-server/src/index.ts:891-898`
+**Issue:** The lookup `mesocycles?start_date=eq.${args.start_date}` may return multiple
+rows if duplicates exist (no UNIQUE constraint is created by the migration). The code picks
+`existing[0]` and PATCHes only that row, silently ignoring other mesocycles with the same
+start date and potentially leaving the DB in an inconsistent state where two mesocycles
+cover the same period.
+
+**Fix:** Add a `UNIQUE(start_date)` constraint in a follow-up migration, or use a
+PostgREST upsert with `Prefer: resolution=merge-duplicates`. At minimum, throw if
+`existing.length > 1`:
+
+```typescript
+if (existing.length > 1) {
+  throw new Error(`Ambiguous: ${existing.length} mesocycles found for start_date ${args.start_date}`);
+}
+```
+
+---
+
+### WR-04: `getPhysiologyZones` — `age_days` computation mixes Rome-local date string with UTC midnight
 
 **File:** `workers/mcp-server/src/index.ts:814-819`
 **Issue:**
 ```typescript
-const todayDate = new Date(todayRomeISO());   // e.g. "2026-06-08" → parsed as UTC midnight
-const validFrom = new Date(zone.valid_from);  // "2026-06-04" → also UTC midnight
+const todayDate = new Date(todayRomeISO());  // "2026-06-08" → UTC midnight June 8
+const validFrom = new Date(zone.valid_from); // "2026-06-04" → UTC midnight June 4
 ```
-`todayRomeISO()` returns the local Rome date string (e.g., `"2026-06-08"`). When passed to
-`new Date()`, it is parsed as UTC midnight, not Rome midnight. During DST-overlap hours
-(midnight–02:00 Rome time = 22:00–00:00 UTC the previous day), `todayRomeISO()` returns
-the next day while `new Date(todayRomeISO())` points to the previous UTC midnight, making
-`age_days` off by one. The comment on line 817 acknowledges this but accepts it; this is a
-latent bug that will manifest as incorrect staleness warnings.
+`todayRomeISO()` returns the local Rome date (Italy is UTC+2), so at 23:30 Rome time
+(= 21:30 UTC), it returns `"2026-06-08"`. `new Date("2026-06-08")` is parsed as UTC
+midnight, making `age_days` systematically wrong by 1 day for any call made between
+22:00–23:59 UTC. The inline comment on line 817 acknowledges this but accepts it; in a
+coaching system where the 42-day freshness threshold drives "propose a test" prompts, a
+persistent off-by-one causes premature or missed test suggestions.
 
-**Fix:** Compute both dates consistently in UTC:
+**Fix:**
 ```typescript
-const todayUTC = new Date(todayRomeISO() + "T00:00:00Z");
+const todayUTC   = new Date(todayRomeISO() + "T00:00:00Z");
 const validFromUTC = new Date(zone.valid_from + "T00:00:00Z");
 zone.age_days = Math.max(0, Math.floor((todayUTC.getTime() - validFromUTC.getTime()) / 86400000));
 ```
 
 ---
 
-### WR-05: Migration RLS policy is missing — `ENABLE ROW LEVEL SECURITY` without a permissive policy locks out all queries
+### WR-05: Migration enables RLS on `active_constraints` but defines no policy
 
 **File:** `migrations/2026-06-07-workout-prescription-quality.sql:25-26`
-**Issue:** The migration enables RLS on `active_constraints`:
+**Issue:**
 ```sql
 ALTER TABLE active_constraints ENABLE ROW LEVEL SECURITY;
+-- no CREATE POLICY follows
 ```
-No `CREATE POLICY` statement follows. In PostgreSQL, enabling RLS without defining any
-policy means **all rows are hidden from all roles** (including `service_role` unless it has
-`BYPASSRLS`). Supabase grants `BYPASSRLS` to `service_role` by default, so the Python
-client (which uses `SUPABASE_SERVICE_KEY`) is unaffected. However, the MCP Worker also uses
-`SUPABASE_SERVICE_KEY` as both `apikey` and `Authorization`, so it too bypasses RLS. The
-test `test_active_constraints_seed_has_two_rows` also uses the service client. This means
-the RLS policy serves no security purpose as written — no anon or authenticated-role
-access is possible because no policy exists, but the only callers are service_role (which
-bypasses RLS anyway).
+In PostgreSQL, enabling RLS without any policy means all non-superuser roles see zero rows.
+Supabase grants `BYPASSRLS` to `service_role`, so the Python backend and the MCP Worker
+(both authenticated as `service_role`) are unaffected. However, the comment claims
+"V4 ASVS L1" compliance as a security rationale — this is misleading because:
+1. There is no policy to verify or audit.
+2. All other tables in `sql/schema.sql` follow the same service-role-only pattern, so
+   the absence of a policy here is consistent, but unexplained.
+3. If a future contributor adds an `authenticated` role with row-level grants, this table
+   would silently remain inaccessible until a policy is added.
 
-This is a correctness/completeness defect: the RLS comment claims "V4 ASVS L1" compliance,
-but there is no policy defining what service_role or authenticated users can do, making the
-"protection" nominal. The other tables (e.g., `planned_sessions`) presumably have policies
-in `sql/schema.sql` — this table does not.
+**Fix:** Add an explicit service-role policy to match the pattern in `sql/schema.sql` and
+make the intent self-documenting:
 
-**Fix:** Add a permissive service-role policy for consistency with the rest of the schema,
-or document explicitly that this table is intended to be service-role-only:
 ```sql
+-- Same pattern as other tables: service_role bypass, all others denied by default
 CREATE POLICY "service_role_full_access" ON active_constraints
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 ```
 
 ---
 
-### WR-06: `verify_prescription_quality.py` — `_verify_active_constraints` fetches all rows without pagination
+### WR-06: Migration seed idempotency guard is too coarse — a resolved constraint can block re-seeding
 
-**File:** `scripts/verify_prescription_quality.py:45-49`
-**Issue:** The query selects all rows from `active_constraints` with no `.limit()`:
-```python
-res = (
-    sb.table("active_constraints")
-    .select("id,type,discipline,description,severity,created_at,resolved_at")
-    .execute()
-)
+**File:** `migrations/2026-06-07-workout-prescription-quality.sql:40-56`
+**Issue:** The `WHERE NOT EXISTS` guard checks for any active constraint with the same
+`type` AND `discipline` AND `resolved_at IS NULL`:
+
+```sql
+WHERE NOT EXISTS (
+    SELECT 1 FROM active_constraints
+    WHERE type = 'injury' AND discipline = 'swim' AND resolved_at IS NULL
+);
 ```
-The Supabase Python client defaults to a server-side row limit (typically 1,000). This is
-fine for a medical-constraint table that will never grow large. The issue is that
-`_verify_mesocycles_progression_plan` (line 126) applies `.lte` / `.gte` filters but also
-fetches without pagination. If these tables ever accumulate many rows, the verify script
-silently truncates and produces misleading results.
 
-More importantly, the `.execute()` call is not inside a loop for retries and the script
-has no timeout — a network partition will hang indefinitely. This is a script (not a
-scheduled job), so it is a low-severity robustness issue.
+This is correct for preventing double-seeding on first run. However, if a clinician marks
+the swim constraint as resolved (`resolved_at = now()`), then re-runs the migration to
+re-seed it (e.g., after a relapse), the `WHERE NOT EXISTS` guard is satisfied and the seed
+runs — inserting a new row. This is actually the desired behaviour in the relapse scenario.
+The actual problem is the inverse: the guard does not prevent inserting a duplicate active
+row if the migration is run twice in quick succession (e.g., in a CI pipeline that retries
+a failed migration step), because both executions may pass the NOT EXISTS check before
+either INSERT commits. Without a transaction or UNIQUE constraint, this race produces two
+active swim constraints.
 
-**Fix:** Add `.limit(100)` to `active_constraints` and `.limit(5)` to mesocycles, and
-document the assumption. For network resilience, set a timeout via `supabase.postgrest.timeout`.
+**Fix:** Wrap both INSERTs in a single transaction, or add a partial UNIQUE index:
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS active_constraints_injury_discipline_active
+  ON active_constraints (type, discipline)
+  WHERE resolved_at IS NULL;
+```
+
+---
+
+### WR-07: `generate_mesocycle.md` — `record_prediction` call references a Python module not in scope for Claude.ai
+
+**File:** `skills/generate_mesocycle.md:165-178`
+**Issue:** The "Output prediction (Fase 2.1)" section instructs the LLM to call:
+
+```python
+from coach.coaching.outcome_verification import record_prediction
+record_prediction(prediction_type="ctl_weekly", ...)
+```
+
+Claude.ai operating via the MCP server has no ability to execute Python code or import
+`coach.*` modules. This section will either be ignored (silent skip) or cause the LLM to
+fabricate a tool call that doesn't exist. There is no `record_prediction` MCP tool in the
+`TOOLS` array of `workers/mcp-server/src/index.ts`.
+
+The skill instruction creates a false expectation: a coach reviewing the generated plan
+may expect CTL predictions to have been recorded when they were not, undermining the
+"outcome_verification" quality-gate that depends on them.
+
+**Fix:** Either add a `record_prediction` MCP tool, or replace the Python snippet with
+an instruction for the LLM to log the prediction in `training_journal.md` as a
+human-readable note (which is achievable via text output without a tool call), and mark
+the section as "automated only when running as CLI script, not via Claude.ai MCP."
 
 ---
 
 ## Info
 
-### IN-01: `test_active_constraints_seed_has_two_rows` uses `.eq("resolved_at", None)` — may not filter correctly
+### IN-01: `test_active_constraints_seed_has_two_rows` uses `.eq("resolved_at", None)` — non-canonical null filter
 
 **File:** `tests/test_active_constraints.py:105`
-**Issue:** `.eq("resolved_at", None)` in the supabase-py client is translated to
-`resolved_at=eq.null` in the PostgREST query string. PostgREST accepts this, but the
-semantically correct filter for IS NULL is `.is_("resolved_at", "null")`. The `.eq(col, None)`
-form may work with the current supabase-py version but is not the officially documented
-idiom and could silently return zero rows if the client library changes behaviour in a
-patch release.
+**Issue:** `.eq("resolved_at", None)` is translated to `resolved_at=eq.null` in the
+PostgREST wire format. The canonical supabase-py idiom for IS NULL filtering is
+`.is_("resolved_at", "null")`. The `.eq(col, None)` form works in current supabase-py
+versions but is not the documented API and may silently return empty results or fail in
+a future client release. Every other file in the project that filters for NULL uses
+`.is_()` (e.g., `coach/planning/briefing.py:223`, `coach/coaching/proactive_reminders.py:161`).
 
 **Fix:**
 ```python
@@ -327,47 +426,63 @@ patch release.
 
 ---
 
-### IN-02: Hardcoded GitHub repository path in `forceGarminSync`
+### IN-02: Hardcoded GitHub repository path in `forceGarminSync` — username not verified
 
 **File:** `workers/mcp-server/src/index.ts:966`
-**Issue:** The repository path `NicoRoger/triathlon-coach` is hardcoded:
+**Issue:**
 ```typescript
 "https://api.github.com/repos/NicoRoger/triathlon-coach/actions/workflows/ingest.yml/dispatches"
 ```
-If the repo is renamed or transferred, this silently fails with a 404, but the error is
-caught and re-thrown only for non-OK status codes — which is correct. However, the
-username `NicoRoger` does not match the git user in the repository metadata (`Nicolò Ruggero`).
-Verify the exact GitHub username to avoid a silent 404 on first call.
+The username `NicoRoger` does not match the git user configured in the repository
+(`Nicolò Ruggero`, from `git log`). If the actual GitHub username is different, every
+`force_garmin_sync` call will return a 404 from GitHub, thrown as an error. This should
+be verified before deploy.
 
-**Fix:** Move to an environment variable `GH_REPO` (e.g., `"NicoRoger/triathlon-coach"`)
-in the `Env` interface, or at minimum add a comment confirming the exact GitHub username.
+**Fix:** Move to an environment variable in the `Env` interface:
+```typescript
+GH_REPO: string;  // e.g. "NicoRuggero/triathlon-coach"
+```
+and reference `env.GH_REPO` in the URL. Set via `wrangler secret put GH_REPO`.
 
 ---
 
-### IN-03: `_verify_physiology_zones_age` always returns `True` (never `False`) regardless of zone staleness
+### IN-03: `_verify_physiology_zones_age` always returns `True` — inflates the pass counter
 
 **File:** `scripts/verify_prescription_quality.py:77-112`
-**Issue:** The function docstring says "Ritorna False solo in caso di eccezione imprevista"
-and the summary counter at `main()` line 182 includes its return value in `passed/N`. This
-means even if all zones are >42 days old, the counter reports `2/3 OK` (or `3/3 OK`) with
-no distinction — the physiology-zones section always contributes a pass. The ATTENZIONE
-print is informational only and the return value is always `True` on success.
+**Issue:** The function is intentionally informational ("Ritorna False solo in caso di
+eccezione imprevista"), but its return value is included in the `results` list at line 177,
+contributing to the `passed/N` summary. A run where all zones are 200 days old will still
+print `3/3 OK`, giving a false impression of a fully-passing phase gate. The ATTENZIONE
+print is easy to miss.
 
-This is intentional per the docstring, but it means the aggregate `passed/N` score is
-misleading: it counts a "no-op informational check" as a passed gate. A reader could
-interpret `3/3 OK` as meaning physiology zones are fresh, when they may be 200 days old.
+**Fix:** Either remove this function's return value from `results` (making it a pure
+display section), or change it to return `False` when any zone is stale, consistent with
+the phase-gate intent. If informational behaviour is preferred, print the section header
+with a clear `[INFO — no gate]` marker so the pass counter is not misread.
 
-**Fix:** Either remove the physiology-zones return value from the `results` list (making it
-a pure print section), or change the function to return `False` when any zone exceeds 42
-days, consistent with the WORKOUT-03 spirit of the phase gate:
+---
 
-```python
-stale = any(age_days > 42 for (_, age_days) in zone_ages)
-return not stale
+### IN-04: `fitness_test.md` Step 0 description inconsistency — `zones[0].age_days` may not exist
+
+**File:** `skills/fitness_test.md:11`
+**Issue:** Step 0 instructs the LLM to "Leggi `zones[0].age_days` nel response". The
+`getPhysiologyZones` MCP tool returns:
+```json
+{ "zones": [...], "generated_at": "...", "note": "..." }
+```
+`zones` may be an empty array (when no zones are registered), in which case `zones[0]`
+is undefined and `.age_days` cannot be read. The skill handles the empty-zones case a
+sentence later ("o zones è vuoto"), but the `zones[0].age_days` instruction appears first
+and will cause the LLM to hallucinate a fallback or silently skip the check.
+
+**Fix:** Reorder or reword the instruction to handle the empty case first:
+```markdown
+2. Se `zones` è vuoto → segnala assenza dati e proponi test FTP/CSS/soglia.
+   Se `zones` non è vuoto → leggi `zones[0].age_days`.
 ```
 
 ---
 
-_Reviewed: 2026-06-08T12:10:50Z_
+_Reviewed: 2026-06-08T14:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
