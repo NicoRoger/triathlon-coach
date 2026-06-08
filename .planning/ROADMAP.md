@@ -16,7 +16,7 @@
 - [x] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget
  (completed 2026-06-07)
 
-- [ ] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò
+- [x] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò (completed 2026-06-08)
 - [ ] **Phase 6: Physiological Adaptation Intelligence** — Il sistema distingue cedimento muscolare da cardiovascolare e integra i beliefs di adattamento nelle prescrizioni
 - [ ] **Phase 7: Situational Resilience & Automation** — Gestione automatica di spostamenti, sessioni saltate, trasferte Croazia e malattia — senza aumentare i costi LLM
 - [ ] **Phase 8: Brief Quality** — Il brief mattutino ha qualità da coaching pro: dati numerici reali, sessione strutturata, discrepanza readiness, countdown gara
@@ -147,7 +147,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 05-04-PLAN.md — Phase gate: apply migration + verify script completo + suite pytest + checkpoint output LLM (WORKOUT-01..05)
+- [x] 05-04-PLAN.md — Phase gate: apply migration + verify script completo + suite pytest + checkpoint output LLM (WORKOUT-01..05)
 
 ### Phase 6: Physiological Adaptation Intelligence
 
@@ -248,7 +248,7 @@ Plans:
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 4/4 | Complete    | 2026-06-07 |
-| 5. Workout Prescription Quality | 3/4 | In Progress|  |
+| 5. Workout Prescription Quality | 4/4 | Complete   | 2026-06-08 |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
 | 8. Brief Quality | 0/0 | Not started | - |
