@@ -673,12 +673,12 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
   const since28 = daysAgoISO(28);
   const since14 = daysAgoISO(14);
 
-  let raceQuery = `planned_sessions?session_type=eq.race&planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc&limit=1`;
-  if (raceDate) raceQuery = `planned_sessions?session_type=eq.race&planned_date=eq.${raceDate}&limit=1`;
+  let raceQuery = `races?race_date=gte.${today}&race_date=lte.${until}&order=race_date.asc&limit=1`;
+  if (raceDate) raceQuery = `races?race_date=eq.${raceDate}&limit=1`;
 
   const raceRows = await sb(env, raceQuery);
   const race = raceRows?.[0] || null;
-  const targetDate = race?.planned_date || raceDate || until;
+  const targetDate = race?.race_date || raceDate || until;
 
   const [metrics, wellness, activities, subjective, planWindow] = await Promise.all([
     sb(env, `daily_metrics?date=gte.${since28}&order=date.asc`),
