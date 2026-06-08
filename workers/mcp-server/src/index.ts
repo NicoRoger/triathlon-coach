@@ -413,7 +413,15 @@ export default {
       return new Response("Method not allowed", { status: 405, headers: corsHeaders() });
     }
 
-    const rpc = (await req.json()) as JsonRpcRequest;
+    let rpc: JsonRpcRequest;
+    try {
+      rpc = (await req.json()) as JsonRpcRequest;
+    } catch {
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() } }
+      );
+    }
     const resp = await handleRpc(rpc, env);
     return new Response(JSON.stringify(resp), {
       headers: { "Content-Type": "application/json", ...corsHeaders() },
