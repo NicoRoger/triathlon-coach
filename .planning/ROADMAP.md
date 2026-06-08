@@ -170,7 +170,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 06-02-PLAN.md — ADAPT-01: classify_fatigue_type() in readiness.py + hook in post_session_analysis (fatigue_type/confidence/sport in session_analyses)
+- [x] 06-02-PLAN.md — ADAPT-01: classify_fatigue_type() in readiness.py + hook in post_session_analysis (fatigue_type/confidence/sport in session_analyses)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -266,7 +266,7 @@ Plans:
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 4/4 | Complete    | 2026-06-07 |
 | 5. Workout Prescription Quality | 4/4 | Complete    | 2026-06-08 |
-| 6. Physiological Adaptation Intelligence | 1/4 | In Progress|  |
+| 6. Physiological Adaptation Intelligence | 2/4 | In Progress|  |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
 | 8. Brief Quality | 0/0 | Not started | - |
 | 9. Post-Session Analysis Quality | 0/0 | Not started | - |
