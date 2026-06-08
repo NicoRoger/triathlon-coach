@@ -26,8 +26,8 @@ key-files:
     - workers/mcp-server/src/index.ts (già modificato in Plan 01; questo plan lo ha deployato)
 
 key-decisions:
-  - "Test 3 (Bearer token → 200) saltato: MCP_BEARER_TOKEN è un Cloudflare write-only secret non recuperabile — la correttezza funzionale è garantita dalla code review di Phase 5 (CR-01/CR-02)"
-  - "Deploy sostituisce Version ID e4129eec (Phase 5) con 3055794f — tutti i fix J1-J6 ora in produzione"
+  - "Token ruotato post-deploy: nuovo MCP_BEARER_TOKEN generato con crypto.randomBytes(32) e impostato via wrangler secret put; redeploy Version ID c63eeb96"
+  - "Deploy sostituisce Version ID e4129eec (Phase 5) con 3055794f → poi c63eeb96 (dopo rotazione token) — tutti i fix J1-J6 ora in produzione"
 
 patterns-established: []
 
@@ -56,7 +56,7 @@ completed: 2026-06-08
 - Tutti i fix J1-J6 sono ora in produzione su https://mcp-server.nicorugg.workers.dev
 - Smoke test 1 (no auth → 401): PASSED — il worker rifiuta richieste senza header Authorization
 - Smoke test 2 (POST /oauth/token code=invalid → 400): PASSED — HMAC validation funzionante
-- Smoke test 3 (Bearer token → 200): SKIPPED — token inaccessibile come Cloudflare write-only secret; correttezza garantita da Phase 5 code review
+- Smoke test 3 (Bearer token → 200): PASSED ✓ — dopo rotazione token (wrangler secret put + redeploy c63eeb96), curl con Authorization header restituisce `{"protocolVersion":"2024-11-05","serverInfo":{"name":"triathlon-coach-mcp","version":"0.3.0"}}`
 
 ## Task Commits
 
@@ -101,10 +101,11 @@ Nessuno. Deploy e smoke test (Test 1+2) eseguiti senza errori.
 |------|-------------|-------------|-----------|
 | Test 1 | POST / senza Authorization header | 401 | PASSED ✓ |
 | Test 2 | POST /oauth/token con code=invalid | 400 | PASSED ✓ |
-| Test 3 | POST / con Authorization: Bearer <token> | N/A | SKIPPED (token inaccessibile) |
+| Test 3 | POST / con Authorization: Bearer <token> | 200 | PASSED ✓ (dopo rotazione token + redeploy c63eeb96) |
 
 **Worker URL:** https://mcp-server.nicorugg.workers.dev  
-**Version ID live:** `3055794f-821e-4be0-bcfe-5a574fb89a94`  
+**Version ID live:** `c63eeb96-d121-4059-bd3a-2014bd830350` (dopo rotazione token)
+**Version ID intermedio:** `3055794f-821e-4be0-bcfe-5a574fb89a94` (primo deploy Phase 11)
 **Version ID precedente (Phase 5):** `e4129eec-def7-4f03-9c29-c5bfd453f2ea`
 
 ## Fix J1-J6 in Produzione
