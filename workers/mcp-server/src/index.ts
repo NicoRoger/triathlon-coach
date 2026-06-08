@@ -1087,7 +1087,7 @@ async function getDashboardData(env: Env) {
       sb(env, `activities?started_at=gte.${weeks4ago}T00:00:00Z&order=started_at.asc&select=started_at,sport`),
       sb(env, `mesocycles?order=start_date.asc&select=id,name,phase,start_date,end_date,notes`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=name,race_date,priority,distance`),
-      sb(env, `physiology_zones?valid_to=is.null&order=valid_from.desc&select=discipline,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr`),
+      sb(env, `physiology_zones?or=(valid_to.is.null,valid_to.gte.${today})&valid_from=lte.${today}&order=valid_from.desc&select=discipline,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr`),
     ]);
 
   // Deduplicate zones: one per discipline (most recent)
