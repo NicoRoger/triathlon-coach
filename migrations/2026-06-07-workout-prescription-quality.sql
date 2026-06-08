@@ -38,9 +38,17 @@ CREATE POLICY IF NOT EXISTS "service_role_full_access" ON active_constraints
 ALTER TABLE mesocycles
     ADD COLUMN IF NOT EXISTS progression_plan JSONB;
 
+-- ── Partial UNIQUE index: previene duplicati attivi per stessa (type, discipline) ──
+-- WHERE NOT EXISTS è necessario ma non sufficiente: due esecuzioni concorrenti
+-- (es. retry CI) possono passare entrambe il check prima che uno dei due INSERT
+-- faccia il commit. Il partial UNIQUE index garantisce unicità a livello DB.
+CREATE UNIQUE INDEX IF NOT EXISTS active_constraints_injury_discipline_active
+  ON active_constraints (type, discipline)
+  WHERE resolved_at IS NULL;
+
 -- ── Seed dati D-13: 2 vincoli medici attivi per Nicolò ───────────────────────
--- Pattern WHERE NOT EXISTS: idempotente anche senza UNIQUE key naturale.
--- Guard: skip se esiste già un vincolo attivo (resolved_at IS NULL) per stessa disciplina.
+-- Pattern WHERE NOT EXISTS: idempotente in combinazione con il UNIQUE index sopra.
+-- Guard: skip se esiste già un vincolo attivo (resolved_at IS NULL) per stessa (type, discipline).
 
 INSERT INTO active_constraints (type, discipline, description, severity)
 SELECT 'injury', 'swim',
