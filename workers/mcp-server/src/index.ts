@@ -1038,19 +1038,16 @@ async function forceGarminSync(env: Env): Promise<any> {
     throw new Error(`GitHub dispatch failed: ${dispatchResp.status} ${await dispatchResp.text()}`);
   }
 
-  const startTime = Date.now();
-  const baselineSync = lastSync || "";
-
-  while (Date.now() - startTime < 90_000) {
-    await sleep(10_000);
-    const updated = await sb(env, `health?component=eq.garmin_sync&select=last_success_at`);
-    const newSync = updated?.[0]?.last_success_at;
-    if (newSync && newSync !== baselineSync) {
-      return { status: "completed", duration_s: Math.round((Date.now() - startTime) / 1000), last_sync: newSync };
-    }
-  }
-
-  return { status: "timeout", warning: "sync triggered but not yet visible" };
+  // IMPORTANT: Do NOT poll here. Cloudflare Workers have a 30-second wall-clock
+  // limit (paid) and the GitHub Actions ingest workflow takes 3-5 minutes.
+  // A 90-second polling loop would always be terminated by the runtime mid-loop,
+  // returning an opaque error to the caller. Instead, return immediately after
+  // dispatching. The caller can check sync freshness via get_weekly_context.sync_status.
+  return {
+    status: "triggered",
+    message: "Sync job dispatched. Check sync_status via get_weekly_context after ~3-5 minutes.",
+    last_sync_before_trigger: lastSync || null,
+  };
 }
 
 // ============================================================================
