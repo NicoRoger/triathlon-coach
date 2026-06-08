@@ -619,7 +619,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   const metricsSince = daysAgoISO(Math.max(days * 2, 14));
   const until = daysFromISO(includeNextDays);
 
-  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races, constraints] =
+  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races, constraints, beliefs, fatigueBySport] =
     await Promise.all([
       getHealth(env),
       sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc&select=date,ctl,atl,tsb,daily_tss,hrv_z_score,readiness_score,readiness_label,flags,garmin_training_readiness`),
@@ -633,6 +633,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
       sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`).catch(() => []),
+      sb(env, `beliefs?status=neq.retired&confidence=gte.0.55&order=confidence.desc&select=belief_key,belief_text,status,confidence`).catch(() => []),
+      getLastFatigueBySport(env, since),
     ]);
 
   return {
@@ -654,6 +656,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     upcoming_races: races || [],
     active_constraints: constraints || [],
     current_progression_step: deriveProgressionStep(mesocycles?.[0] || null, today),
+    active_beliefs: beliefs || [],
+    last_fatigue_by_sport: fatigueBySport,
     review_instructions: [
       "Confronta planned_past vs completed_activities.",
       "Apri con HRV/readiness/carico e dati soggettivi rilevanti.",
@@ -751,6 +755,30 @@ async function getUpcomingPlan(days: number, env: Env) {
 
 async function getHealth(env: Env) {
   return sb(env, `health?select=component,last_success_at,failure_count,last_error&order=component.asc`);
+}
+
+/**
+ * Ritorna l'ultima classificazione di fatica per ogni disciplina (run/swim/bike).
+ * Legge `session_analyses.fatigue_type` filtrato per colonna `sport` (D-05, evita JOIN problematico).
+ * Formato return: `{run: {type, confidence, date} | null, swim: ..., bike: ...}`.
+ */
+async function getLastFatigueBySport(env: Env, since: string): Promise<Record<string, any>> {
+  const sports = ["run", "swim", "bike"];
+  const result: Record<string, any> = { run: null, swim: null, bike: null };
+  for (const sport of sports) {
+    const rows = await sb(
+      env,
+      `session_analyses?sport=eq.${sport}&fatigue_type=not.is.null&order=created_at.desc&limit=1&select=fatigue_type,fatigue_confidence,created_at`
+    ).catch(() => []);
+    if (rows?.[0]) {
+      result[sport] = {
+        type: rows[0].fatigue_type,
+        confidence: rows[0].fatigue_confidence,
+        date: rows[0].created_at?.split("T")[0],
+      };
+    }
+  }
+  return result;
 }
 
 async function getRecentMetrics(days: number, env: Env) {

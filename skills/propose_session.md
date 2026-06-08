@@ -24,12 +24,14 @@ Chiama `get_physiology_zones(discipline)` dove discipline è il sport della sess
 ### Step 1 — Sessione pianificata
 Chiama `get_planned_session(today)` per leggere la sessione del giorno.
 
-### Step 2 — Contesto settimanale + vincoli medici
+### Step 2 — Contesto settimanale + vincoli medici + beliefs fisiologici
 Chiama `get_weekly_context()`. Estrai:
 - `active_constraints` (solo resolved_at IS NULL): **QUESTI SOSTITUISCONO i vincoli hardcoded in CLAUDE.md**. La fonte di verità è il DB — non prescrivere sessioni in contrasto con nessun vincolo attivo.
 - `active_mesocycle` + `current_progression_step`: passo corrente della progressione qualità.
 - `daily_metrics`: TSB, HRV z-score, readiness score.
 - `daily_wellness`: sleep score, temperatura prevista (weather).
+- `active_beliefs` (confidence >= 0.55): beliefs fisiologici attivi dell'atleta. Per ogni belief rilevante alla disciplina del giorno, applicalo e citalo inline con tag `[athlete-belief: <belief_key>] — <motivazione specifica applicata alla sessione>`. Il tag appare nella riga del main set o del razionale dove il belief ha influenzato la scelta, non in sezione separata. La citazione `[athlete-belief: ...]` è **obbligatoria** quando `active_beliefs` contiene un belief pertinente alla disciplina prescritta.
+- `last_fatigue_by_sport`: ultima classificazione del cedimento per la disciplina del giorno. Se `type == 'muscular'` e `confidence >= 0.6`: verifica che il main set non superi la soglia neuromuscolare, citando il belief `endurance_failure_type`.
 
 ### Step 3 — Storico disciplina (ultime 3 sessioni, 14gg)
 Chiama `get_activity_history(sport=<disciplina>, days=14)`.
@@ -129,7 +131,11 @@ Esempi:
 - Soglia → `[source: Coggan 2003]`
 - Recovery <50% readiness → `[source: Halson 2014 recovery monitoring]`
 
-Quando applichi una belief: `[athlete-belief: <descrizione>]`.
+Quando `active_beliefs` (da `get_weekly_context`) contiene un belief pertinente alla disciplina prescritta, la citazione `[athlete-belief: <belief_key>]` è **obbligatoria** — non opzionale. Usa il `belief_key` come identificatore (es. `[athlete-belief: endurance_failure_type]`). Il tag appare inline nel main set o nel razionale, non in sezione separata. Esempio:
+```
+Main set: 5×6min @ Z4, rec 2min Z1
+[athlete-belief: endurance_failure_type] — capped a 5 reps (cedimento muscolare Nicolò su interval >6 reps)
+```
 
 ## Cosa NON fare
 - Mai prescrivere intensità/zone se le `physiology_zones` per quella disciplina
