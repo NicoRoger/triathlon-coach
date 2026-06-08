@@ -205,6 +205,7 @@ const TOOLS = [
         target_race_id: { type: "string" },
         weekly_pattern: { type: "object" },
         notes: { type: "string" },
+        progression_plan: { type: "object", description: "JSONB: {run_threshold: {week1: '4x6min', week2: '5x6min', week3: '6x6min'}, ...}" },
       },
     },
   },
@@ -780,6 +781,17 @@ async function getPhysiologyZones(discipline: string, env: Env) {
     }
   }
 
+  const todayDate = new Date(todayRomeISO());
+  for (const zone of current) {
+    if (zone.valid_from) {
+      const validFrom = new Date(zone.valid_from);  // DATE string "2026-06-04" parsed as UTC midnight
+      const diffMs = todayDate.getTime() - validFrom.getTime();
+      zone.age_days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    } else {
+      zone.age_days = null;
+    }
+  }
+
   return {
     generated_at: new Date().toISOString(),
     zones: current,
@@ -844,6 +856,7 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
   if (args.target_race_id !== undefined) payload.target_race_id = args.target_race_id;
   if (args.weekly_pattern !== undefined) payload.weekly_pattern = args.weekly_pattern;
   if (args.notes !== undefined) payload.notes = args.notes;
+  if (args.progression_plan !== undefined) payload.progression_plan = args.progression_plan;
 
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/mesocycles?start_date=eq.${args.start_date}`,
