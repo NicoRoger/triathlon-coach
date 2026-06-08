@@ -161,7 +161,24 @@ Plans:
   2. Il belief "atleta endurance puro, primo cedimento muscolare" è attivo in `beliefs` con confidence ≥ 0.7 e viene citato nelle prescrizioni con `[athlete-belief: ...]`
   3. Dopo 3+ sessioni della stessa tipologia, il sistema aggiorna il belief di risposta fisiologica (es. "risponde bene agli interval run 4min") e aggiusta la progressione nel mesociclo
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 06-01-PLAN.md — Fondazione: migration (colonne session_analyses + seed belief endurance_failure_type) + test scaffold Wave 0
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 06-02-PLAN.md — ADAPT-01: classify_fatigue_type() in readiness.py + hook in post_session_analysis (fatigue_type/confidence/sport in session_analyses)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 06-03-PLAN.md — ADAPT-02: get_weekly_context espone active_beliefs + last_fatigue_by_sport + propose_session.md cita [athlete-belief] (deploy)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 06-04-PLAN.md — ADAPT-03: job belief update in pattern_extraction.py + update progression_plan + phase gate
 
 ### Phase 7: Situational Resilience & Automation
 
