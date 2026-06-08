@@ -254,7 +254,7 @@ Plans:
 | 8. Brief Quality | 0/0 | Not started | - |
 | 9. Post-Session Analysis Quality | 0/0 | Not started | - |
 | 10. Weekly Review & Beliefs Quality | 0/0 | Not started | - |
-| 11. MCP Auth Hardening | 2/2 | Complete   | 2026-06-08 |
+| 11. MCP Auth Hardening | 2/2 | Complete    | 2026-06-08 |
 
 ---
 
