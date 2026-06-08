@@ -143,7 +143,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 05-03-PLAN.md — Skill prompts: propose_session/generate_mesocycle/fitness_test (gate fisiologico, vincoli dinamici, drill, contesto mesociclo, race-pace)
+- [x] 05-03-PLAN.md — Skill prompts: propose_session/generate_mesocycle/fitness_test (gate fisiologico, vincoli dinamici, drill, contesto mesociclo, race-pace)
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -248,7 +248,7 @@ Plans:
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 4/4 | Complete    | 2026-06-07 |
-| 5. Workout Prescription Quality | 2/4 | In Progress|  |
+| 5. Workout Prescription Quality | 3/4 | In Progress|  |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
 | 8. Brief Quality | 0/0 | Not started | - |
