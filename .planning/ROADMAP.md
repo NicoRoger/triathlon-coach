@@ -174,7 +174,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 06-03-PLAN.md — ADAPT-02: get_weekly_context espone active_beliefs + last_fatigue_by_sport + propose_session.md cita [athlete-belief] (deploy)
+- [x] 06-03-PLAN.md — ADAPT-02: get_weekly_context espone active_beliefs + last_fatigue_by_sport + propose_session.md cita [athlete-belief] (deploy)
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -266,7 +266,7 @@ Plans:
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 4/4 | Complete    | 2026-06-07 |
 | 5. Workout Prescription Quality | 4/4 | Complete    | 2026-06-08 |
-| 6. Physiological Adaptation Intelligence | 2/4 | In Progress|  |
+| 6. Physiological Adaptation Intelligence | 3/4 | In Progress|  |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
 | 8. Brief Quality | 0/0 | Not started | - |
 | 9. Post-Session Analysis Quality | 0/0 | Not started | - |
