@@ -1,12 +1,13 @@
 """Verifica live della qualità delle prescrizioni Phase 5.
 
-Script informativo: stampa sezioni leggibili per ispezione visiva di WORKOUT-03.
+Phase gate script: valuta WORKOUT-03 (automatico) con esito bool e riepilogo passed/N.
+WORKOUT-01/02/04/05 restano nella checklist manuale (richiedono verifica LLM in Claude.ai).
 Nessun exit automatico — l'operatore legge l'output e decide.
 
 Sezioni:
-  - active_constraints: vincoli medici attivi (WORKOUT-03)
-  - physiology_zones age: freschezza delle zone fisiologiche per disciplina
-  - mesocycles progression_plan: presenza del piano di progressione nel mesociclo attivo
+  - active_constraints: vincoli medici attivi (WORKOUT-03) → bool
+  - physiology_zones age: freschezza delle zone fisiologiche per disciplina → bool
+  - mesocycles progression_plan: presenza del piano di progressione nel mesociclo attivo → bool
   - checklist manuale: WORKOUT-01/02/04/05 (verifica manuale output LLM)
 
 Esecuzione: python -m scripts.verify_prescription_quality
@@ -31,9 +32,14 @@ logger = logging.getLogger(__name__)
 # Sezioni verify
 # ============================================================================
 
-def _verify_active_constraints(sb) -> None:
-    """Verifica WORKOUT-03: active_constraints ha i 2 seed e resolved_at IS NULL."""
+def _verify_active_constraints(sb) -> bool:
+    """Verifica WORKOUT-03: active_constraints ha i 2 seed e resolved_at IS NULL.
+
+    Ritorna True se almeno 2 vincoli attivi esistono con discipline swim e run.
+    Ritorna False se < 2 vincoli attivi o se manca swim o run.
+    """
     print("=== Active Constraints (WORKOUT-03) ===")
+    ok = True
     try:
         res = (
             sb.table("active_constraints")
@@ -50,14 +56,32 @@ def _verify_active_constraints(sb) -> None:
             print(f"  [{severity}] {discipline}: {description}")
         if len(active) < 2:
             print("ATTENZIONE: meno di 2 vincoli attivi — seed migration non eseguito?")
+            ok = False
+        # Verifica che swim e run siano entrambi presenti
+        active_disciplines = {r.get("discipline") for r in active}
+        if "swim" not in active_disciplines:
+            print("ATTENZIONE: vincolo 'swim' non trovato — seed spalla dx mancante")
+            ok = False
+        if "run" not in active_disciplines:
+            print("ATTENZIONE: vincolo 'run' non trovato — seed fascite sx mancante")
+            ok = False
+        if ok:
+            print("  [OK] 2+ vincoli attivi con discipline swim e run presenti")
     except Exception as exc:
         print(f"ERRORE sezione active_constraints: {exc}")
+        ok = False
     print()
+    return ok
 
 
-def _verify_physiology_zones_age(sb) -> None:
-    """Verifica freschezza zone fisiologiche per disciplina (WORKOUT-03 prereq)."""
+def _verify_physiology_zones_age(sb) -> bool:
+    """Verifica freschezza zone fisiologiche per disciplina (WORKOUT-03 prereq).
+
+    Sezione informativa: segnala age > 42 giorni con ATTENZIONE ma NON forza fail.
+    Ritorna False solo in caso di eccezione imprevista.
+    """
     print("=== Physiology Zones — freschezza ===")
+    ok = True
     try:
         res = (
             sb.table("physiology_zones")
@@ -73,22 +97,29 @@ def _verify_physiology_zones_age(sb) -> None:
                 try:
                     valid_from = date.fromisoformat(str(valid_from_str)[:10])
                     age_days = (today - valid_from).days
-                    flag = " ⚠️ OBSOLETE (>42gg)" if age_days > 42 else ""
+                    flag = " -- ATTENZIONE: zone obsolete (>42gg), considera test fitness" if age_days > 42 else ""
                     print(f"  {discipline}: valid_from={valid_from} ({age_days} giorni){flag}")
                 except (ValueError, TypeError):
                     print(f"  {discipline}: valid_from non parsabile: {valid_from_str!r}")
             else:
                 print(f"  {discipline}: valid_from=NULL — zone mai aggiornate")
         if not rows:
-            print("ATTENZIONE: nessuna zona fisiologica trovata — testare FTP/CSS/threshold prima di prescrivere.")
+            print("  Nessuna zona fisiologica trovata — testare FTP/CSS/threshold prima di prescrivere.")
     except Exception as exc:
         print(f"ERRORE sezione physiology_zones: {exc}")
+        ok = False
     print()
+    return ok
 
 
-def _verify_mesocycles_progression_plan(sb) -> None:
-    """Verifica presenza progression_plan nel mesociclo attivo (WORKOUT-04)."""
+def _verify_mesocycles_progression_plan(sb) -> bool:
+    """Verifica presenza progression_plan nel mesociclo attivo (WORKOUT-04).
+
+    Gestisce gracefully il caso "nessun mesociclo" (stato valido — Pitfall 6).
+    Ritorna False solo in caso di eccezione imprevista.
+    """
     print("=== Mesocycles — progression_plan (WORKOUT-04) ===")
+    ok = True
     try:
         today_str = date.today().isoformat()
         res = (
@@ -100,7 +131,7 @@ def _verify_mesocycles_progression_plan(sb) -> None:
         )
         rows = res.data or []
         if not rows:
-            print("  Nessun mesociclo attivo trovato.")
+            print("  Nessun mesociclo attivo trovato — stato valido se non ancora pianificato.")
         for r in rows:
             name = r.get("name", "?")
             phase = r.get("phase", "?")
@@ -112,7 +143,9 @@ def _verify_mesocycles_progression_plan(sb) -> None:
                 print(f"  {name} [{phase}]: progression_plan=NULL — nessun piano di progressione esplicito")
     except Exception as exc:
         print(f"ERRORE sezione mesocycles: {exc}")
+        ok = False
     print()
+    return ok
 
 
 def _print_manual_checklist() -> None:
@@ -140,9 +173,16 @@ def main() -> None:
     logger.info("verify_prescription_quality.py — Phase 5 WORKOUT check")
     print()
 
-    _verify_active_constraints(sb)
-    _verify_physiology_zones_age(sb)
-    _verify_mesocycles_progression_plan(sb)
+    results = [
+        _verify_active_constraints(sb),
+        _verify_physiology_zones_age(sb),
+        _verify_mesocycles_progression_plan(sb),
+    ]
+
+    passed = sum(1 for r in results if r)
+    print(f"=== Riepilogo: {passed}/{len(results)} OK ===")
+    print()
+
     _print_manual_checklist()
 
 
