@@ -541,6 +541,14 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+/** Validates that a value is a well-formed ISO date string (YYYY-MM-DD). */
+function isDateString(v: unknown): v is string {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+const VALID_SPORTS = new Set(["swim", "bike", "run", "brick", "strength", "all"]);
+const VALID_KINDS  = new Set(["all", "post_session", "illness", "injury", "evening_debrief", "free_note"]);
+
 function deriveProgressionStep(mesocycle: any, today: string): any {
   if (!mesocycle || !mesocycle.progression_plan || !mesocycle.start_date) return null;
   const startDate = new Date(mesocycle.start_date);
@@ -646,6 +654,9 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
 }
 
 async function getRaceContext(raceDate: string | undefined, daysAhead: number, env: Env) {
+  if (raceDate !== undefined && !isDateString(raceDate)) {
+    throw new Error(`Invalid race_date format: ${raceDate}. Expected YYYY-MM-DD.`);
+  }
   daysAhead = clampInt(daysAhead, 1, 180);
   const today = todayRomeISO();
   const until = raceDate || daysFromISO(daysAhead);
@@ -738,10 +749,12 @@ async function getRecentMetrics(days: number, env: Env) {
 }
 
 async function getPlannedSession(date: string, env: Env) {
+  if (!isDateString(date)) throw new Error(`Invalid date format: ${date}. Expected YYYY-MM-DD.`);
   return sb(env, `planned_sessions?planned_date=eq.${date}`);
 }
 
 async function getActivityHistory(sport: string, days: number, env: Env) {
+  if (!VALID_SPORTS.has(sport)) throw new Error(`Invalid sport: ${sport}`);
   const since = daysAgoISO(days);
   let q = `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=id,started_at,sport,duration_s,distance_m,avg_hr,avg_power_w,np_w,tss,rpe,notes`;
   if (sport !== "all") q += `&sport=eq.${sport}`;
@@ -749,6 +762,7 @@ async function getActivityHistory(sport: string, days: number, env: Env) {
 }
 
 async function queryLog(days: number, kind: string, env: Env) {
+  if (!VALID_KINDS.has(kind)) throw new Error(`Invalid log kind: ${kind}`);
   const since = daysAgoISO(days);
   let q = `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc`;
   if (kind !== "all") q += `&kind=eq.${kind}`;
@@ -775,6 +789,9 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   const validSports = ["swim", "bike", "run", "brick", "strength"];
   if (!validSports.includes(args.sport)) {
     throw new Error(`Invalid sport: ${args.sport}. Must be one of ${validSports.join(", ")}`);
+  }
+  if (!isDateString(args.planned_date)) {
+    throw new Error(`Invalid planned_date format: ${args.planned_date}. Expected YYYY-MM-DD.`);
   }
 
   const payload: any = {
@@ -910,6 +927,12 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
   const validPhases = ["base", "build", "specific", "peak", "taper", "recovery"];
   if (!validPhases.includes(args.phase)) {
     throw new Error(`Invalid phase: ${args.phase}. Must be one of ${validPhases.join(", ")}`);
+  }
+  if (!isDateString(args.start_date)) {
+    throw new Error(`Invalid start_date format: ${args.start_date}. Expected YYYY-MM-DD.`);
+  }
+  if (!isDateString(args.end_date)) {
+    throw new Error(`Invalid end_date format: ${args.end_date}. Expected YYYY-MM-DD.`);
   }
 
   const payload: any = {
