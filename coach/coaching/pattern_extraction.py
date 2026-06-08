@@ -179,6 +179,205 @@ def _guess_sport_from_date(day_iso: str, activities: list[dict]) -> str:
 
 
 # ============================================================================
+# ADAPT-03 — Belief update from session patterns (rule-based, zero LLM cost)
+# ============================================================================
+
+def update_beliefs_from_session_patterns(days: int = 14) -> dict:
+    """Aggiorna beliefs responds_well_/struggles_with_ dai pattern di sessione.
+
+    Deterministico, zero LLM. Gira nel flusso settimanale anche a budget esaurito.
+    Raggruppa session_analyses per session_type (n>=3), rinforza/crea beliefs.
+    Quando un belief responds_well_* diventa validated_belief, avanza progression_plan.
+
+    Returns dict {'updated': int, 'created': int, 'skipped': int, 'errors': int}.
+    """
+    from coach.analytics.belief_engine import reinforce_belief, contradict_belief, create_belief, list_beliefs
+
+    sb = get_supabase()
+    since = (today_rome() - timedelta(days=days)).isoformat()
+
+    counters: dict = {"updated": 0, "created": 0, "skipped": 0, "errors": 0}
+
+    # 1. session_analyses recenti con fatigue_type valorizzato (filtro client-side per compatibilità)
+    all_analyses = (
+        sb.table("session_analyses")
+        .select("activity_id,sport,fatigue_type,fatigue_confidence,created_at")
+        .gte("created_at", since)
+        .execute().data or []
+    )
+    analyses = [a for a in all_analyses if a.get("fatigue_type") is not None]
+    if not analyses:
+        return counters
+
+    # 2. Bulk resolve session_type: external_id → activities.id → planned_sessions.session_type
+    external_ids = [a["activity_id"] for a in analyses]
+    act_rows = (
+        sb.table("activities").select("id,external_id")
+        .in_("external_id", external_ids)
+        .execute().data or []
+    )
+    ext_to_uuid: dict = {r["external_id"]: r["id"] for r in act_rows}
+
+    act_uuids = list(ext_to_uuid.values())
+    if act_uuids:
+        ps_rows = (
+            sb.table("planned_sessions").select("completed_activity_id,session_type")
+            .in_("completed_activity_id", act_uuids)
+            .execute().data or []
+        )
+    else:
+        ps_rows = []
+    uuid_to_session_type: dict = {r["completed_activity_id"]: r.get("session_type") for r in ps_rows}
+
+    # 3. Raggruppa per session_type
+    groups: dict = defaultdict(list)
+    for analysis in analyses:
+        act_uuid = ext_to_uuid.get(analysis["activity_id"])
+        session_type = uuid_to_session_type.get(act_uuid) if act_uuid else None
+
+        # Guard obbligatorio: skip session_type None (Pitfall 4 — nessun belief responds_well_None)
+        if not session_type:
+            counters["skipped"] += 1
+            continue
+
+        groups[session_type].append(analysis)
+
+    # 4. Per ogni gruppo con n >= 3
+    for session_type, group_analyses in groups.items():
+        n = len(group_analyses)
+        if n < 3:
+            counters["skipped"] += 1
+            continue
+
+        try:
+            fatigue_types = [a.get("fatigue_type") for a in group_analyses if a.get("fatigue_type")]
+            cardiovascular_count = fatigue_types.count("cardiovascular")
+            cardiovascular_majority = cardiovascular_count > n / 2
+            evidence_note = f"n={n}, periodo={days}gg"
+
+            if not cardiovascular_majority:
+                # Pattern positivo: responds_well
+                belief_key = f"responds_well_{session_type}"
+                belief_text = (
+                    f"Nicolò risponde bene alle sessioni {session_type} "
+                    f"(n={n}, prevalenza muscolare/mista)"
+                )
+                reinforced = reinforce_belief(belief_key, reason=evidence_note)
+                if reinforced is None:
+                    create_belief(
+                        belief_key,
+                        belief_text=belief_text,
+                        initial_confidence=0.4,
+                        source="pattern_extraction_job",
+                        metadata={"n": n, "session_type": session_type, "period_days": days},
+                    )
+                    counters["created"] += 1
+                else:
+                    counters["updated"] += 1
+                    _advance_progression_for_belief(sb, belief_key, session_type)
+            else:
+                # Pattern negativo: struggles_with
+                belief_key = f"struggles_with_{session_type}"
+                belief_text = (
+                    f"Nicolò fatica con le sessioni {session_type} "
+                    f"(n={n}, prevalenza cardiovascolare {cardiovascular_count}/{n})"
+                )
+                contradicted = contradict_belief(belief_key, reason=evidence_note)
+                if contradicted is None:
+                    create_belief(
+                        belief_key,
+                        belief_text=belief_text,
+                        initial_confidence=0.4,
+                        source="pattern_extraction_job",
+                        metadata={"n": n, "session_type": session_type, "period_days": days},
+                    )
+                    counters["created"] += 1
+                else:
+                    counters["updated"] += 1
+        except Exception:
+            logger.exception("Belief update error per session_type=%s", session_type)
+            counters["errors"] += 1
+
+    return counters
+
+
+def _advance_progression_for_belief(sb, belief_key: str, session_type: str) -> None:
+    """Avanza progression_plan del mesociclo attivo se il belief è validated_belief (D-15).
+
+    No-op se: belief non è validated_belief, nessun mesociclo attivo, o la chiave
+    session_type non esiste nel progression_plan.
+    NON tocca planned_sessions (vincolo §5.4).
+    """
+    # Rilettura riga per verificare status aggiornato dopo reinforce
+    belief_row = (
+        sb.table("beliefs").select("status")
+        .eq("belief_key", belief_key)
+        .execute().data or []
+    )
+    if not belief_row or belief_row[0].get("status") != "validated_belief":
+        return
+
+    today_str = today_rome().isoformat()
+    meso_rows = (
+        sb.table("mesocycles").select("id,progression_plan")
+        .lte("start_date", today_str)
+        .gte("end_date", today_str)
+        .limit(1)
+        .execute().data or []
+    )
+    if not meso_rows:
+        return
+
+    meso = meso_rows[0]
+    progression_plan = meso.get("progression_plan") or {}
+    if not progression_plan:
+        return
+
+    # Match chiave progression_plan per session_type (normalizzazione substring)
+    session_norm = session_type.replace("_", "").lower()
+    matching_key = None
+    for plan_key in progression_plan:
+        if plan_key.startswith("_"):
+            continue
+        plan_norm = plan_key.replace("_", "").lower()
+        if session_norm in plan_norm or plan_norm in session_norm:
+            matching_key = plan_key
+            break
+
+    if matching_key is None:
+        return
+
+    step_dict = progression_plan[matching_key]
+    if not isinstance(step_dict, dict):
+        return
+
+    week_keys = sorted(step_dict.keys())
+    if not week_keys:
+        return
+
+    # Leggi step corrente (tracciato in _current_step metadata)
+    current_step = (progression_plan.get("_current_step") or {}).get(matching_key, week_keys[0])
+    try:
+        idx = week_keys.index(current_step)
+    except ValueError:
+        idx = 0
+
+    if idx + 1 >= len(week_keys):
+        return  # già all'ultima settimana
+
+    updated = dict(progression_plan)
+    current_steps = dict(updated.get("_current_step") or {})
+    current_steps[matching_key] = week_keys[idx + 1]
+    updated["_current_step"] = current_steps
+
+    sb.table("mesocycles").update({"progression_plan": updated}).eq("id", meso["id"]).execute()
+    logger.info(
+        "Progression plan avanzato: %s %s → %s (belief validated: %s)",
+        matching_key, current_step, week_keys[idx + 1], belief_key,
+    )
+
+
+# ============================================================================
 # LLM-based extraction (enhanced with biometric context)
 # ============================================================================
 
@@ -193,6 +392,9 @@ def extract_patterns(days: int = 28) -> Optional[str]:
 
     current_obs = get_current_observations()
     biometric = extract_biometric_patterns(days)
+
+    belief_update_result = update_beliefs_from_session_patterns(days=14)
+    logger.info("Belief update: %s", belief_update_result)
 
     context = json.dumps({
         "periodo_analizzato": f"{since} a {today.isoformat()}",
