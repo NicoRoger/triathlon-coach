@@ -399,12 +399,13 @@ export default {
       });
     }
 
-    // Auth: accetta sia bearer token diretto (Claude Code) sia richieste OAuth (Claude.ai)
+    // Auth: bearer token obbligatorio per tutte le richieste MCP.
+    // Claude.ai ottiene il token via /oauth/token dopo il flusso OAuth (callback HMAC-signed).
+    // Claude Code usa il token diretto configurato come secret.
     const auth = req.headers.get("authorization") || "";
     const isBearerValid = auth === `Bearer ${env.MCP_BEARER_TOKEN}`;
-    const isOAuthRequest = !auth; // Claude.ai dopo OAuth non manda bearer
 
-    if (!isBearerValid && !isOAuthRequest) {
+    if (!isBearerValid) {
       return new Response("Unauthorized", { status: 401, headers: { ...corsHeaders(), "WWW-Authenticate": `Bearer realm="triathlon-coach", resource_metadata="${url.origin}/.well-known/oauth-protected-resource"` } });
     }
 
