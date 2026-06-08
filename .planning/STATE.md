@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-last_updated: "2026-06-08T20:25:13.162Z"
+status: executing
+last_updated: "2026-06-08T20:39:45.800Z"
 progress:
   total_phases: 11
   completed_phases: 6
-  total_plans: 19
+  total_plans: 23
   completed_plans: 19
   percent: 55
 ---
@@ -18,7 +18,7 @@ progress:
 
 **Core Value:** Ogni mattina Nicolò riceve dati corretti, analisi attendibili e prescrizioni allineate all'allenamento élite — e può fidarsi ciecamente del sistema per prepararsi alla gara.
 
-**Current Focus:** Phase 11 — mcp-auth-hardening
+**Current Focus:** Phase 06 — physiological-adaptation-intelligence
 
 **Milestone:** Integrità & Qualità Elite (audit-resilience-2026-06-01 verification + coaching quality elevation)
 
@@ -26,12 +26,12 @@ progress:
 
 ## Current Position
 
-Phase: 11 (mcp-auth-hardening) — EXECUTING
-Plan: Not started
+Phase: 06 (physiological-adaptation-intelligence) — EXECUTING
+Plan: 1 of 4
 Phase: 04 (live-behavior-verification) — NEXT
 **Phase:** 11
 **Phase Name:** Live Behavior Verification
-**Status:** Milestone complete
+**Status:** Executing Phase 06
 
 ```
 Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]

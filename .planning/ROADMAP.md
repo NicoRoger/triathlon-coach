@@ -166,7 +166,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — Fondazione: migration (colonne session_analyses + seed belief endurance_failure_type) + test scaffold Wave 0
+- [x] 06-01-PLAN.md — Fondazione: migration (colonne session_analyses + seed belief endurance_failure_type) + test scaffold Wave 0
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -266,7 +266,7 @@ Plans:
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 4/4 | Complete    | 2026-06-07 |
 | 5. Workout Prescription Quality | 4/4 | Complete    | 2026-06-08 |
-| 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
+| 6. Physiological Adaptation Intelligence | 1/4 | In Progress|  |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
 | 8. Brief Quality | 0/0 | Not started | - |
 | 9. Post-Session Analysis Quality | 0/0 | Not started | - |
