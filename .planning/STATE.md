@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-08T13:28:55.235Z"
+last_updated: "2026-06-08T13:58:15.910Z"
 progress:
   total_phases: 11
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 19
-  completed_plans: 17
-  percent: 45
+  completed_plans: 19
+  percent: 55
 ---
 
 # State: Triathlon AI Coach — Integrità & Qualità Elite
@@ -27,11 +27,11 @@ progress:
 ## Current Position
 
 Phase: 11 (mcp-auth-hardening) — EXECUTING
-Plan: 1 of 2
+Plan: 2 of 2
 Phase: 04 (live-behavior-verification) — NEXT
 **Phase:** 6
 **Phase Name:** Live Behavior Verification
-**Status:** Executing Phase 11
+**Status:** Ready to execute
 
 ```
 Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
@@ -53,6 +53,7 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ---
 | Phase 03 P04 | 12min | 2 tasks | 1 files |
+| Phase 11-mcp-auth-hardening P02 | 30min | 3 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -89,7 +90,7 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-07T16:52:13.353Z
+**Last session:** 2026-06-08T13:58:15.871Z
 **Next action:** Phase 04 — Plan 04 (verify_live_behavior.py + checkpoint finale 4/4 OK)
 
 **Context to reload next session:**
@@ -111,3 +112,4 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 - [Phase 03]: Phase 3 completa — 4/4 piani completati (03-01 migrazioni, 03-02 modulation wiring, 03-03 pipeline guards, 03-04 bot deploy)
 - [Phase 04-03]: BUDGET_DEGRADED = 4.00 (era 4.50) — ROADMAP SC4 allineato; select_model ristrutturato per evitare ramo irraggiungibile con BUDGET_WARNING == BUDGET_DEGRADED
 - [Phase 04-03]: VERIFY-06 completato: soglia degrado €4.00 verificata via test (23/23 passati, 7 nuovi test VERIFY-06)
+- [Phase 11-mcp-auth-hardening]: Test 3 saltato: MCP_BEARER_TOKEN è write-only Cloudflare secret — auth verificata via Test 1+2 + code review Phase 5

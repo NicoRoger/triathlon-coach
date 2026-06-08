@@ -22,7 +22,7 @@
 - [ ] **Phase 8: Brief Quality** — Il brief mattutino ha qualità da coaching pro: dati numerici reali, sessione strutturata, discrepanza readiness, countdown gara
 - [ ] **Phase 9: Post-Session Analysis Quality** — Le analisi post-sessione sono a livello coach professionista: confronto vs piano, citation tags, pattern adattamento, vincolo spalla
 - [ ] **Phase 10: Weekly Review & Beliefs Quality** — La weekly review produce insight azionabili, beliefs aggiornati e piano settimana committato correttamente
-- [ ] **Phase 11: MCP Auth Hardening** — Il server MCP è protetto da autenticazione corretta e i bug funzionali J2-J6 sono risolti e deployati
+- [x] **Phase 11: MCP Auth Hardening** — Il server MCP è protetto da autenticazione corretta e i bug funzionali J2-J6 sono risolti e deployati (completed 2026-06-08)
 
 ---
 
@@ -254,7 +254,7 @@ Plans:
 | 8. Brief Quality | 0/0 | Not started | - |
 | 9. Post-Session Analysis Quality | 0/0 | Not started | - |
 | 10. Weekly Review & Beliefs Quality | 0/0 | Not started | - |
-| 11. MCP Auth Hardening | 1/2 | In Progress|  |
+| 11. MCP Auth Hardening | 2/2 | Complete   | 2026-06-08 |
 
 ---
 

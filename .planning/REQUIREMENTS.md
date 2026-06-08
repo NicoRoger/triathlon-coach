@@ -95,8 +95,8 @@
 
 ### MCP Auth Hardening (MCP)
 
-- [ ] **MCP-01**: Il piano in `docs/mcp_auth_hardening_plan.md` è eseguito: header mancante non trattato come autenticato, `/oauth/token` non ritorna service token senza verifica
-- [ ] **MCP-02**: Gli item J2-J6 (req.json guardato, getRaceContext usa tabella `races`, check existingResp.ok, forceGarminSync senza busy-wait, zone consistency) sono risolti e deployati
+- [x] **MCP-01**: Il piano in `docs/mcp_auth_hardening_plan.md` è eseguito: header mancante non trattato come autenticato, `/oauth/token` non ritorna service token senza verifica
+- [x] **MCP-02**: Gli item J2-J6 (req.json guardato, getRaceContext usa tabella `races`, check existingResp.ok, forceGarminSync senza busy-wait, zone consistency) sono risolti e deployati
 
 ---
 
@@ -185,8 +185,8 @@
 | QUALITY-WEEKLY-01 | Phase 10 | Pending |
 | QUALITY-WEEKLY-02 | Phase 10 | Pending |
 | QUALITY-WEEKLY-03 | Phase 10 | Pending |
-| MCP-01 | Phase 11 | Pending |
-| MCP-02 | Phase 11 | Pending |
+| MCP-01 | Phase 11 | Complete |
+| MCP-02 | Phase 11 | Complete |
 
 **Coverage:**
 
