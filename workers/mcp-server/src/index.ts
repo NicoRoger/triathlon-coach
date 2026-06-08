@@ -954,6 +954,10 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
   );
   const existing = (await existingResp.json()) as any[];
 
+  if (existing.length > 1) {
+    throw new Error(`Ambiguous: ${existing.length} mesocycles found for start_date ${args.start_date}. Resolve duplicates before updating.`);
+  }
+
   if (existing.length > 0) {
     const id = existing[0].id;
     const updateResp = await fetch(`${env.SUPABASE_URL}/rest/v1/mesocycles?id=eq.${id}`, {
