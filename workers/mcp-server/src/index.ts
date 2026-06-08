@@ -205,6 +205,19 @@ const TOOLS = [
         target_race_id: { type: "string" },
         weekly_pattern: { type: "object" },
         notes: { type: "string" },
+        progression_plan: { type: "object", description: "JSONB: {run_threshold: {week1: '4x6min', week2: '5x6min', week3: '6x6min'}, ...}" },
+      },
+    },
+  },
+  {
+    name: "update_constraint",
+    description: "Marca un vincolo medico come risolto (resolved_at = now). Chiamare dopo valutazione clinica.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string", description: "UUID del vincolo da risolvere" },
+        resolved_at: { type: "string", format: "date-time", description: "Timestamp risoluzione (default: now)" },
       },
     },
   },
@@ -440,6 +453,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return forceGarminSync(env);
     case "commit_mesocycle":
       return commitMesocycle(args, env);
+    case "update_constraint":
+      return updateConstraint(args || {}, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -491,6 +506,19 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function deriveProgressionStep(mesocycle: any, today: string): any {
+  if (!mesocycle || !mesocycle.progression_plan || !mesocycle.start_date) return null;
+  const startDate = new Date(mesocycle.start_date);
+  const todayDate = new Date(today);
+  const weekNumber = Math.floor((todayDate.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  const plan = mesocycle.progression_plan;
+  const result: any = {};
+  for (const [sessionType, weeks] of Object.entries(plan as Record<string, any>)) {
+    result[sessionType] = (weeks as any)[`week${weekNumber}`] || null;
+  }
+  return { week_number: weekNumber, steps: result };
+}
+
 function coachProtocol() {
   return {
     interface: "Claude web/mobile via remote MCP",
@@ -538,7 +566,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   const metricsSince = daysAgoISO(Math.max(days * 2, 14));
   const until = daysFromISO(includeNextDays);
 
-  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races] =
+  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races, constraints] =
     await Promise.all([
       getHealth(env),
       sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc&select=date,ctl,atl,tsb,daily_tss,hrv_z_score,readiness_score,readiness_label,flags,garmin_training_readiness`),
@@ -551,6 +579,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at`),
       sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
+      sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`),
     ]);
 
   return {
@@ -570,6 +599,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     open_modulations: modulations,
     active_mesocycle: mesocycles?.[0] || null,
     upcoming_races: races || [],
+    active_constraints: constraints || [],
+    current_progression_step: deriveProgressionStep(mesocycles?.[0] || null, today),
     review_instructions: [
       "Confronta planned_past vs completed_activities.",
       "Apri con HRV/readiness/carico e dati soggettivi rilevanti.",
@@ -780,6 +811,17 @@ async function getPhysiologyZones(discipline: string, env: Env) {
     }
   }
 
+  const todayDate = new Date(todayRomeISO());
+  for (const zone of current) {
+    if (zone.valid_from) {
+      const validFrom = new Date(zone.valid_from);  // DATE string "2026-06-04" parsed as UTC midnight
+      const diffMs = todayDate.getTime() - validFrom.getTime();
+      zone.age_days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    } else {
+      zone.age_days = null;
+    }
+  }
+
   return {
     generated_at: new Date().toISOString(),
     zones: current,
@@ -844,6 +886,7 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
   if (args.target_race_id !== undefined) payload.target_race_id = args.target_race_id;
   if (args.weekly_pattern !== undefined) payload.weekly_pattern = args.weekly_pattern;
   if (args.notes !== undefined) payload.notes = args.notes;
+  if (args.progression_plan !== undefined) payload.progression_plan = args.progression_plan;
 
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/mesocycles?start_date=eq.${args.start_date}`,
@@ -880,6 +923,28 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
     const result = (await insertResp.json()) as any[];
     return { status: "created", mesocycle_id: result[0]?.id, payload };
   }
+}
+
+// ============================================================================
+// Update Constraint (D-14)
+// ============================================================================
+async function updateConstraint(args: any, env: Env): Promise<any> {
+  if (!args.id || !isUuid(args.id)) {
+    throw new Error(`Invalid constraint id: must be a valid UUID`);
+  }
+  const resolvedAt = args.resolved_at || new Date().toISOString();
+  const updateResp = await fetch(`${env.SUPABASE_URL}/rest/v1/active_constraints?id=eq.${args.id}`, {
+    method: "PATCH",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify({ resolved_at: resolvedAt }),
+  });
+  if (!updateResp.ok) throw new Error(`Update failed: ${updateResp.status} ${await updateResp.text()}`);
+  return { status: "resolved", id: args.id, resolved_at: resolvedAt };
 }
 
 // ============================================================================
