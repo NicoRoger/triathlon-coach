@@ -15,6 +15,7 @@
 - [x] **Phase 3: Deploy & Pipeline Resilience** — Migrazioni eseguite, Telegram bot ridistribuito, pipeline ingest resiliente con exit codes e DR corretti (completed 2026-06-07)
 - [x] **Phase 4: Live Behavior Verification** — Il sistema si comporta come atteso end-to-end su dati reali: brief, analisi, modulazioni, budget
  (completed 2026-06-07)
+
 - [ ] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò
 - [ ] **Phase 6: Physiological Adaptation Intelligence** — Il sistema distingue cedimento muscolare da cardiovascolare e integra i beliefs di adattamento nelle prescrizioni
 - [ ] **Phase 7: Situational Resilience & Automation** — Gestione automatica di spostamenti, sessioni saltate, trasferte Croazia e malattia — senza aumentare i costi LLM
@@ -134,7 +135,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Migration active_constraints + progression_plan + test WORKOUT-03 + scaffold verify script
+- [x] 05-01-PLAN.md — Migration active_constraints + progression_plan + test WORKOUT-03 + scaffold verify script
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -247,7 +248,7 @@ Plans:
 | 2. Fitness Test Correctness | 3/3 | Complete   | 2026-06-05 |
 | 3. Deploy & Pipeline Resilience | 4/4 | Complete   | 2026-06-07 |
 | 4. Live Behavior Verification | 4/4 | Complete    | 2026-06-07 |
-| 5. Workout Prescription Quality | 0/0 | Not started | - |
+| 5. Workout Prescription Quality | 1/4 | In Progress|  |
 | 6. Physiological Adaptation Intelligence | 0/0 | Not started | - |
 | 7. Situational Resilience & Automation | 0/0 | Not started | - |
 | 8. Brief Quality | 0/0 | Not started | - |
