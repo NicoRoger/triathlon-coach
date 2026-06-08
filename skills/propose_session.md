@@ -39,10 +39,10 @@ Chiama `get_activity_history(sport=<disciplina>, days=14)`.
 ### Step 4 — Adatta a readiness e condizioni
 Logica readiness a 3 livelli:
 - Readiness >= 75 e nessun flag → sessione come da piano
-- Readiness 50-74 → riduci intensità di 1 step (es. soglia → tempo, VO2 → soglia)
+- Readiness 50-74 → riduci intensità di 1 step (es. soglia → tempo, VO2 → soglia). **Se applichi questa riduzione, NON applicare anche il blocco "Condizioni avverse" — una sola riduzione per sessione.**
 - Readiness < 50 → proponi recovery o riposo (richiede `propose_plan_change`)
 
-**Contestualizzazione zone (condizioni avverse):** se >= 2 fattori avversi tra { temperatura prevista >25°C, TSB <-10, sleep score <65 } sono presenti, esprimi il target come **PERCEIVED EFFORT** (non pace/watt assoluti) con nota esplicita: "Condizioni avverse: [condizione]. Corri a sensazione Z4 — pace di riferimento ~[pace adattata] invece di [pace nominale]." `[source: Périard 2015]`
+**Contestualizzazione zone (condizioni avverse):** Applicare SOLO se readiness >= 75 (nessuna riduzione di intensità già applicata). Se >= 2 fattori avversi tra { temperatura prevista >25°C, TSB <-10, sleep score <65 } sono presenti, esprimi il target come **PERCEIVED EFFORT** (non pace/watt assoluti) con nota esplicita: "Condizioni avverse: [condizione]. Corri a sensazione Z4 — pace di riferimento ~[pace adattata] invece di [pace nominale]." `[source: Périard 2015]`
 
 ### Step 5 — Race-pace Lavarone (solo per sessioni race-specific)
 Per sessioni di tipo race-pace, chiama `race_prediction` + `get_race_context` (dati Lavarone: distanza, dislivello, tipo fondo cross) **PRIMA** di prescrivere. Calibra i target sulla fitness corrente — non hardcodare. I target si aggiornano automaticamente con la fitness misurata.
@@ -65,7 +65,7 @@ I drill tecnici sono parte **INTEGRANTE** della sessione (nel warmup o nel main 
 - Climbing position: stabilità core e postura salita (rilevante per Lavarone cross)
 
 ### Corsa (post-fascite precauzione)
-- Strides (8×80m a 5km pace): attivazione neuromuscolare e meccanica post-fascite
+- Strides (8×80m a 5km pace): attivazione neuromuscolare e meccanica post-fascite. **GUARD: includi SOLO se `injury_flag = false` E readiness >= 65. Se `active_constraints` include fascite con severity='high', sostituisci con cadenza drill** (RPE muscolare > 6 in zona fascite viola CLAUDE.md §5.2 injury_flag).
 - Marcia di attivazione tibiali (ankle dorsiflexion drill): profilassi fascite plantare
 - Cadenza drill (incrementa di 5spm per 30sec): riduzione impatto per fascite sx
 
