@@ -149,6 +149,12 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     metrics = _get_daily_metrics(sb, activity_date)
     zone_compliance = _compute_zone_compliance(planned, activity) if planned else None
 
+    # ADAPT-01: classificazione deterministica cedimento (zero LLM)
+    from coach.analytics.readiness import classify_fatigue_type
+    splits = activity.get("splits") or None
+    debrief_rpe = next((int(d["rpe"]) for d in debrief if d.get("rpe") is not None), None)
+    fatigue_result = classify_fatigue_type(activity, splits, debrief_rpe)
+
     # Costruisci prompt
     context_parts = [
         f"## Attività analizzata\n{json.dumps(_clean_for_prompt(activity), indent=2, default=str)}",
@@ -204,6 +210,9 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     record = {
         "activity_id": activity_id,
         "analysis_text": analysis_text,
+        "fatigue_type": fatigue_result.failure_type or "insufficient_data",
+        "fatigue_confidence": fatigue_result.confidence,
+        "sport": sport,
         "suggested_actions": actions,
         "model_used": result.get("model"),
         "cost_usd": result.get("cost_usd"),
