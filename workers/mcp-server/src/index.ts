@@ -579,7 +579,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at`),
       sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
-      sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`),
+      sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`).catch(() => []),
     ]);
 
   return {
