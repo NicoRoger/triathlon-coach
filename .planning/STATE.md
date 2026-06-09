@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-06-08T20:39:45.800Z"
+last_updated: "2026-06-09T11:55:05.023Z"
 progress:
   total_phases: 11
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 23
-  completed_plans: 19
-  percent: 55
+  completed_plans: 23
+  percent: 64
 ---
 
 # State: Triathlon AI Coach — Integrità & Qualità Elite
@@ -18,7 +18,7 @@ progress:
 
 **Core Value:** Ogni mattina Nicolò riceve dati corretti, analisi attendibili e prescrizioni allineate all'allenamento élite — e può fidarsi ciecamente del sistema per prepararsi alla gara.
 
-**Current Focus:** Phase 06 — physiological-adaptation-intelligence
+**Current Focus:** Phase 07 — situational-resilience-automation
 
 **Milestone:** Integrità & Qualità Elite (audit-resilience-2026-06-01 verification + coaching quality elevation)
 
@@ -26,12 +26,8 @@ progress:
 
 ## Current Position
 
-Phase: 06 (physiological-adaptation-intelligence) — EXECUTING
-Plan: 1 of 4
-Phase: 04 (live-behavior-verification) — NEXT
-**Phase:** 11
-**Phase Name:** Live Behavior Verification
-**Status:** Executing Phase 06
+Phase: 06 (physiological-adaptation-intelligence) — COMPLETE ✅
+Phase: 07 (situational-resilience-automation) — NEXT
 
 ```
 Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
@@ -90,15 +86,14 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 
 ## Session Continuity
 
-**Last session:** 2026-06-08T14:50:12.839Z
-**Next action:** Phase 04 — Plan 04 (verify_live_behavior.py + checkpoint finale 4/4 OK)
+**Last session:** 2026-06-09T11:55:04.987Z
+**Next action:** Phase 07 — Situational Resilience & Automation (plan Phase 7 first)
 
 **Context to reload next session:**
 
 - `.planning/ROADMAP.md` — phase structure and success criteria
 - `.planning/REQUIREMENTS.md` — requirement details
-- `OPEN_ISSUES.md` — pending migrations list (needed for Phase 3)
-- `docs/audit_resilience_2026-06-01.md` — audit findings and manual steps
+- **ADAPT open items**: ADAPT-01/03 end-to-end verification su dati Garmin reali (nei prossimi giorni)
 
 ---
 
@@ -113,3 +108,5 @@ Phase Progress: [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]
 - [Phase 04-03]: BUDGET_DEGRADED = 4.00 (era 4.50) — ROADMAP SC4 allineato; select_model ristrutturato per evitare ramo irraggiungibile con BUDGET_WARNING == BUDGET_DEGRADED
 - [Phase 04-03]: VERIFY-06 completato: soglia degrado €4.00 verificata via test (23/23 passati, 7 nuovi test VERIFY-06)
 - [Phase 11-mcp-auth-hardening]: Test 3 saltato: MCP_BEARER_TOKEN è write-only Cloudflare secret — auth verificata via Test 1+2 + code review Phase 5
+- [Phase 06-04]: Phase 6 COMPLETE — update_beliefs_from_session_patterns implementata (zero LLM), suite 210 passed. ADAPT end-to-end (criteri 1/3) lasciati aperti da verificare su dati Garmin reali.
+- [Phase 06-04]: Fix flaky test: test_g2 + test_verify04 pollutavano sys.modules['coach.utils.llm_client'] — risolto con try/finally + monkeypatch.setitem
