@@ -240,6 +240,11 @@ function htmlPage(title: string, body: string): Response {
   );
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 // ============================================================================
 // Main fetch handler
 // ============================================================================
@@ -291,9 +296,9 @@ export default {
         <h1>🏊🚴🏃 Triathlon Coach AI</h1>
         <p>Autorizzazione in corso...</p>
         <form id="f" method="GET" action="/oauth/callback">
-          <input type="hidden" name="redirect_uri" value="${redirectUri}">
-          <input type="hidden" name="state" value="${state}">
-          <input type="hidden" name="code_challenge" value="${codeChallenge}">
+          <input type="hidden" name="redirect_uri" value="${escapeHtml(redirectUri)}">
+          <input type="hidden" name="state" value="${escapeHtml(state)}">
+          <input type="hidden" name="code_challenge" value="${escapeHtml(codeChallenge)}">
           <button type="submit">✅ Autorizza accesso</button>
         </form>
         <script>document.getElementById('f').submit();</script>
@@ -333,7 +338,7 @@ export default {
         return htmlPage("Autorizzazione completata", `
           <h1>✅ Autorizzazione completata</h1>
           <p>Puoi chiudere questa finestra e tornare su Claude.ai.</p>
-          <p style="font-size:12px;color:#94a3b8">Redirect non disponibile: ${redirectUri}</p>
+          <p style="font-size:12px;color:#94a3b8">Redirect non disponibile: ${escapeHtml(redirectUri)}</p>
         `);
       }
     }
