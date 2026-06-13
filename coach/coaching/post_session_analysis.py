@@ -12,11 +12,12 @@ import argparse
 import json
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ def _get_historical(sb, sport: str, current_id: str, limit: int = 4) -> list[dic
 
 def _get_recent_debrief(sb, days: int = 3) -> list[dict]:
     """Ultimi debrief soggettivi."""
-    since = (date.today() - timedelta(days=days)).isoformat()
+    since = (today_rome() - timedelta(days=days)).isoformat()
     res = sb.table("subjective_log").select("*").gte(
         "logged_at", since
     ).order("logged_at", desc=True).limit(5).execute()
@@ -260,7 +261,7 @@ def analyze_recent(days: int = 2) -> int:
         Numero di attività analizzate.
     """
     sb = get_supabase()
-    since = (date.today() - timedelta(days=days)).isoformat()
+    since = (today_rome() - timedelta(days=days)).isoformat()
 
     # Attività recenti
     activities = sb.table("activities").select("external_id").gte(

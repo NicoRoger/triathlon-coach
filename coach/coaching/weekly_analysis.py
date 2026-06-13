@@ -49,7 +49,7 @@ def generate_weekly_analysis(days: int = 7) -> str:
             max_tokens=1200,
             temperature=0.4,
         )
-        return result["text"]
+        return result.get("text") or "⚠️ Analisi AI: risposta vuota."
     except BudgetExceededError:
         return "⚠️ Budget API raggiunto — analisi AI non disponibile. Procedi con la review rule-based."
     except Exception:
@@ -70,8 +70,11 @@ def generate_weekly_lesson() -> str:
             max_tokens=400,
             temperature=0.7,
         )
-        return result["text"]
-    except (BudgetExceededError, Exception):
+        return result.get("text") or ""
+    except BudgetExceededError:
+        return ""
+    except Exception:
+        logger.exception("Weekly lesson generation failed")
         return ""
 
 

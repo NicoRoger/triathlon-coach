@@ -744,6 +744,7 @@ def build_brief() -> str:
             _build_freshness_warning(age),
             _build_wellness_section(wellness, metrics),
             _build_race_week_section(upcoming_race, today),
+            _build_session_section(planned_sessions, zones_by_discipline),
             _build_warnings_section(metrics),
             _build_risk_section(),
             _build_belief_insight_section(),

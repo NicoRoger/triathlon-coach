@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
-from coach.utils.dt import today_rome
+from coach.utils.dt import today_rome, to_rome_date
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -97,10 +97,14 @@ def extract_biometric_patterns(days: int = 28) -> dict:
     hard_days = set()
     for a in activities:
         if (a.get("tss") or 0) >= 60:
-            hard_days.add(a["started_at"][:10])
+            _rd = to_rome_date(a.get("started_at"))
+            if _rd:
+                hard_days.add(_rd.isoformat())
     for d in debrief:
         if (d.get("rpe") or 0) >= 7:
-            hard_days.add(d["logged_at"][:10])
+            _rd = to_rome_date(d.get("logged_at"))
+            if _rd:
+                hard_days.add(_rd.isoformat())
 
     wellness_by_date = {w["date"]: w for w in wellness}
     recovery_deltas = []
