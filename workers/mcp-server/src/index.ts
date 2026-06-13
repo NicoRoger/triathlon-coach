@@ -1164,7 +1164,3 @@ async function getDashboardData(env: Env) {
     latest_metrics: (metrics || []).at(-1) || null,
   };
 }
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
