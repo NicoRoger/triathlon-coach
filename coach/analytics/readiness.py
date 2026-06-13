@@ -82,7 +82,7 @@ def hrv_z_score(hrv_today: float, history: list[float]) -> Optional[float]:
     if len(history) < 7 or hrv_today is None:
         return None
     mean = statistics.fmean(history)
-    sd = statistics.pstdev(history) if len(history) > 1 else 0.0
+    sd = statistics.stdev(history) if len(history) > 1 else 0.0
     if sd == 0:
         return 0.0
     return (hrv_today - mean) / sd
@@ -115,7 +115,7 @@ def compute_flags(
                     flags.append("fatigue_warning")
 
         # Trend negativo: media 7d sotto baseline 28d > 5%
-        if len(wellness.hrv_history_28d) >= 28:
+        if len(wellness.hrv_history_28d) >= 21:
             recent_7 = wellness.hrv_history_28d[-7:]
             baseline_28 = statistics.fmean(wellness.hrv_history_28d)
             if statistics.fmean(recent_7) < baseline_28 * 0.95:
@@ -189,7 +189,7 @@ def _score_subjective(subjective: SubjectiveState) -> int:
     if subjective.motivation is not None:
         factors.append(subjective.motivation * 10)
     if subjective.soreness is not None:
-        factors.append(100 - subjective.soreness * 10)
+        factors.append(max(0, 100 - subjective.soreness * 10))
     if not factors:
         return 70  # default neutral-positive
     return int(statistics.fmean(factors))

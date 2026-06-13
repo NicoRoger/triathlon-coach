@@ -115,10 +115,10 @@ def get_month_stats() -> dict:
     # Current budget level
     if total_cost < BUDGET_OK:
         level = "OK"
-    elif total_cost < BUDGET_WARNING:
-        level = "WARNING"
     elif total_cost < BUDGET_DEGRADED:
-        level = "DEGRADED"
+        # BUDGET_WARNING == BUDGET_DEGRADED == 4.00: the WARNING-only band collapses.
+        # Spending $3.00–$3.99 triggers WARNING label (model still preferred).
+        level = "WARNING"
     elif total_cost < BUDGET_BLOCKED:
         level = "BLOCKED_NON_CRITICAL"
     else:
