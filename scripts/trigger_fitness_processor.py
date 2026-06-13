@@ -116,7 +116,7 @@ def main() -> None:
             # Nessuna planned_session: keyword match sulle notes per avviso manuale
             notes = (activity.get("notes") or "").lower()
             ext_id_str = str(activity.get("external_id") or "").lower()
-            search_str = notes or ext_id_str
+            search_str = f"{notes} {ext_id_str}".strip()
             if any(kw in search_str for kw in keywords):
                 logger.info(
                     "keyword_match_no_planned_session: %s %s — manual review needed",
