@@ -648,6 +648,7 @@ def test_g2_empty_llm_text_does_not_overwrite(tmp_path):
     sys.modules["coach.utils.supabase_client"] = types.ModuleType("coach.utils.supabase_client")
     sys.modules["coach.utils.supabase_client"].get_supabase = lambda: _SB()  # type: ignore
     # budget reale (ha BudgetExceededError); non sostituirlo.
+    _orig_llm = sys.modules.get("coach.utils.llm_client")
     sys.modules["coach.utils.llm_client"] = types.ModuleType("coach.utils.llm_client")
 
     mod = _load("coach.coaching.pattern_extraction", "coach/coaching/pattern_extraction.py")
@@ -664,9 +665,15 @@ def test_g2_empty_llm_text_does_not_overwrite(tmp_path):
 
     sys.modules["coach.utils.llm_client"].get_client_for_purpose = lambda p: _Client()  # type: ignore
 
-    out = mod.extract_patterns(days=28)
-    assert out is None
-    assert f.read_text(encoding="utf-8") == "CONTENUTO IMPORTANTE", "file non deve essere sovrascritto da testo vuoto"
+    try:
+        out = mod.extract_patterns(days=28)
+        assert out is None
+        assert f.read_text(encoding="utf-8") == "CONTENUTO IMPORTANTE", "file non deve essere sovrascritto da testo vuoto"
+    finally:
+        if _orig_llm is not None:
+            sys.modules["coach.utils.llm_client"] = _orig_llm
+        else:
+            sys.modules.pop("coach.utils.llm_client", None)
 
 
 # ===========================================================================

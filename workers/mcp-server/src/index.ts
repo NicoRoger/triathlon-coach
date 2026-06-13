@@ -279,24 +279,24 @@ export default {
     }
 
     // ── OAuth: authorization endpoint ─────────────────────────────────────
+    // FIX: auto-submit the form via JS so Claude.ai's OAuth popup completes
+    // without requiring manual user interaction. The button remains as fallback
+    // if JS is disabled.
     if (url.pathname === "/oauth/authorize") {
       const redirectUri = url.searchParams.get("redirect_uri") || "";
       const state = url.searchParams.get("state") || "";
       const codeChallenge = url.searchParams.get("code_challenge") || "";
 
-      const params = new URLSearchParams({
-        redirect_uri: redirectUri,
-        state,
-        code_challenge: codeChallenge,
-      }).toString();
-
       return htmlPage("Triathlon Coach — Autorizzazione", `
         <h1>🏊🚴🏃 Triathlon Coach AI</h1>
-        <p>Claude.ai vuole accedere ai tuoi dati di allenamento.</p>
-        <br>
-        <form method="GET" action="/oauth/callback?${params}">
+        <p>Autorizzazione in corso...</p>
+        <form id="f" method="GET" action="/oauth/callback">
+          <input type="hidden" name="redirect_uri" value="${redirectUri}">
+          <input type="hidden" name="state" value="${state}">
+          <input type="hidden" name="code_challenge" value="${codeChallenge}">
           <button type="submit">✅ Autorizza accesso</button>
         </form>
+        <script>document.getElementById('f').submit();</script>
       `);
     }
 
@@ -946,7 +946,7 @@ async function getPhysiologyZones(discipline: string, env: Env) {
 }
 
 // ============================================================================
-// Technique History (Blocco 2.3)
+// Technique History
 // ============================================================================
 async function getTechniqueHistory(sport: string, days: number, env: Env) {
   const since = daysAgoISO(days);
@@ -1051,7 +1051,7 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
 }
 
 // ============================================================================
-// Update Constraint (D-14)
+// Update Constraint
 // ============================================================================
 async function updateConstraint(args: any, env: Env): Promise<any> {
   if (!args.id || !isUuid(args.id)) {

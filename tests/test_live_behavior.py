@@ -183,7 +183,7 @@ def test_verify04_empty_llm_text_skips_insert(monkeypatch):
     fake_llm_mod = types.ModuleType("coach.utils.llm_client")
     empty_client = _EmptyTextFakeClient()
     fake_llm_mod.get_client_for_purpose = lambda purpose: empty_client  # type: ignore
-    sys.modules["coach.utils.llm_client"] = fake_llm_mod
+    monkeypatch.setitem(sys.modules, "coach.utils.llm_client", fake_llm_mod)
 
     # Stub Telegram per non fare chiamate HTTP
     sys.modules["coach.planning.briefing"].send_to_telegram = lambda *a, **k: None  # type: ignore
