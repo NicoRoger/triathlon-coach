@@ -749,7 +749,7 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
   if (!activity) return { status: "not_found", activity_id: activityId || null };
 
   const activityDate = String(activity.started_at || "").slice(0, 10);
-  const sport = activity.sport || "all";
+  const sport = VALID_SPORTS.has(activity.sport) ? activity.sport : "all";
 
   const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
     sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}`),
