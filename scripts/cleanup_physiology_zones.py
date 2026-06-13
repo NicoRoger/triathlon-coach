@@ -49,15 +49,19 @@ def _check_row(row: dict) -> tuple[bool, str, float | None, tuple[int, int] | No
         return False, label, val, bounds
 
     elif discipline == "run":
-        val = row.get("threshold_pace_s_per_km")
-        if val is None:
+        val_pace = row.get("threshold_pace_s_per_km")
+        if val_pace is not None:
+            lo, hi = PLAUSIBLE_BOUNDS["threshold_run_30min"]
+            if not (lo <= val_pace <= hi):
+                return True, f"threshold={val_pace} s/km", val_pace, (lo, hi)
+        val_lthr = row.get("lthr")
+        if val_lthr is not None:
+            lo, hi = PLAUSIBLE_BOUNDS["lthr_run"]
+            if not (lo <= val_lthr <= hi):
+                return True, f"lthr={val_lthr} bpm", val_lthr, (lo, hi)
+        if val_pace is None and val_lthr is None:
             return False, "threshold_pace_s_per_km", None, None
-        lo, hi = PLAUSIBLE_BOUNDS["threshold_run_30min"]
-        label = f"threshold={val} s/km"
-        bounds = (lo, hi)
-        if not (lo <= val <= hi):
-            return True, label, val, bounds
-        return False, label, val, bounds
+        return False, "run", val_pace, None
 
     elif discipline == "swim":
         val = row.get("css_pace_s_per_100m")
@@ -94,12 +98,16 @@ def main() -> None:
     sb = get_supabase()
 
     # Fetch all rows
-    res = (
-        sb.table("physiology_zones")
-        .select("id,discipline,valid_from,method,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m")
-        .execute()
-    )
-    rows = res.data or []
+    try:
+        res = (
+            sb.table("physiology_zones")
+            .select("id,discipline,valid_from,method,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr")
+            .execute()
+        )
+        rows = res.data or []
+    except Exception as exc:
+        print(f"ERRORE: impossibile leggere physiology_zones: {exc}")
+        return
 
     # Identify out-of-bounds rows
     out_of_bounds: list[dict] = []
@@ -134,15 +142,11 @@ def main() -> None:
         for item in out_of_bounds:
             disc = item["discipline"]
             lo, hi = item["bounds"]
-            unit_suffix = ""
             if disc == "bike":
-                unit_suffix = "W"
                 range_str = f"{lo}-{hi}W"
             elif disc == "run":
-                unit_suffix = " s/km"
                 range_str = f"{lo}-{hi} s/km"
             elif disc == "swim":
-                unit_suffix = " s/100m"
                 range_str = f"{lo}-{hi} s/100m"
             else:
                 range_str = f"{lo}-{hi}"

@@ -377,8 +377,8 @@ export default {
       }
       const ts = code.slice(0, dotIdx);
       const receivedSig = code.slice(dotIdx + 1);
-      const tsNum = parseInt(ts, 10);
-      if (!tsNum || Date.now() - tsNum > 5 * 60 * 1000) {
+      const tsNum = Number(ts);
+      if (!Number.isFinite(tsNum) || tsNum <= 0 || Date.now() - tsNum > 5 * 60 * 1000) {
         return new Response(JSON.stringify({ error: "invalid_grant", error_description: "code expired or invalid" }), {
           status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
         });
