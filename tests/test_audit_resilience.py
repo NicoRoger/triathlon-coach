@@ -474,7 +474,7 @@ def _load_modulation(sb):
 
 def test_d2_partial_apply_not_marked_accepted():
     """D2: se una modifica viene saltata (sport mancante), lo status NON è accepted."""
-    mod = {"id": "m1", "status": "proposed", "proposed_changes": [
+    mod = {"id": "m1", "status": "accepted", "proposed_changes": [
         {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
         {"date": "2026-06-03", "new": {"duration_s": 1800}},  # manca sport → skip
     ]}
@@ -486,7 +486,7 @@ def test_d2_partial_apply_not_marked_accepted():
 
 
 def test_d2_full_apply_accepted():
-    mod = {"id": "m2", "status": "proposed", "proposed_changes": [
+    mod = {"id": "m2", "status": "accepted", "proposed_changes": [
         {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
     ]}
     sb = _ModFakeSB(mod)
@@ -499,7 +499,7 @@ def test_d2_full_apply_accepted():
 
 def test_d3_merge_preserves_session_type():
     """D3: una modifica che tocca solo la durata non azzera session_type esistente."""
-    mod = {"id": "m3", "status": "proposed", "proposed_changes": [
+    mod = {"id": "m3", "status": "accepted", "proposed_changes": [
         {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
     ]}
     existing = [{"planned_date": "2026-06-02", "sport": "run",
@@ -810,7 +810,7 @@ def test_o7_e4_code_on_conflict_aligned():
 def test_d1_expired_modulation_not_applied():
     from datetime import datetime, timezone, timedelta
     past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    mod = {"id": "mexp", "status": "proposed", "expires_at": past,
+    mod = {"id": "mexp", "status": "accepted", "expires_at": past,
            "proposed_changes": [{"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}}]}
     sb = _ModFakeSB(mod)
     mt = _load_modulation(sb)
@@ -820,7 +820,7 @@ def test_d1_expired_modulation_not_applied():
 
 
 def test_d1_null_expires_still_applies():
-    mod = {"id": "mok", "status": "proposed", "expires_at": None,
+    mod = {"id": "mok", "status": "accepted", "expires_at": None,
            "proposed_changes": [{"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}}]}
     sb = _ModFakeSB(mod)
     mt = _load_modulation(sb)

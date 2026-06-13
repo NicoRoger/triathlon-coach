@@ -106,12 +106,13 @@ def apply_modulation(modulation_id: str) -> bool:
         return False
 
     mod = res.data[0]
-    # Audit K1: accetta sia 'proposed' (applicazione diretta) sia 'accepted'
-    # (il bot Telegram setta 'accepted' al tap; il cron in ingest.yml chiama
-    # apply_accepted_modulations che porta 'accepted' → 'applied'). Stati
-    # terminali (applied/rejected/expired/...) non vengono riprocessati.
-    if mod.get("status") not in ("proposed", "accepted"):
-        logger.info("Modulation %s already %s", modulation_id, mod.get("status"))
+    # Solo le modulazioni con status='accepted' (tap atleta via Telegram) vengono
+    # applicate. Accettare 'proposed' aggirava la regola confirm-before-write (CLAUDE.md §5.4).
+    # apply_accepted_modulations() filtra già su 'accepted'; il bot Telegram setta
+    # status='accepted' prima di chiamare apply_modulation. Stati terminali non vengono
+    # riprocessati.
+    if mod.get("status") != "accepted":
+        logger.info("Modulation %s status=%s (not accepted), skipping", modulation_id, mod.get("status"))
         return False
 
     # Bug fix audit D1: rifiuta modulazioni scadute. Una proposta basata su
@@ -238,6 +239,12 @@ def _apply_single_change(sb, change: dict) -> bool:
             return base[key]
         return default
 
+    # Non applicare modulazioni su sessioni già completate — evita di resettare
+    # status='completed' a 'planned' su sessioni già eseguite.
+    if base.get("status") == "completed":
+        logger.warning("Skipping modulation on completed session: %s %s", target_date, sport)
+        return False
+
     payload = {
         "planned_date": target_date,
         "sport": sport,
@@ -283,8 +290,9 @@ def _format_modulation_message(
 
 def _send_modulation_telegram(message: str, mod_id: str) -> Optional[int]:
     """Manda messaggio con bottoni inline via Telegram e logga in bot_messages."""
-    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
-        logger.warning("Telegram not configured for modulation")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID") or os.environ.get("TELEGRAM_ALLOWED_CHAT_ID")
+    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not chat_id:
+        logger.warning("Telegram not configured for modulation (TELEGRAM_BOT_TOKEN or TELEGRAM_*_CHAT_ID missing)")
         return None
 
     from coach.utils.telegram_logger import send_and_log_message
