@@ -76,6 +76,7 @@ jobs:
 
       - name: Detect and process fitness tests
         if: success()
+        continue-on-error: true
         run: python -m coach.coaching.fitness_test_processor --check-recent
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

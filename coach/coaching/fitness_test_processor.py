@@ -471,7 +471,10 @@ def check_recent() -> list[dict]:
     sb = get_supabase()
     processor = FitnessTestProcessor()
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    # 48h window: a test done in the morning may not be processed until the
+    # next ingest cycle (runs every 3h). 6h missed late-morning tests processed
+    # by a 6pm ingest run when the activity synced at 9:30am.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     activities = sb.table("activities").select(
         "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits,notes"
     ).gte("started_at", cutoff).in_(
@@ -479,8 +482,10 @@ def check_recent() -> list[dict]:
     ).order("started_at", desc=True).limit(10).execute().data or []
 
     results = []
+    from coach.utils.dt import to_rome_date
     for activity in activities:
-        activity_date = str(activity.get("started_at", ""))[:10]
+        _d = to_rome_date(activity.get("started_at"))
+        activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
         sport = activity.get("sport")
 
         planned = sb.table("planned_sessions").select("*").eq(
