@@ -13,6 +13,7 @@ interface Env {
   SUPABASE_SERVICE_KEY: string;
   MCP_BEARER_TOKEN: string;
   GH_PAT_TRIGGER: string;
+  GH_REPO?: string;
 }
 
 interface JsonRpcRequest {
@@ -588,7 +589,10 @@ function deriveProgressionStep(mesocycle: any, today: string): any {
   if (!mesocycle || !mesocycle.progression_plan || !mesocycle.start_date) return null;
   const startDate = new Date(mesocycle.start_date);
   const todayDate = new Date(today);
-  const weekNumber = Math.floor((todayDate.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  // Use UTC-midnight arithmetic to avoid DST transitions skewing week boundaries.
+  const utcStart = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
+  const utcToday = Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate());
+  const weekNumber = Math.floor((utcToday - utcStart) / (7 * 24 * 60 * 60 * 1000)) + 1;
   const plan = mesocycle.progression_plan;
   const result: any = {};
   for (const [sessionType, weeks] of Object.entries(plan as Record<string, any>)) {
@@ -651,8 +655,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `daily_wellness?date=gte.${metricsSince}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score,avg_sleep_stress`),
       sb(env, `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss`),
       sb(env, `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc&select=logged_at,kind,rpe,sleep_quality,motivation,soreness,illness_flag,injury_flag,injury_details,raw_text`),
-      sb(env, `planned_sessions?planned_date=gte.${since}&planned_date=lt.${today}&order=planned_date.asc`),
-      sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`),
+      sb(env, `planned_sessions?planned_date=gte.${since}&planned_date=lte.${today}&order=planned_date.asc`),
+      sb(env, `planned_sessions?planned_date=gt.${today}&planned_date=lte.${until}&order=planned_date.asc`),
       sb(env, `session_analyses?created_at=gte.${since}T00:00:00Z&order=created_at.desc&select=activity_id,analysis_text,created_at`),
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at`),
       sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
@@ -662,6 +666,15 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       getLastFatigueBySport(env, since),
     ]);
 
+  // Compute weekly TSS aggregates for coach summary (last 7 days).
+  const week7ago = daysAgoISO(7);
+  const tssWeek = (metrics as any[])
+    .filter((m: any) => m.date >= week7ago)
+    .reduce((sum: number, m: any) => sum + (m.daily_tss || 0), 0);
+  const plannedTssWeek = (plannedPast as any[])
+    .filter((s: any) => s.planned_date >= week7ago)
+    .reduce((sum: number, s: any) => sum + (s.target_tss || 0), 0);
+
   return {
     generated_at: new Date().toISOString(),
     timezone: "Europe/Rome",
@@ -669,6 +682,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     coach_protocol: coachProtocol(),
     sync_status: summarizeSync(health),
     health,
+    tss_week: Math.round(tssWeek),
+    planned_tss_week: Math.round(plannedTssWeek),
     daily_metrics: metrics,
     daily_wellness: wellness,
     completed_activities: activities,
@@ -709,12 +724,16 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
   const race = raceRows?.[0] || null;
   const targetDate = race?.race_date || raceDate || until;
 
+  // Cap plan window to 42 days from today — requesting 180-day plans can produce
+  // thousands of rows that add no coaching value and bloat the LLM context.
+  const planUntil = targetDate < daysFromISO(42) ? targetDate : daysFromISO(42);
+
   const [metrics, wellness, activities, subjective, planWindow] = await Promise.all([
     sb(env, `daily_metrics?date=gte.${since28}&order=date.asc`),
     sb(env, `daily_wellness?date=gte.${since28}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score`),
     sb(env, `activities?started_at=gte.${since28}T00:00:00Z&order=started_at.desc&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,tss`),
     sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc`),
-    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${targetDate}&order=planned_date.asc`),
+    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${planUntil}&order=planned_date.asc`),
   ]);
 
   return {
@@ -793,7 +812,7 @@ async function getLastFatigueBySport(env: Env, since: string): Promise<Record<st
   for (const sport of sports) {
     const rows = await sb(
       env,
-      `session_analyses?sport=eq.${sport}&fatigue_type=not.is.null&order=created_at.desc&limit=1&select=fatigue_type,fatigue_confidence,created_at`
+      `session_analyses?sport=eq.${sport}&fatigue_type=not.is.null&created_at=gte.${since}T00:00:00Z&order=created_at.desc&limit=1&select=fatigue_type,fatigue_confidence,created_at`
     ).catch(() => []);
     if (rows?.[0]) {
       result[sport] = {
@@ -856,6 +875,9 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   if (!isDateString(args.planned_date)) {
     throw new Error(`Invalid planned_date format: ${args.planned_date}. Expected YYYY-MM-DD.`);
   }
+  if (!Number.isInteger(args.duration_s) || args.duration_s < 60) {
+    throw new Error(`Invalid duration_s: must be an integer >= 60 (got ${args.duration_s}).`);
+  }
 
   const payload: any = {
     planned_date: args.planned_date,
@@ -872,7 +894,7 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   if (args.calendar_event_id !== undefined) payload.calendar_event_id = args.calendar_event_id;
 
   const existingResp = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}`,
+    `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}&session_type=eq.${encodeURIComponent(args.session_type)}`,
     { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
   );
   if (!existingResp.ok) throw new Error(`Supabase lookup failed: ${existingResp.status} ${await existingResp.text()}`);
@@ -933,7 +955,9 @@ async function getPhysiologyZones(discipline: string, env: Env) {
   const todayUTC = new Date(todayRomeISO() + "T00:00:00Z");
   for (const zone of current) {
     if (zone.valid_from) {
-      const validFromUTC = new Date(zone.valid_from + "T00:00:00Z");
+      // Slice to date part before appending T00:00:00Z — valid_from may already
+      // be a full datetime string (e.g. "2026-06-04T10:00:00+00:00").
+      const validFromUTC = new Date(String(zone.valid_from).slice(0, 10) + "T00:00:00Z");
       const diffMs = todayUTC.getTime() - validFromUTC.getTime();
       zone.age_days = Math.max(0, Math.floor(diffMs / 86400000));
     } else {
@@ -1092,8 +1116,9 @@ async function forceGarminSync(env: Env): Promise<any> {
     }
   }
 
+  const ghRepo = env.GH_REPO || "NicoRoger/triathlon-coach";
   const dispatchResp = await fetch(
-    "https://api.github.com/repos/NicoRoger/triathlon-coach/actions/workflows/ingest.yml/dispatches",
+    `https://api.github.com/repos/${ghRepo}/actions/workflows/ingest.yml/dispatches`,
     {
       method: "POST",
       headers: {
