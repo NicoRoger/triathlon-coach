@@ -978,11 +978,15 @@ def test_brief_session_robust_to_missing_fields():
 def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     sn = _load("scripts.send_notification", "scripts/send_notification.py")
     sent = []
-    sn.send_and_log_message = lambda *a, **k: sent.append(a)  # type: ignore
+    # Return 12345 (non-None) so the sys.exit(1) failure branch is not hit.
+    sn.send_and_log_message = lambda *a, **k: sent.append(a) or 12345  # type: ignore
+    # Bypass real DB check — always "not yet sent".
+    sn._already_sent_today = lambda purpose: False  # type: ignore
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
+    # 20:30 Rome, gate 21 → hour 20 not in (21, 22) → skip
     class _DT(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -993,7 +997,7 @@ def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     sn.main()
     assert sent == [], "alle 20:30 Rome con gate 21 non deve inviare"
 
-    # ora corretta → invia
+    # 21:30 Rome, gate 21 → hour 21 in (21, 22) → invia
     class _DT2(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -1003,6 +1007,17 @@ def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
     sn.main()
     assert len(sent) == 1, "alle 21:30 Rome con gate 21 deve inviare"
+
+    # 22:15 Rome (job accodato 45min), gate 21 → hour 22 in (21, 22) → invia
+    class _DT3(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 15, 22, 15, tzinfo=ZoneInfo("Europe/Rome"))
+
+    monkeypatch.setattr(sn, "datetime", _DT3)
+    monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
+    sn.main()
+    assert len(sent) == 2, "alle 22:15 Rome (job accodato 45min) con gate 21 deve inviare"
 
 
 # ===========================================================================
