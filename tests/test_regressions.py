@@ -229,5 +229,39 @@ class TestEmptyActivities(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+# ===========================================================================
+# FIX: brief mattutino non inviato — HTML malformato da testo auto-generato
+# Data: 2026-06-14
+# Bug: personalized_insert inseriva testo libero (osservazioni auto-estratte)
+#      nel brief HTML SENZA escape. Contenuti come "TSB < -30" producevano '<'
+#      grezzi che Telegram rifiuta con 400 Bad Request → brief mai inviato
+#      (watchdog: 27h senza successo). Fix: html.escape + fallback testo semplice.
+# ===========================================================================
+class TestPersonalizedInsertHtmlEscape(unittest.TestCase):
+
+    def test_insert_escapes_html_operators(self):
+        """Il pattern del giorno con 'TSB < -30' deve uscire escaped (&lt;)."""
+        import tempfile
+        from pathlib import Path
+        pi = _load("coach.planning.personalized_insert", "coach/planning/personalized_insert.py")
+
+        content = (
+            "# Osservazioni\n\n"
+            "- Pattern lunedì: dopo sessioni con TSB < -30 inserire recupero & cautela.\n"
+            + "x" * 100
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as f:
+            f.write(content)
+            tmp = Path(f.name)
+
+        pi.OBSERVATIONS_FILE = tmp
+        out = pi.get_personalized_insert(date(2026, 6, 8))  # lunedì
+        self.assertIsNotNone(out)
+        self.assertIn("&lt;", out)
+        self.assertNotIn("< -30", out)
+        self.assertIn("&amp;", out)
+        self.assertIn("<b>Pattern</b>", out)
+
+
 if __name__ == "__main__":
     unittest.main()

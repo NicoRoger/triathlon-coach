@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
+from html import unescape
 from typing import Optional
 
 import requests
@@ -43,55 +45,96 @@ def send_and_log_message(
     # lungo (es. weekly analysis) altrimenti riceve HTTP 400 e viene perso.
     chunks = _split_message(message, 4000)
 
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     first_msg_id: Optional[int] = None
     markup_msg_id: Optional[int] = None
-    try:
-        for i, chunk in enumerate(chunks):
-            payload: dict = {
-                "chat_id": chat_id,
-                "text": chunk,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            }
-            # reply_markup solo sull'ultimo chunk (bottoni in fondo)
-            if reply_markup and i == len(chunks) - 1:
-                payload["reply_markup"] = reply_markup
 
-            resp = requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json=payload,
-                timeout=30,
-            )
+    for i, chunk in enumerate(chunks):
+        base_payload: dict = {
+            "chat_id": chat_id,
+            "disable_web_page_preview": True,
+        }
+        # reply_markup solo sull'ultimo chunk (bottoni in fondo)
+        if reply_markup and i == len(chunks) - 1:
+            base_payload["reply_markup"] = reply_markup
+
+        mid = _post_chunk(url, base_payload, chunk, purpose)
+        if mid is None:
+            # Invio fallito anche col fallback testo semplice: interrompo,
+            # restituisco eventuale parziale già inviato.
+            return first_msg_id
+        if i == 0:
+            first_msg_id = mid
+        if reply_markup and i == len(chunks) - 1:
+            markup_msg_id = mid
+
+    # Logga il messaggio rilevante per il reply threading: quello con i
+    # bottoni se presente, altrimenti il primo.
+    log_id = markup_msg_id or first_msg_id
+    if log_id:
+        _log_bot_message(
+            telegram_message_id=log_id,
+            chat_id=chat_id,
+            purpose=purpose,
+            context_data=context_data,
+            parent_workflow=parent_workflow,
+            expires_at=expires_at,
+        )
+
+    return markup_msg_id or first_msg_id
+
+
+def _html_to_plain(message: str) -> str:
+    """Rimuove i tag HTML e decodifica le entità — fallback quando Telegram
+    rifiuta il parse_mode HTML (es. testo con '<', '>' non escaped)."""
+    return unescape(re.sub(r"<[^>]+>", "", message))
+
+
+def _post_chunk(url: str, base_payload: dict, text: str, purpose: str) -> Optional[int]:
+    """Invia un singolo chunk: prima in HTML, poi (fallback) in testo semplice se
+    Telegram rifiuta il parse (400 / ok:false). Un errore di formattazione non
+    deve mai azzerare il messaggio (es. il brief mattutino). Ritorna message_id."""
+    attempts = [
+        {**base_payload, "text": text, "parse_mode": "HTML"},
+        {**base_payload, "text": _html_to_plain(text)},
+    ]
+    for i, payload in enumerate(attempts):
+        is_fallback = i > 0
+        try:
+            resp = requests.post(url, json=payload, timeout=30)
+            body: dict = {}
+            try:
+                body = resp.json()
+            except Exception:
+                pass
+
+            parse_rejected = (resp.status_code == 400) or (resp.ok and not body.get("ok"))
+            if parse_rejected and not is_fallback:
+                logger.warning(
+                    "Telegram ha rifiutato l'HTML (purpose=%s): %s. Ritento in testo semplice.",
+                    purpose, body.get("description", resp.text[:200]),
+                )
+                continue
+
             resp.raise_for_status()
-            body = resp.json()
-            # Bug fix audit I5: Telegram può rispondere HTTP 200 con ok:false.
             if not body.get("ok"):
                 logger.error("Telegram ok:false (purpose=%s): %s", purpose, body)
-                return first_msg_id
-            mid = body.get("result", {}).get("message_id")
-            if i == 0:
-                first_msg_id = mid
-            if reply_markup and i == len(chunks) - 1:
-                markup_msg_id = mid
+                return None
 
-        # Logga il messaggio rilevante per il reply threading: quello con i
-        # bottoni se presente, altrimenti il primo.
-        log_id = markup_msg_id or first_msg_id
-        if log_id:
-            _log_bot_message(
-                telegram_message_id=log_id,
-                chat_id=chat_id,
-                purpose=purpose,
-                context_data=context_data,
-                parent_workflow=parent_workflow,
-                expires_at=expires_at,
-            )
+            if is_fallback:
+                logger.warning("Telegram inviato in testo semplice (fallback HTML, purpose=%s)", purpose)
+            return body.get("result", {}).get("message_id")
 
-        return markup_msg_id or first_msg_id
-
-    except Exception:
-        logger.exception("Failed to send/log Telegram message (purpose=%s)", purpose)
-        return first_msg_id
+        except Exception:
+            if not is_fallback:
+                logger.warning(
+                    "Invio HTML fallito (purpose=%s), ritento in testo semplice.",
+                    purpose, exc_info=True,
+                )
+                continue
+            logger.exception("Failed to send Telegram chunk (purpose=%s)", purpose)
+            return None
+    return None
 
 
 def _split_message(text: str, limit: int) -> list[str]:

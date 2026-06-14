@@ -63,5 +63,8 @@ def get_personalized_insert(today: Optional[date] = None) -> Optional[str]:
     if not insights:
         return None
 
-    best = insights[0][:200]
+    from html import escape as _esc
+    # Escape: le osservazioni sono testo libero auto-generato e contengono
+    # operatori letterali (es. "TSB < -30") che romperebbero il parse HTML di Telegram.
+    best = _esc(insights[0][:200].replace("**", ""))
     return f"💡 <b>Pattern</b>: {best}"
