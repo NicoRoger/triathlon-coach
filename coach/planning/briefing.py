@@ -482,7 +482,10 @@ def _build_belief_insight_section() -> str:
             return ""
         b = relevant[0]
         emoji = "🏆" if b.status == "strong_belief" else "✅"
-        text = b.prescription or b.belief_text
+        from html import escape as _esc
+        # Escape: il testo viene da estrazione automatica e contiene operatori
+        # letterali (es. "TSB < -30", "TSS > 60") che romperebbero il parse HTML.
+        text = _esc((b.prescription or b.belief_text).replace("**", ""))
         return (
             f"<b>{emoji} Insight personalizzato</b>\n"
             f"{text} <i>(n={b.evidence_n}, conf={int(b.confidence*100)}%)</i>"

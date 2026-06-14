@@ -487,6 +487,50 @@ class TestTelegramLogger(unittest.TestCase):
 
         mock_sb.table.assert_called_with("bot_messages")
 
+    def test_html_400_falls_back_to_plain_text(self):
+        """REGRESSIONE 2026-06-14: Telegram 400 su HTML malformato (es. brief con
+        'TSB < -30' non escaped) → ritenta in testo semplice invece di azzerare il
+        messaggio. Prima il brief mattutino non veniva inviato affatto."""
+        import os
+        os.environ["TELEGRAM_BOT_TOKEN"] = "test_token"
+        os.environ["TELEGRAM_CHAT_ID"] = "123456"
+
+        # 1ª risposta: 400 (HTML rifiutato). 2ª: ok (plain text).
+        resp_400 = MagicMock()
+        resp_400.status_code = 400
+        resp_400.ok = False
+        resp_400.text = "Bad Request: can't parse entities"
+        resp_400.json.return_value = {"ok": False, "description": "can't parse entities"}
+        resp_400.raise_for_status = MagicMock()
+
+        resp_ok = MagicMock()
+        resp_ok.status_code = 200
+        resp_ok.ok = True
+        resp_ok.json.return_value = {"ok": True, "result": {"message_id": 7}}
+        resp_ok.raise_for_status = MagicMock()
+
+        mock_post = MagicMock(side_effect=[resp_400, resp_ok])
+        mock_sb = MagicMock()
+        mock_sb.table.return_value.upsert.return_value.execute.return_value = MagicMock()
+
+        tl = self._build_tl_module(mock_post, mock_sb)
+        result = tl.send_and_log_message("<b>Brief</b>\nTSB < -30", purpose="morning_brief")
+
+        self.assertEqual(result, 7)
+        self.assertEqual(mock_post.call_count, 2)
+        # Il secondo tentativo NON deve avere parse_mode e non deve contenere tag
+        second_payload = mock_post.call_args_list[1].kwargs["json"]
+        self.assertNotIn("parse_mode", second_payload)
+        self.assertNotIn("<b>", second_payload["text"])
+        self.assertIn("TSB < -30", second_payload["text"])
+
+    def test_html_to_plain_strips_tags_and_unescapes(self):
+        """Il fallback rimuove i tag e decodifica le entità HTML."""
+        mock_post = MagicMock()
+        tl = self._build_tl_module(mock_post, MagicMock())
+        out = tl._html_to_plain("<b>X</b> TSB &lt; -30 <i>ok</i>")
+        self.assertEqual(out, "X TSB < -30 ok")
+
 
 # ===========================================================================
 # Test 17–33: Nuovi test Blocco 0 (17 aggiuntivi)
