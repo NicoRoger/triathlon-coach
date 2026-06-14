@@ -57,10 +57,12 @@ discipline:
     debolezze: tecnica post-pausa, spalla destra
     vincolo: zero Z4+ con spalla, distanza 72h tra sessioni nuoto
   bici:
-    ftp_attuale_w: da testare (FTP test giugno 2026)
+    ftp_attuale_w: N/A — atleta SENZA wattmetro. Intensità bici a frequenza cardiaca (LTHR bici, test_type=threshold_bike_hr, zone lthr_5zone). NON proporre FTP a potenza finché non c'è un wattmetro.
+    no_wattmetro: true
     debolezze: muscular endurance post-pausa (primo cedimento muscolare, non cardiovascolare)
   corsa:
-    threshold_pace_per_km: 4:23/km (263 s/km, metodo: threshold_run_20min_provisional, data: 2026-05-30)
+    threshold_pace_per_km: 4:23/km (263 s/km) — PROVVISORIO (metodo threshold_run_20min_provisional, 2026-05-30; riconfermare con 30min pulito e ben pacizzato)
+    lthr_corsa: 183 bpm | hr_max: 194 bpm (dal test 2026-05-30)
     debolezze: muscular endurance, carico progressivo limitato da fascite plantare sx
     vincolo_fascite: max +10% volume/settimana, cap 14-15km/settimana attuale
 
@@ -275,7 +277,7 @@ richiede:
 - `weekly_review`: protocollo review settimanale (7 fasi con sync + gcal)
 - `race_week_protocol`: gestione settimana gara T-7 → T+1
 - `race_prediction`: predizione performance con confidence interval
-- `delete_session`: cancellazione sessione pianificata + cleanup Google Calendar
+- `delete_session`: cancellazione (soft/hard) o spostamento (`reschedule_session`) di una sessione pianificata + cleanup Google Calendar
 - `fitness_test`: proponi e gestisci test fitness (FTP, soglia, CSS, LTHR) con auto-detection
 - `video_analysis`: analisi tecnica video nuoto/corsa/bici con feedback strutturato e drill
 

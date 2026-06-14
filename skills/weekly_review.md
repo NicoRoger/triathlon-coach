@@ -17,23 +17,36 @@ Trigger secondari (replanning mid-week): "ho saltato la sessione di ieri, ripian
 
 Prima di analizzare la settimana, garantisci che i dati siano aggiornati.
 
-1. Chiama `get_recent_metrics(days=1)` e ispeziona `last_sync_at` di garmin_sync.
-2. Se l'ultimo sync Garmin è > 1 ora fa, chiama `force_garmin_sync`.
-3. Se il tool restituisce `status: completed`, attendi che il sync sia visibile e procedi.
+1. Chiama `get_weekly_context(days=7)` (è anche la Fase 1) e ispeziona `health`:
+   il componente `garmin_sync` ha `last_success_at`.
+2. Se l'ultimo sync Garmin è > 1 ora fa, chiama `force_garmin_sync` e poi
+   richiama `get_weekly_context` una volta sola quando il sync è visibile.
+3. Se `force_garmin_sync` restituisce `status: completed`, attendi che il sync sia visibile e procedi.
 4. Se restituisce `skipped`, procedi direttamente (sync già recente).
 5. Se restituisce `timeout`, avvisa l'utente: "Sync forzato ma non ancora visibile, procedo con i dati che ho ma considera che potrebbe mancare l'ultima attività. Vuoi aspettare?"
 
+> Nota: NON ri-chiamare `get_weekly_context` ad ogni fase. Caricalo una volta
+> qui/in Fase 1 e lavora su quell'oggetto per tutta la review.
+
 ### Fase 1 — Raccolta dati
 
-Recupera dal DB tramite MCP:
+**Usa UNA sola chiamata aggregata: `get_weekly_context(days=7)`.**
 
-1. `get_activity_history(sport='all', days=7)` — sessioni completate
-2. `get_recent_metrics(days=14)` — daily_metrics ultime 2 settimane
-3. `query_subjective_log(days=7, kind='all')` — RPE, debrief, flag, malattie, infortuni
-4. `get_planned_session(date)` per ogni giorno della settimana scorsa — confronta pianificato vs eseguito
-5. `get_technique_history(sport='all', days=7)` — video tecnici caricati durante la settimana
+Questo singolo tool ritorna già tutto il necessario in un unico oggetto coerente:
+`health`, `metrics` (daily_metrics 14gg), `wellness`, `activities`,
+`planned_sessions`, `subjective_log`, `session_analyses`, `plan_modulations`,
+`upcoming_races`. **Non** chiamare anche i tool granulari
+(`get_activity_history`, `get_recent_metrics`, `query_subjective_log`,
+`get_planned_session` giorno-per-giorno): caricherebbero gli stessi dati una
+seconda volta in forma diversa, raddoppiando il contesto e creando incongruenze
+(è la causa principale del "mi tocca correggerlo"). Tratta l'output di
+`get_weekly_context` come la **singola fonte di verità** della Fase 1.
 
-Leggi inoltre:
+Solo se serve uno specifico approfondimento non incluso:
+- `get_technique_history(sport='all', days=7)` — video tecnici (non in get_weekly_context)
+- `get_session_review_context(activity_id)` — solo per UNA sessione anomala da sezionare
+
+Leggi inoltre (file di memoria, non duplicano i dati DB):
 - `CLAUDE.md` §3 (stato corrente) e §8.5 (calendario gare)
 - `docs/training_journal.md` (ultime decisioni)
 - `docs/injury_log.md` (stato infortuni in corso)
@@ -43,6 +56,11 @@ Leggi inoltre:
 - `docs/elite_training_reference.md` (volume/HR/struttura target dal periodo elite — per calibrare i volumi proposti)
 
 **Multi-race awareness**: `get_weekly_context` ritorna `upcoming_races` (tutte le gare future). Considera il calendario completo, non solo la prossima gara. Pianifica picchi multipli quando ci sono gare A successive.
+
+**Confronto pianificato vs eseguito**: incrocia `planned_sessions` e `activities`
+(entrambi già in `get_weekly_context`) per data+sport. Una sessione pianificata
+con `completed_activity_id` valorizzato (o un'attività nella stessa data/sport) =
+eseguita; altrimenti = saltata. Non servono chiamate aggiuntive.
 
 ### Fase 2 — Analisi della settimana conclusa e Diagnosi (via AI)
 

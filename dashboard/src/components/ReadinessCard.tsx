@@ -44,7 +44,7 @@ export function ReadinessCard({ latest, nextRace, today }: Props) {
         <div style={styles.sub}>{label.toUpperCase()}</div>
         {flags.length > 0 && (
           <div style={styles.flags}>
-            {flags.map((f) => <span key={f} style={styles.flag}>{f.replace(/_/g, " ")}</span>)}
+            {flags.filter(Boolean).map((f) => <span key={f} style={styles.flag}>{f.replace(/_/g, " ")}</span>)}
           </div>
         )}
       </div>

@@ -381,6 +381,16 @@ def run_proactive_reminders(
     today_iso = today_rome().isoformat()
     sent = 0
 
+    # Housekeeping: scadi le modulazioni 'proposed' troppo vecchie (mai accettate/
+    # rifiutate). Tiene pulito get_weekly_context ed evita reminder ripetuti su
+    # proposte obsolete (BUG-011 follow-up).
+    if not dry_run:
+        try:
+            from coach.coaching.modulation import expire_stale_modulations
+            expire_stale_modulations()
+        except Exception:
+            logger.exception("expire_stale_modulations failed")
+
     if ignore_time_window:
         logger.warning("⚠️  IGNORE_TIME_WINDOW attivo — modalità TEST")
     if dry_run:

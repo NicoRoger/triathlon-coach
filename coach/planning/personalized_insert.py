@@ -20,7 +20,7 @@ WEEKDAY_NAMES_IT = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì",
 SPORT_BY_WEEKDAY = {
     0: "corsa",       # lunedì
     1: "nuoto",       # martedì
-    2: "bici",        # giovedì
+    2: "bici",        # mercoledì
     3: "nuoto",       # giovedì
     4: "corsa",       # venerdì
     5: "bici",        # sabato

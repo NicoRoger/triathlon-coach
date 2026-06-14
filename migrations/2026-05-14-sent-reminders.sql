@@ -22,3 +22,6 @@ COMMENT ON TABLE sent_reminders IS
   'Deduplica reminder proattivi: trigger_type + sent_date = unique.';
 COMMENT ON COLUMN sent_reminders.context IS
   'Dati contestuali del reminder (es. race_id, days_remaining, mesocycle_id)';
+
+-- RLS: allinea al pattern single-user di schema.sql (deny-all anon, service_role bypassa).
+ALTER TABLE sent_reminders ENABLE ROW LEVEL SECURITY;

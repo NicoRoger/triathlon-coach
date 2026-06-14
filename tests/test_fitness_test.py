@@ -205,7 +205,7 @@ class TestFallbackNotification(unittest.TestCase):
         activity = {"id": "test-nofb", "started_at": "2026-06-15T08:00:00Z", "splits": None, "avg_power_w": None}
         with patch.object(proc, "_notify_telegram") as mock_notify:
             result = proc.process_fitness_test(activity, {"structured": structured})
-        self.assertEqual(result["status"], "fallback_failed")
+        self.assertEqual(result["status"], "needs_coach_review")
         mock_notify.assert_called_once()
         call_kwargs = mock_notify.call_args
         self.assertFalse(call_kwargs[1].get("success", True) if call_kwargs[1] else call_kwargs[0][3])

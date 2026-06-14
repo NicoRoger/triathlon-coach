@@ -32,18 +32,58 @@ SPORT_MAP = {"bike": "bike", "run": "run", "swim": "swim"}
 PLAUSIBLE_BOUNDS = {
     "ftp_bike_20min": (80, 450),       # W
     "ftp_bike_ramp": (80, 450),        # W
+    "threshold_bike_hr": (120, 200),   # bpm (atleta senza wattmetro → soglia a HR)
     "threshold_run_30min": (150, 360), # s/km
+    "threshold_run_20min": (150, 360), # s/km
     "css_swim_400_200": (70, 150),     # s/100m
     "lthr_run": (120, 200),            # bpm
 }
 
-TEST_CYCLE_ORDER = ["ftp_bike_20min", "ftp_bike_ramp", "threshold_run_30min", "css_swim_400_200", "lthr_run"]
+# Ciclo test. NB: l'atleta NON ha wattmetro → sulla bici si usa il test a HR
+# (threshold_bike_hr), non FTP a potenza. I test a potenza restano supportati
+# per il futuro (se arriverà un wattmetro).
+TEST_CYCLE_ORDER = ["threshold_bike_hr", "threshold_run_30min", "css_swim_400_200", "lthr_run"]
 TEST_CYCLE_NEXT = {
+    "threshold_bike_hr": "threshold_run_30min",
+    "threshold_run_30min": "css_swim_400_200",
+    "threshold_run_20min": "css_swim_400_200",
+    "css_swim_400_200": "lthr_run",
+    "lthr_run": "threshold_bike_hr",
+    # Varianti a potenza (richiedono wattmetro)
     "ftp_bike_20min": "threshold_run_30min",
     "ftp_bike_ramp": "threshold_run_30min",
-    "threshold_run_30min": "css_swim_400_200",
-    "css_swim_400_200": "lthr_run",
-    "lthr_run": "ftp_bike_20min",
+}
+
+# zone_system di default per ogni test_type (usato dal path manuale e come
+# fallback se structured non lo specifica).
+DEFAULT_ZONE_SYSTEM = {
+    "ftp_bike_20min": "coggan_7zone",
+    "ftp_bike_ramp": "coggan_7zone",
+    "threshold_bike_hr": "lthr_5zone",
+    "threshold_run_30min": "pace_5zone",
+    "threshold_run_20min": "pace_5zone",
+    "css_swim_400_200": "css_3zone",
+    "lthr_run": "lthr_5zone",
+}
+
+# Mappa test_type → campo CLAUDE.md §2 da aggiornare (None = nessun campo, es. HR)
+CLAUDE_MD_FIELD = {
+    "ftp_bike_20min": "ftp_attuale_w",
+    "ftp_bike_ramp": "ftp_attuale_w",
+    "threshold_run_30min": "threshold_pace_per_km",
+    "threshold_run_20min": "threshold_pace_per_km",
+    "css_swim_400_200": "css_attuale_per_100m",
+}
+
+# Mappa test_type → (colonna DB, disciplina)
+FIELD_MAP = {
+    "ftp_bike_20min": ("ftp_w", "bike"),
+    "ftp_bike_ramp": ("ftp_w", "bike"),
+    "threshold_bike_hr": ("lthr", "bike"),
+    "threshold_run_30min": ("threshold_pace_s_per_km", "run"),
+    "threshold_run_20min": ("threshold_pace_s_per_km", "run"),
+    "css_swim_400_200": ("css_pace_s_per_100m", "swim"),
+    "lthr_run": ("lthr", "run"),
 }
 
 
@@ -53,11 +93,14 @@ class FitnessTestProcessor:
 
     def process_fitness_test(self, activity: dict, planned_session: dict) -> dict:
         structured = planned_session.get("structured") or {}
-        test_type = structured.get("test_type")
+        # Se il coach non ha popolato structured, inferisci il test_type da
+        # sport + description (così una sessione fitness_test non viene saltata
+        # silenziosamente solo perché manca il payload strutturato).
+        test_type = structured.get("test_type") or _infer_test_type(planned_session, activity)
         activity_id = activity.get("id") or activity.get("external_id")
 
         if not test_type:
-            return {"status": "skip", "reason": "no test_type in structured"}
+            return {"status": "skip", "reason": "cannot determine test_type"}
 
         existing = self.sb.table("physiology_zones").select("id").eq(
             "test_activity_id", str(activity_id)
@@ -69,7 +112,9 @@ class FitnessTestProcessor:
         extractor = {
             "ftp_bike_20min": self._extract_ftp_bike_20min,
             "ftp_bike_ramp": self._extract_ftp_bike_ramp,
+            "threshold_bike_hr": self._extract_threshold_bike_hr,
             "threshold_run_30min": self._extract_threshold_run,
+            "threshold_run_20min": self._extract_threshold_run,
             "css_swim_400_200": self._extract_css_swim,
             "lthr_run": self._extract_lthr,
         }.get(test_type)
@@ -77,18 +122,29 @@ class FitnessTestProcessor:
         if not extractor:
             return {"status": "error", "reason": f"unknown test_type: {test_type}"}
 
-        result = extractor(activity, structured)
-
-        if result is None:
-            result = self._try_fallback_extraction(activity, structured)
+        # Auto-estrazione SOLO se il coach ha fornito la config di extraction
+        # (quale split/lap usare). Senza config lo split del test è ignoto:
+        # NON estraiamo (eviteremmo di scrivere una soglia sbagliata) e
+        # instradiamo alla revisione del coach.
+        if structured.get("extraction"):
+            result = extractor(activity, structured)
+            if result is None:
+                result = self._try_fallback_extraction(activity, structured)
+        else:
+            result = None
 
         if result is None:
             self._notify_telegram(
                 test_type, 0, {}, success=False,
-                error_msg=f"splits non disponibili nel payload Garmin. "
-                          f"Apri Claude.ai e scrivi: \"{structured.get('garmin_activity_name', test_type)} test today: [valore]\"",
+                error_msg=(
+                    "Estrazione automatica non possibile (config split mancante o "
+                    "dati assenti). Apri Claude.ai: il coach leggerà gli split con "
+                    "get_session_review_context e salverà le zone con "
+                    "commit_physiology_zones."
+                ),
             )
-            return {"status": "fallback_failed", "test_type": test_type}
+            return {"status": "needs_coach_review", "test_type": test_type,
+                    "activity_id": str(activity_id)}
 
         # Audit E: bound di plausibilità. Un risultato fuori range indica
         # estrazione errata (unità/split) → NON sovrascrivere le zone con dati corrotti.
@@ -105,7 +161,7 @@ class FitnessTestProcessor:
             )
             return {"status": "implausible_result", "test_type": test_type, "result": result}
 
-        zone_system = structured.get("zone_system", "coggan_7zone")
+        zone_system = structured.get("zone_system") or DEFAULT_ZONE_SYSTEM.get(test_type, "coggan_7zone")
         zones = self._compute_zones(zone_system, result)
 
         sport = _test_type_to_sport(test_type)
@@ -157,6 +213,28 @@ class FitnessTestProcessor:
         max_power = activity.get("max_power_w") or activity.get("np_w")
         if max_power:
             return round(float(max_power) * 0.75, 1)
+        return None
+
+    def _extract_threshold_bike_hr(self, activity: dict, structured: dict) -> Optional[float]:
+        """Test soglia bici a frequenza cardiaca (atleta SENZA wattmetro).
+
+        Protocollo: 20' (o 30') a sforzo costante massimo sostenibile.
+        LTHR ≈ HR media del segmento di test × factor. Factor default 1.0 per un
+        20' steady; per un 30' Friel usa la media degli ultimi 20' (factor ~0.95
+        sulla media totale). Override via structured.extraction.primary.lthr_factor.
+        """
+        extraction = (structured.get("extraction") or {}).get("primary", {})
+        idx = extraction.get("interval_index")
+        factor = float(extraction.get("lthr_factor", 1.0))
+        splits = activity.get("splits")
+        avg_hr = None
+        if idx is not None and splits and isinstance(splits, list) and len(splits) > idx:
+            avg_hr = splits[idx].get("avg_hr") or splits[idx].get("averageHR")
+        # Fallback: HR media dell'attività intera (meno preciso ma meglio di niente)
+        if not avg_hr:
+            avg_hr = activity.get("avg_hr")
+        if avg_hr:
+            return round(float(avg_hr) * factor)
         return None
 
     def _extract_threshold_run(self, activity: dict, structured: dict) -> Optional[float]:
@@ -287,13 +365,7 @@ class FitnessTestProcessor:
         test_type: str, test_date: str, source_activity_id: str,
         zone_system: str,
     ) -> None:
-        field_map = {
-            "ftp_bike_20min": ("ftp_w", "bike"),
-            "ftp_bike_ramp": ("ftp_w", "bike"),
-            "threshold_run_30min": ("threshold_pace_s_per_km", "run"),
-            "css_swim_400_200": ("css_pace_s_per_100m", "swim"),
-            "lthr_run": ("lthr", "run"),
-        }
+        field_map = FIELD_MAP
         db_field, discipline = field_map.get(test_type, (None, sport))
         if not db_field:
             return
@@ -341,6 +413,59 @@ class FitnessTestProcessor:
             logger.exception("Failed to update CLAUDE.md")
             return False
 
+    def commit_manual_result(
+        self,
+        test_type: str,
+        result: float,
+        test_date: str,
+        activity_id: Optional[str] = None,
+        zone_system: Optional[str] = None,
+        notify: bool = True,
+    ) -> dict:
+        """Scrive una zona fisiologica da un risultato test RIPORTATO (non auto-estratto).
+
+        È il path che chiude il vicolo cieco: quando l'auto-estrazione fallisce
+        (split mancanti, nessuna sessione pianificata, bici senza wattmetro),
+        l'atleta/coach fornisce il valore del segmento di test e qui calcoliamo le
+        zone e le persistiamo. Stesso identico storage dell'auto-detection.
+
+        result: per ftp_* = watt; threshold_run_* = sec/km; css = sec/100m;
+                lthr_run/threshold_bike_hr = bpm.
+        """
+        if test_type not in FIELD_MAP:
+            return {"status": "error", "reason": f"unknown test_type: {test_type}"}
+
+        zone_system = zone_system or DEFAULT_ZONE_SYSTEM.get(test_type, "coggan_7zone")
+        zones = self._compute_zones(zone_system, float(result))
+        sport = _test_type_to_sport(test_type)
+
+        self._upsert_physiology_zones(
+            sport=sport,
+            result=float(result),
+            zones=zones,
+            test_type=test_type,
+            test_date=test_date,
+            source_activity_id=str(activity_id) if activity_id else "manual",
+            zone_system=zone_system,
+        )
+
+        claude_md_field = CLAUDE_MD_FIELD.get(test_type)
+        claude_md_ok = False
+        if claude_md_field:
+            claude_md_ok = self._update_claude_md(claude_md_field, float(result), test_type, test_date)
+
+        if notify:
+            self._notify_telegram(test_type, float(result), zones, success=True)
+
+        logger.info("Manual test result committed: %s=%s (%s)", test_type, result, test_date)
+        return {
+            "status": "processed_manual",
+            "test_type": test_type,
+            "result": float(result),
+            "zones": zones,
+            "claude_md_updated": claude_md_ok,
+        }
+
     def _notify_telegram(self, test_type: str, result: float, zones: dict, success: bool, error_msg: str = "") -> None:
         try:
             from coach.utils.telegram_logger import send_and_log_message
@@ -380,6 +505,25 @@ def _test_type_to_sport(test_type: str) -> str:
     return "other"
 
 
+def _infer_test_type(planned_session: dict, activity: dict) -> Optional[str]:
+    """Inferisce il test_type da sport + description quando structured è nullo.
+
+    Regola bici: senza wattmetro (nessuna potenza nell'attività) → test a HR.
+    """
+    sport = (planned_session.get("sport") or activity.get("sport") or "").lower()
+    desc = (planned_session.get("description") or "").lower()
+    if sport == "run":
+        if "lthr" in desc:
+            return "lthr_run"
+        return "threshold_run_30min"
+    if sport == "swim":
+        return "css_swim_400_200"
+    if sport == "bike":
+        has_power = bool(activity.get("avg_power_w") or activity.get("np_w"))
+        return "ftp_bike_20min" if has_power else "threshold_bike_hr"
+    return None
+
+
 def _eval_formula(formula: str, value: float) -> Optional[float]:
     formula = formula.strip()
     m = re.match(r"value\s*\*\s*([\d.]+)", formula)
@@ -406,7 +550,9 @@ def _test_display_name(test_type: str) -> str:
     names = {
         "ftp_bike_20min": "FTP Bici 20min",
         "ftp_bike_ramp": "FTP Bici Ramp",
+        "threshold_bike_hr": "Soglia Bici (HR)",
         "threshold_run_30min": "Soglia Corsa 30min",
+        "threshold_run_20min": "Soglia Corsa 20min",
         "css_swim_400_200": "CSS Nuoto 400+200",
         "lthr_run": "LTHR Corsa",
     }
@@ -416,12 +562,13 @@ def _test_display_name(test_type: str) -> str:
 def _format_result(test_type: str, result: float) -> str:
     if "ftp" in test_type:
         return f"{round(result)}W"
-    if "threshold" in test_type:
-        return f"{_fmt_pace(result)}/km"
     if "css" in test_type:
         return f"{_fmt_swim_pace(result)}/100m"
-    if "lthr" in test_type:
+    # HR-based (LTHR run + soglia bici a HR): controlla PRIMA di "threshold"
+    if "lthr" in test_type or "_hr" in test_type:
         return f"{round(result)} bpm"
+    if "threshold" in test_type:
+        return f"{_fmt_pace(result)}/km"
     return str(result)
 
 
@@ -537,14 +684,34 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-recent", action="store_true")
+    parser.add_argument("--manual", action="store_true",
+                        help="Inserisce manualmente un risultato test (no auto-estrazione)")
+    parser.add_argument("--test-type", help="es. threshold_run_30min, threshold_bike_hr, css_swim_400_200")
+    parser.add_argument("--value", type=float, help="risultato: W / sec-per-km / sec-per-100m / bpm")
+    parser.add_argument("--date", help="data test YYYY-MM-DD (default: oggi)")
+    parser.add_argument("--activity-id", help="id attività sorgente (opzionale)")
+    parser.add_argument("--zone-system", help="override zone_system (opzionale)")
     args = parser.parse_args()
 
-    if args.check_recent:
+    if args.manual:
+        if not args.test_type or args.value is None:
+            print("Usage: --manual --test-type <type> --value <num> [--date YYYY-MM-DD] [--activity-id ID]")
+            return
+        proc = FitnessTestProcessor()
+        res = proc.commit_manual_result(
+            test_type=args.test_type,
+            result=args.value,
+            test_date=args.date or today_rome().isoformat(),
+            activity_id=args.activity_id,
+            zone_system=args.zone_system,
+        )
+        print(json.dumps(res, default=str))
+    elif args.check_recent:
         results = check_recent()
         for r in results:
             print(json.dumps(r, default=str))
     else:
-        print("Usage: python -m coach.coaching.fitness_test_processor --check-recent")
+        print("Usage: python -m coach.coaching.fitness_test_processor --check-recent | --manual ...")
 
 
 if __name__ == "__main__":

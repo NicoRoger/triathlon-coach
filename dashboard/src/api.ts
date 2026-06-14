@@ -85,10 +85,22 @@ export interface DashboardData {
 
 export async function fetchDashboard(): Promise<DashboardData> {
   const token = getToken();
-  const resp = await fetch(`${MCP_URL}/dashboard-data`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (resp.status === 401) throw new Error("UNAUTHORIZED");
+  // Timeout difensivo: evita che la UI resti appesa se l'MCP è lento/irraggiungibile.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  let resp: Response;
+  try {
+    resp = await fetch(`${MCP_URL}/dashboard-data`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw new Error("Timeout: server non raggiungibile");
+    throw new Error("Rete non disponibile");
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (resp.status === 401 || resp.status === 403) throw new Error("UNAUTHORIZED");
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
