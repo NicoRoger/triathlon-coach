@@ -13,6 +13,7 @@ interface Env {
   SUPABASE_SERVICE_KEY: string;
   MCP_BEARER_TOKEN: string;
   GH_PAT_TRIGGER: string;
+  GH_REPO?: string;
 }
 
 interface JsonRpcRequest {
@@ -205,6 +206,19 @@ const TOOLS = [
         target_race_id: { type: "string" },
         weekly_pattern: { type: "object" },
         notes: { type: "string" },
+        progression_plan: { type: "object", description: "JSONB: {run_threshold: {week1: '4x6min', week2: '5x6min', week3: '6x6min'}, ...}" },
+      },
+    },
+  },
+  {
+    name: "update_constraint",
+    description: "Marca un vincolo medico come risolto (resolved_at = now). Chiamare dopo valutazione clinica.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string", description: "UUID del vincolo da risolvere" },
+        resolved_at: { type: "string", format: "date-time", description: "Timestamp risoluzione (default: now)" },
       },
     },
   },
@@ -225,6 +239,11 @@ function htmlPage(title: string, body: string): Response {
     </head><body>${body}</body></html>`,
     { headers: { "Content-Type": "text/html", ...corsHeaders() } }
   );
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 // ============================================================================
@@ -248,9 +267,10 @@ export default {
         issuer: url.origin,
         authorization_endpoint: `${url.origin}/oauth/authorize`,
         token_endpoint: `${url.origin}/oauth/token`,
+        registration_endpoint: `${url.origin}/oauth/register`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code"],
-        code_challenge_methods_supported: ["S256"],
+        code_challenge_methods_supported: [],
       });
     }
 
@@ -265,24 +285,24 @@ export default {
     }
 
     // ── OAuth: authorization endpoint ─────────────────────────────────────
+    // FIX: auto-submit the form via JS so Claude.ai's OAuth popup completes
+    // without requiring manual user interaction. The button remains as fallback
+    // if JS is disabled.
     if (url.pathname === "/oauth/authorize") {
       const redirectUri = url.searchParams.get("redirect_uri") || "";
       const state = url.searchParams.get("state") || "";
       const codeChallenge = url.searchParams.get("code_challenge") || "";
 
-      const params = new URLSearchParams({
-        redirect_uri: redirectUri,
-        state,
-        code_challenge: codeChallenge,
-      }).toString();
-
       return htmlPage("Triathlon Coach — Autorizzazione", `
         <h1>🏊🚴🏃 Triathlon Coach AI</h1>
-        <p>Claude.ai vuole accedere ai tuoi dati di allenamento.</p>
-        <br>
-        <form method="GET" action="/oauth/callback?${params}">
+        <p>Autorizzazione in corso...</p>
+        <form id="f" method="GET" action="/oauth/callback">
+          <input type="hidden" name="redirect_uri" value="${escapeHtml(redirectUri)}">
+          <input type="hidden" name="state" value="${escapeHtml(state)}">
+          <input type="hidden" name="code_challenge" value="${escapeHtml(codeChallenge)}">
           <button type="submit">✅ Autorizza accesso</button>
         </form>
+        <script>document.getElementById('f').submit();</script>
       `);
     }
 
@@ -291,7 +311,16 @@ export default {
       const redirectUri = url.searchParams.get("redirect_uri") || "";
       const state = url.searchParams.get("state") || "";
 
-      const code = btoa(`auth_code_${Date.now()}`).replace(/=/g, "");
+      // SECURITY: generate a short-lived HMAC-signed code so the token endpoint
+      // can verify it was issued by this server (no KV storage required).
+      const ts = Date.now().toString();
+      const hmacKey = await crypto.subtle.importKey(
+        "raw", new TextEncoder().encode(env.MCP_BEARER_TOKEN),
+        { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(ts));
+      const sigHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const code = `${ts}.${sigHex}`;
 
       // Se redirect_uri è vuota o invalida, mostra pagina di successo
       if (!redirectUri) {
@@ -310,19 +339,63 @@ export default {
         return htmlPage("Autorizzazione completata", `
           <h1>✅ Autorizzazione completata</h1>
           <p>Puoi chiudere questa finestra e tornare su Claude.ai.</p>
-          <p style="font-size:12px;color:#94a3b8">Redirect non disponibile: ${redirectUri}</p>
+          <p style="font-size:12px;color:#94a3b8">Redirect non disponibile: ${escapeHtml(redirectUri)}</p>
         `);
       }
     }
 
+    // ── OAuth: dynamic client registration (RFC 7591) ─────────────────────
+    // Single-athlete system: accept any registration, return a stable client_id.
+    // We don't validate client_id during the auth flow (PKCE-only), so no KV needed.
+    if (url.pathname === "/oauth/register" && req.method === "POST") {
+      let body: Record<string, unknown> = {};
+      try { body = await req.json(); } catch { /* empty body */ }
+      const redirectUris: string[] = Array.isArray(body["redirect_uris"])
+        ? (body["redirect_uris"] as string[])
+        : [];
+      return new Response(JSON.stringify({
+        client_id: "claude-ai",
+        client_id_issued_at: Math.floor(Date.now() / 1000),
+        redirect_uris: redirectUris,
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }), { status: 201, headers: { "Content-Type": "application/json", ...corsHeaders() } });
+    }
+
     // ── OAuth: token endpoint ──────────────────────────────────────────────
     if (url.pathname === "/oauth/token" && req.method === "POST") {
-      return jsonResponse({
-        access_token: env.MCP_BEARER_TOKEN,
-        token_type: "bearer",
-        expires_in: 31536000,
-        scope: "mcp",
-      });
+      // SECURITY: verify the code was signed by this server (HMAC-SHA256 via MCP_BEARER_TOKEN).
+      // Codes expire after 5 minutes to limit the replay window.
+      let body: Record<string, string> = {};
+      try { body = Object.fromEntries(await req.formData()); } catch { /* empty body */ }
+      const code = (body["code"] as string) || "";
+      const dotIdx = code.indexOf(".");
+      if (dotIdx < 1) {
+        return new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+      const ts = code.slice(0, dotIdx);
+      const receivedSig = code.slice(dotIdx + 1);
+      const tsNum = Number(ts);
+      if (!Number.isFinite(tsNum) || tsNum <= 0 || Date.now() - tsNum > 5 * 60 * 1000) {
+        return new Response(JSON.stringify({ error: "invalid_grant", error_description: "code expired or invalid" }), {
+          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+      const hmacKey = await crypto.subtle.importKey(
+        "raw", new TextEncoder().encode(env.MCP_BEARER_TOKEN),
+        { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(ts));
+      const expectedSig = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+      if (receivedSig !== expectedSig) {
+        return new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
+        });
+      }
+      return jsonResponse({ access_token: env.MCP_BEARER_TOKEN, token_type: "bearer", expires_in: 3600, scope: "mcp" });
     }
 
     // ── Dashboard data endpoint ────────────────────────────────────────────
@@ -352,12 +425,13 @@ export default {
       });
     }
 
-    // Auth: accetta sia bearer token diretto (Claude Code) sia richieste OAuth (Claude.ai)
+    // Auth: bearer token obbligatorio per tutte le richieste MCP.
+    // Claude.ai ottiene il token via /oauth/token dopo il flusso OAuth (callback HMAC-signed).
+    // Claude Code usa il token diretto configurato come secret.
     const auth = req.headers.get("authorization") || "";
     const isBearerValid = auth === `Bearer ${env.MCP_BEARER_TOKEN}`;
-    const isOAuthRequest = !auth; // Claude.ai dopo OAuth non manda bearer
 
-    if (!isBearerValid && !isOAuthRequest) {
+    if (!isBearerValid) {
       return new Response("Unauthorized", { status: 401, headers: { ...corsHeaders(), "WWW-Authenticate": `Bearer realm="triathlon-coach", resource_metadata="${url.origin}/.well-known/oauth-protected-resource"` } });
     }
 
@@ -365,7 +439,15 @@ export default {
       return new Response("Method not allowed", { status: 405, headers: corsHeaders() });
     }
 
-    const rpc = (await req.json()) as JsonRpcRequest;
+    let rpc: JsonRpcRequest;
+    try {
+      rpc = (await req.json()) as JsonRpcRequest;
+    } catch {
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() } }
+      );
+    }
     const resp = await handleRpc(rpc, env);
     return new Response(JSON.stringify(resp), {
       headers: { "Content-Type": "application/json", ...corsHeaders() },
@@ -389,7 +471,9 @@ async function handleRpc(rpc: JsonRpcRequest, env: Env): Promise<JsonRpcResponse
       return ok(rpc.id, { tools: TOOLS });
     }
     if (rpc.method === "tools/call") {
-      const { name, arguments: args } = rpc.params;
+      const params = rpc.params ?? {};
+      const { name, arguments: args } = params;
+      if (!name) return err(rpc.id, -32602, "Missing required field: params.name");
       const out = await callTool(name, args || {}, env);
       return ok(rpc.id, { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] });
     }
@@ -440,6 +524,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return forceGarminSync(env);
     case "commit_mesocycle":
       return commitMesocycle(args, env);
+    case "update_constraint":
+      return updateConstraint(args || {}, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -491,6 +577,30 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+/** Validates that a value is a well-formed ISO date string (YYYY-MM-DD). */
+function isDateString(v: unknown): v is string {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+const VALID_SPORTS = new Set(["swim", "bike", "run", "brick", "strength", "all"]);
+const VALID_KINDS  = new Set(["all", "post_session", "illness", "injury", "evening_debrief", "free_note"]);
+
+function deriveProgressionStep(mesocycle: any, today: string): any {
+  if (!mesocycle || !mesocycle.progression_plan || !mesocycle.start_date) return null;
+  const startDate = new Date(mesocycle.start_date);
+  const todayDate = new Date(today);
+  // Use UTC-midnight arithmetic to avoid DST transitions skewing week boundaries.
+  const utcStart = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
+  const utcToday = Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate());
+  const weekNumber = Math.floor((utcToday - utcStart) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  const plan = mesocycle.progression_plan;
+  const result: any = {};
+  for (const [sessionType, weeks] of Object.entries(plan as Record<string, any>)) {
+    result[sessionType] = (weeks as any)[`week${weekNumber}`] || null;
+  }
+  return { week_number: weekNumber, steps: result };
+}
+
 function coachProtocol() {
   return {
     interface: "Claude web/mobile via remote MCP",
@@ -538,20 +648,32 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   const metricsSince = daysAgoISO(Math.max(days * 2, 14));
   const until = daysFromISO(includeNextDays);
 
-  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races] =
+  const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races, constraints, beliefs, fatigueBySport] =
     await Promise.all([
       getHealth(env),
       sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc&select=date,ctl,atl,tsb,daily_tss,hrv_z_score,readiness_score,readiness_label,flags,garmin_training_readiness`),
       sb(env, `daily_wellness?date=gte.${metricsSince}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score,avg_sleep_stress`),
       sb(env, `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss`),
       sb(env, `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc&select=logged_at,kind,rpe,sleep_quality,motivation,soreness,illness_flag,injury_flag,injury_details,raw_text`),
-      sb(env, `planned_sessions?planned_date=gte.${since}&planned_date=lt.${today}&order=planned_date.asc`),
-      sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`),
+      sb(env, `planned_sessions?planned_date=gte.${since}&planned_date=lte.${today}&order=planned_date.asc`),
+      sb(env, `planned_sessions?planned_date=gt.${today}&planned_date=lte.${until}&order=planned_date.asc`),
       sb(env, `session_analyses?created_at=gte.${since}T00:00:00Z&order=created_at.desc&select=activity_id,analysis_text,created_at`),
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at`),
       sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
+      sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`).catch(() => []),
+      sb(env, `beliefs?status=neq.retired&confidence=gte.0.55&order=confidence.desc&select=belief_key,belief_text,status,confidence`).catch(() => []),
+      getLastFatigueBySport(env, since),
     ]);
+
+  // Compute weekly TSS aggregates for coach summary (last 7 days).
+  const week7ago = daysAgoISO(7);
+  const tssWeek = (metrics as any[])
+    .filter((m: any) => m.date >= week7ago)
+    .reduce((sum: number, m: any) => sum + (m.daily_tss || 0), 0);
+  const plannedTssWeek = (plannedPast as any[])
+    .filter((s: any) => s.planned_date >= week7ago)
+    .reduce((sum: number, s: any) => sum + (s.target_tss || 0), 0);
 
   return {
     generated_at: new Date().toISOString(),
@@ -560,6 +682,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     coach_protocol: coachProtocol(),
     sync_status: summarizeSync(health),
     health,
+    tss_week: Math.round(tssWeek),
+    planned_tss_week: Math.round(plannedTssWeek),
     daily_metrics: metrics,
     daily_wellness: wellness,
     completed_activities: activities,
@@ -570,6 +694,10 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     open_modulations: modulations,
     active_mesocycle: mesocycles?.[0] || null,
     upcoming_races: races || [],
+    active_constraints: constraints || [],
+    current_progression_step: deriveProgressionStep(mesocycles?.[0] || null, today),
+    active_beliefs: beliefs || [],
+    last_fatigue_by_sport: fatigueBySport,
     review_instructions: [
       "Confronta planned_past vs completed_activities.",
       "Apri con HRV/readiness/carico e dati soggettivi rilevanti.",
@@ -580,25 +708,32 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
 }
 
 async function getRaceContext(raceDate: string | undefined, daysAhead: number, env: Env) {
+  if (raceDate !== undefined && !isDateString(raceDate)) {
+    throw new Error(`Invalid race_date format: ${raceDate}. Expected YYYY-MM-DD.`);
+  }
   daysAhead = clampInt(daysAhead, 1, 180);
   const today = todayRomeISO();
   const until = raceDate || daysFromISO(daysAhead);
   const since28 = daysAgoISO(28);
   const since14 = daysAgoISO(14);
 
-  let raceQuery = `planned_sessions?session_type=eq.race&planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc&limit=1`;
-  if (raceDate) raceQuery = `planned_sessions?session_type=eq.race&planned_date=eq.${raceDate}&limit=1`;
+  let raceQuery = `races?race_date=gte.${today}&race_date=lte.${until}&order=race_date.asc&limit=1`;
+  if (raceDate) raceQuery = `races?race_date=eq.${raceDate}&limit=1`;
 
   const raceRows = await sb(env, raceQuery);
   const race = raceRows?.[0] || null;
-  const targetDate = race?.planned_date || raceDate || until;
+  const targetDate = race?.race_date || raceDate || until;
+
+  // Cap plan window to 42 days from today — requesting 180-day plans can produce
+  // thousands of rows that add no coaching value and bloat the LLM context.
+  const planUntil = targetDate < daysFromISO(42) ? targetDate : daysFromISO(42);
 
   const [metrics, wellness, activities, subjective, planWindow] = await Promise.all([
     sb(env, `daily_metrics?date=gte.${since28}&order=date.asc`),
     sb(env, `daily_wellness?date=gte.${since28}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score`),
     sb(env, `activities?started_at=gte.${since28}T00:00:00Z&order=started_at.desc&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,tss`),
     sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc`),
-    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${targetDate}&order=planned_date.asc`),
+    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${planUntil}&order=planned_date.asc`),
   ]);
 
   return {
@@ -633,7 +768,7 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
   if (!activity) return { status: "not_found", activity_id: activityId || null };
 
   const activityDate = String(activity.started_at || "").slice(0, 10);
-  const sport = activity.sport || "all";
+  const sport = VALID_SPORTS.has(activity.sport) ? activity.sport : "all";
 
   const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
     sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}`),
@@ -666,16 +801,42 @@ async function getHealth(env: Env) {
   return sb(env, `health?select=component,last_success_at,failure_count,last_error&order=component.asc`);
 }
 
+/**
+ * Ritorna l'ultima classificazione di fatica per ogni disciplina (run/swim/bike).
+ * Legge `session_analyses.fatigue_type` filtrato per colonna `sport` (D-05, evita JOIN problematico).
+ * Formato return: `{run: {type, confidence, date} | null, swim: ..., bike: ...}`.
+ */
+async function getLastFatigueBySport(env: Env, since: string): Promise<Record<string, any>> {
+  const sports = ["run", "swim", "bike"];
+  const result: Record<string, any> = { run: null, swim: null, bike: null };
+  for (const sport of sports) {
+    const rows = await sb(
+      env,
+      `session_analyses?sport=eq.${sport}&fatigue_type=not.is.null&created_at=gte.${since}T00:00:00Z&order=created_at.desc&limit=1&select=fatigue_type,fatigue_confidence,created_at`
+    ).catch(() => []);
+    if (rows?.[0]) {
+      result[sport] = {
+        type: rows[0].fatigue_type,
+        confidence: rows[0].fatigue_confidence,
+        date: rows[0].created_at?.split("T")[0],
+      };
+    }
+  }
+  return result;
+}
+
 async function getRecentMetrics(days: number, env: Env) {
   const since = daysAgoISO(days);
   return sb(env, `daily_metrics?date=gte.${since}&order=date.desc`);
 }
 
 async function getPlannedSession(date: string, env: Env) {
+  if (!isDateString(date)) throw new Error(`Invalid date format: ${date}. Expected YYYY-MM-DD.`);
   return sb(env, `planned_sessions?planned_date=eq.${date}`);
 }
 
 async function getActivityHistory(sport: string, days: number, env: Env) {
+  if (!VALID_SPORTS.has(sport)) throw new Error(`Invalid sport: ${sport}`);
   const since = daysAgoISO(days);
   let q = `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=id,started_at,sport,duration_s,distance_m,avg_hr,avg_power_w,np_w,tss,rpe,notes`;
   if (sport !== "all") q += `&sport=eq.${sport}`;
@@ -683,6 +844,7 @@ async function getActivityHistory(sport: string, days: number, env: Env) {
 }
 
 async function queryLog(days: number, kind: string, env: Env) {
+  if (!VALID_KINDS.has(kind)) throw new Error(`Invalid log kind: ${kind}`);
   const since = daysAgoISO(days);
   let q = `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc`;
   if (kind !== "all") q += `&kind=eq.${kind}`;
@@ -710,6 +872,12 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   if (!validSports.includes(args.sport)) {
     throw new Error(`Invalid sport: ${args.sport}. Must be one of ${validSports.join(", ")}`);
   }
+  if (!isDateString(args.planned_date)) {
+    throw new Error(`Invalid planned_date format: ${args.planned_date}. Expected YYYY-MM-DD.`);
+  }
+  if (!Number.isInteger(args.duration_s) || args.duration_s < 60) {
+    throw new Error(`Invalid duration_s: must be an integer >= 60 (got ${args.duration_s}).`);
+  }
 
   const payload: any = {
     planned_date: args.planned_date,
@@ -726,9 +894,10 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   if (args.calendar_event_id !== undefined) payload.calendar_event_id = args.calendar_event_id;
 
   const existingResp = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}`,
+    `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}&session_type=eq.${encodeURIComponent(args.session_type)}`,
     { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
   );
+  if (!existingResp.ok) throw new Error(`Supabase lookup failed: ${existingResp.status} ${await existingResp.text()}`);
   const existing = (await existingResp.json()) as any[];
 
   if (existing.length > 0) {
@@ -780,6 +949,22 @@ async function getPhysiologyZones(discipline: string, env: Env) {
     }
   }
 
+  // Force both dates to UTC midnight so age_days is never off by 1 due to
+  // Rome timezone offset (UTC+1/+2). todayRomeISO() returns "YYYY-MM-DD" in
+  // local Rome time; appending "T00:00:00Z" pins it to UTC midnight consistently.
+  const todayUTC = new Date(todayRomeISO() + "T00:00:00Z");
+  for (const zone of current) {
+    if (zone.valid_from) {
+      // Slice to date part before appending T00:00:00Z — valid_from may already
+      // be a full datetime string (e.g. "2026-06-04T10:00:00+00:00").
+      const validFromUTC = new Date(String(zone.valid_from).slice(0, 10) + "T00:00:00Z");
+      const diffMs = todayUTC.getTime() - validFromUTC.getTime();
+      zone.age_days = Math.max(0, Math.floor(diffMs / 86400000));
+    } else {
+      zone.age_days = null;
+    }
+  }
+
   return {
     generated_at: new Date().toISOString(),
     zones: current,
@@ -790,7 +975,7 @@ async function getPhysiologyZones(discipline: string, env: Env) {
 }
 
 // ============================================================================
-// Technique History (Blocco 2.3)
+// Technique History
 // ============================================================================
 async function getTechniqueHistory(sport: string, days: number, env: Env) {
   const since = daysAgoISO(days);
@@ -834,6 +1019,12 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
   if (!validPhases.includes(args.phase)) {
     throw new Error(`Invalid phase: ${args.phase}. Must be one of ${validPhases.join(", ")}`);
   }
+  if (!isDateString(args.start_date)) {
+    throw new Error(`Invalid start_date format: ${args.start_date}. Expected YYYY-MM-DD.`);
+  }
+  if (!isDateString(args.end_date)) {
+    throw new Error(`Invalid end_date format: ${args.end_date}. Expected YYYY-MM-DD.`);
+  }
 
   const payload: any = {
     name: args.name,
@@ -844,12 +1035,18 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
   if (args.target_race_id !== undefined) payload.target_race_id = args.target_race_id;
   if (args.weekly_pattern !== undefined) payload.weekly_pattern = args.weekly_pattern;
   if (args.notes !== undefined) payload.notes = args.notes;
+  if (args.progression_plan !== undefined) payload.progression_plan = args.progression_plan;
 
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/mesocycles?start_date=eq.${args.start_date}`,
     { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
   );
+  if (!existingResp.ok) throw new Error(`Supabase lookup failed: ${existingResp.status} ${await existingResp.text()}`);
   const existing = (await existingResp.json()) as any[];
+
+  if (existing.length > 1) {
+    throw new Error(`Ambiguous: ${existing.length} mesocycles found for start_date ${args.start_date}. Resolve duplicates before updating.`);
+  }
 
   if (existing.length > 0) {
     const id = existing[0].id;
@@ -883,6 +1080,28 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
 }
 
 // ============================================================================
+// Update Constraint
+// ============================================================================
+async function updateConstraint(args: any, env: Env): Promise<any> {
+  if (!args.id || !isUuid(args.id)) {
+    throw new Error(`Invalid constraint id: must be a valid UUID`);
+  }
+  const resolvedAt = args.resolved_at || new Date().toISOString();
+  const updateResp = await fetch(`${env.SUPABASE_URL}/rest/v1/active_constraints?id=eq.${args.id}`, {
+    method: "PATCH",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify({ resolved_at: resolvedAt }),
+  });
+  if (!updateResp.ok) throw new Error(`Update failed: ${updateResp.status} ${await updateResp.text()}`);
+  return { status: "resolved", id: args.id, resolved_at: resolvedAt };
+}
+
+// ============================================================================
 // Force Garmin Sync
 // ============================================================================
 async function forceGarminSync(env: Env): Promise<any> {
@@ -897,8 +1116,9 @@ async function forceGarminSync(env: Env): Promise<any> {
     }
   }
 
+  const ghRepo = env.GH_REPO || "NicoRoger/triathlon-coach";
   const dispatchResp = await fetch(
-    "https://api.github.com/repos/NicoRoger/triathlon-coach/actions/workflows/ingest.yml/dispatches",
+    `https://api.github.com/repos/${ghRepo}/actions/workflows/ingest.yml/dispatches`,
     {
       method: "POST",
       headers: {
@@ -915,19 +1135,16 @@ async function forceGarminSync(env: Env): Promise<any> {
     throw new Error(`GitHub dispatch failed: ${dispatchResp.status} ${await dispatchResp.text()}`);
   }
 
-  const startTime = Date.now();
-  const baselineSync = lastSync || "";
-
-  while (Date.now() - startTime < 90_000) {
-    await sleep(10_000);
-    const updated = await sb(env, `health?component=eq.garmin_sync&select=last_success_at`);
-    const newSync = updated?.[0]?.last_success_at;
-    if (newSync && newSync !== baselineSync) {
-      return { status: "completed", duration_s: Math.round((Date.now() - startTime) / 1000), last_sync: newSync };
-    }
-  }
-
-  return { status: "timeout", warning: "sync triggered but not yet visible" };
+  // IMPORTANT: Do NOT poll here. Cloudflare Workers have a 30-second wall-clock
+  // limit (paid) and the GitHub Actions ingest workflow takes 3-5 minutes.
+  // A 90-second polling loop would always be terminated by the runtime mid-loop,
+  // returning an opaque error to the caller. Instead, return immediately after
+  // dispatching. The caller can check sync freshness via get_weekly_context.sync_status.
+  return {
+    status: "triggered",
+    message: "Sync job dispatched. Check sync_status via get_weekly_context after ~3-5 minutes.",
+    last_sync_before_trigger: lastSync || null,
+  };
 }
 
 // ============================================================================
@@ -948,7 +1165,7 @@ async function getDashboardData(env: Env) {
       sb(env, `activities?started_at=gte.${weeks4ago}T00:00:00Z&order=started_at.asc&select=started_at,sport`),
       sb(env, `mesocycles?order=start_date.asc&select=id,name,phase,start_date,end_date,notes`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=name,race_date,priority,distance`),
-      sb(env, `physiology_zones?valid_to=is.null&order=valid_from.desc&select=discipline,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr`),
+      sb(env, `physiology_zones?or=(valid_to.is.null,valid_to.gte.${today})&valid_from=lte.${today}&order=valid_from.desc&select=discipline,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr`),
     ]);
 
   // Deduplicate zones: one per discipline (most recent)
@@ -971,8 +1188,4 @@ async function getDashboardData(env: Env) {
     zones,
     latest_metrics: (metrics || []).at(-1) || null,
   };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

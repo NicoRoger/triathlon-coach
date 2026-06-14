@@ -69,7 +69,8 @@ def _restore_garmin_session() -> Path:
     decoded = json.loads(base64.b64decode(raw))
     tokendir = Path(tempfile.mkdtemp(prefix="garmin_"))
     for name, content in decoded.items():
-        (tokendir / name).write_text(content)
+        text = content if isinstance(content, str) else json.dumps(content)
+        (tokendir / name).write_text(text)
     # Library espera GARMINTOKENS env var
     os.environ["GARMINTOKENS"] = str(tokendir)
     return tokendir
@@ -301,7 +302,10 @@ def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
     sleep_total = sleep_dto.get("sleepTimeSeconds")
     awake = sleep_dto.get("awakeSleepSeconds")
     sleep_eff = None
-    if sleep_total and awake is not None:
+    # Require awake > 0: Garmin returns 0 for awakeSleepSeconds when the field
+    # is unavailable, not when the user truly had zero awake time. A value of 0
+    # would produce efficiency = 1.0, which is misleading.
+    if sleep_total and awake:
         time_in_bed = sleep_total + awake
         sleep_eff = round(sleep_total / time_in_bed, 4) if time_in_bed > 0 else None
 

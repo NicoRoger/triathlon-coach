@@ -12,11 +12,12 @@ import argparse
 import json
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ def _get_historical(sb, sport: str, current_id: str, limit: int = 4) -> list[dic
 
 def _get_recent_debrief(sb, days: int = 3) -> list[dict]:
     """Ultimi debrief soggettivi."""
-    since = (date.today() - timedelta(days=days)).isoformat()
+    since = (today_rome() - timedelta(days=days)).isoformat()
     res = sb.table("subjective_log").select("*").gte(
         "logged_at", since
     ).order("logged_at", desc=True).limit(5).execute()
@@ -149,6 +150,12 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     metrics = _get_daily_metrics(sb, activity_date)
     zone_compliance = _compute_zone_compliance(planned, activity) if planned else None
 
+    # ADAPT-01: classificazione deterministica cedimento (zero LLM)
+    from coach.analytics.readiness import classify_fatigue_type
+    splits = activity.get("splits") or None
+    debrief_rpe = next((int(d["rpe"]) for d in debrief if d.get("rpe") is not None), None)
+    fatigue_result = classify_fatigue_type(activity, splits, debrief_rpe)
+
     # Costruisci prompt
     context_parts = [
         f"## Attività analizzata\n{json.dumps(_clean_for_prompt(activity), indent=2, default=str)}",
@@ -204,6 +211,9 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     record = {
         "activity_id": activity_id,
         "analysis_text": analysis_text,
+        "fatigue_type": fatigue_result.failure_type or "insufficient_data",
+        "fatigue_confidence": fatigue_result.confidence,
+        "sport": sport,
         "suggested_actions": actions,
         "model_used": result.get("model"),
         "cost_usd": result.get("cost_usd"),
@@ -251,7 +261,7 @@ def analyze_recent(days: int = 2) -> int:
         Numero di attività analizzate.
     """
     sb = get_supabase()
-    since = (date.today() - timedelta(days=days)).isoformat()
+    since = (today_rome() - timedelta(days=days)).isoformat()
 
     # Attività recenti
     activities = sb.table("activities").select("external_id").gte(

@@ -54,9 +54,11 @@ class _FakeQuery:
         return self
 
     def eq(self, col, val):
-        # filtro semplice per illness_flag
-        self._rows = [r for r in self._rows if r.get(col) == val]
-        return self
+        # filtro non-distruttivo: ritorna un nuovo _FakeQuery con le righe filtrate
+        filtered = [r for r in self._rows if r.get(col) == val]
+        clone = _FakeQuery(filtered)
+        clone.upserted = self.upserted
+        return clone
 
     def order(self, *a, **k):
         return self
@@ -169,21 +171,29 @@ def test_b2_two_consecutive_low_days_warn():
 
 def test_b2_daily_excludes_today_from_recent_z():
     """daily.compute_for: recent_z_scores non deve includere oggi.
-    Con solo oggi basso e storico stabile, NON deve esserci fatigue_warning."""
+    Con solo oggi basso e storico stabile, NON deve esserci fatigue_warning.
+
+    Storia con SD realistica (~0.65): media=60.8, SD≈0.65.
+    hrv_today=59.9 → z≈-1.38 → in banda warning (-2 < z < -1), NON fatigue_critical.
+    Con bug B2 (oggi incluso in recent_z): fatigue_warning scatterebbe già al primo giorno.
+    Con fix B2 (oggi escluso): nessun giorno precedente in warning → nessun fatigue_warning.
+    """
     day = date(2026, 5, 30)
     wellness = []
     for i in range(15, 0, -1):
         d = (day - timedelta(days=i)).isoformat()
-        wellness.append({"date": d, "hrv_rmssd": 60.0 + (i % 3), "sleep_score": 80,
+        # pattern SD realistica: valori 60.0, 60.8, 61.6 ripetuti → media=60.8, SD≈0.65
+        wellness.append({"date": d, "hrv_rmssd": 60.0 + (i % 3) * 0.8, "sleep_score": 80,
                          "body_battery_max": 80, "resting_hr": 50})
-    # oggi crollo singolo
-    wellness.append({"date": day.isoformat(), "hrv_rmssd": 35.0, "sleep_score": 80,
+    # oggi in banda warning: z≈-1.38 → NON fatigue_critical (z > -2.0)
+    wellness.append({"date": day.isoformat(), "hrv_rmssd": 59.9, "sleep_score": 80,
                      "body_battery_max": 80, "resting_hr": 50})
     sb = _FakeSupabase({"activities": [], "daily_wellness": wellness, "subjective_log": []})
     daily = _make_daily_module(sb)
     daily.compute_for(day)
     m = sb.last_upsert
-    # crollo singolo molto basso → fatigue_critical possibile, ma NON fatigue_warning da 1 giorno
+    # 1 solo giorno in banda warning (oggi) → con fix B2 (oggi escluso da recent_z)
+    # non ci sono giorni precedenti in warning → fatigue_warning NON deve scattare
     assert "fatigue_warning" not in m["flags"]
 
 
@@ -203,6 +213,28 @@ def test_b3_missing_pmc_does_not_score_tsb_optimal():
     assert m["ctl"] is None and m["tsb"] is None
     # factor TSB deve essere il neutro 50, non 100
     assert m["readiness_factors"]["tsb"] == 50
+
+
+def test_b3_readiness_label_not_null():
+    """ANALYTICS-04: compute_for must write readiness_label non-null and
+    readiness_score 0-100 even when PMC is absent (no activities)."""
+    day = date(2026, 5, 30)
+    wellness = [{"date": day.isoformat(), "hrv_rmssd": 55.0, "sleep_score": 80,
+                 "body_battery_max": 80, "resting_hr": 50}]
+    sb = _FakeSupabase({"activities": [], "daily_wellness": wellness, "subjective_log": []})
+    daily = _make_daily_module(sb)
+    daily.compute_for(day)
+    m = sb.last_upsert
+    assert m["ctl"] is None  # PMC absent (no activities)
+    assert m["readiness_label"] in {"ready", "caution", "rest"}, (
+        f"readiness_label must be non-null string, got: {m['readiness_label']!r}"
+    )
+    assert isinstance(m["readiness_score"], int), (
+        f"readiness_score must be int, got: {type(m['readiness_score'])}"
+    )
+    assert 0 <= m["readiness_score"] <= 100, (
+        f"readiness_score must be 0-100, got: {m['readiness_score']}"
+    )
 
 
 # ===========================================================================
@@ -281,6 +313,20 @@ def test_i2_days_in_month_correct_all_months():
             stats = budget.get_month_stats()
             # days_remaining = days_in_month - day(15)
             assert stats["days_remaining"] == exp - 15, f"month {month}"
+
+    # Anno bisestile: febbraio 2028 ha 29 giorni (distingue lookup statico da calendar.monthrange)
+    fake_now_leap = datetime(2028, 2, 15, tzinfo=timezone.utc)
+
+    class _DT_leap(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fake_now_leap
+
+    with patch.object(budget, "datetime", _DT_leap),          patch("coach.utils.budget.get_supabase") as mock_sb:
+        mock_sb.return_value.table.return_value.select.return_value.gte.return_value.execute.return_value.data = []
+        stats_leap = budget.get_month_stats()
+        # febbraio 2028 bisestile: 29 giorni - 15 = 14 giorni rimanenti
+        assert stats_leap["days_remaining"] == 29 - 15, "febbraio anno bisestile deve avere 29 giorni"
 
 
 # ===========================================================================
@@ -428,7 +474,7 @@ def _load_modulation(sb):
 
 def test_d2_partial_apply_not_marked_accepted():
     """D2: se una modifica viene saltata (sport mancante), lo status NON è accepted."""
-    mod = {"id": "m1", "status": "proposed", "proposed_changes": [
+    mod = {"id": "m1", "status": "accepted", "proposed_changes": [
         {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
         {"date": "2026-06-03", "new": {"duration_s": 1800}},  # manca sport → skip
     ]}
@@ -440,7 +486,7 @@ def test_d2_partial_apply_not_marked_accepted():
 
 
 def test_d2_full_apply_accepted():
-    mod = {"id": "m2", "status": "proposed", "proposed_changes": [
+    mod = {"id": "m2", "status": "accepted", "proposed_changes": [
         {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
     ]}
     sb = _ModFakeSB(mod)
@@ -453,7 +499,7 @@ def test_d2_full_apply_accepted():
 
 def test_d3_merge_preserves_session_type():
     """D3: una modifica che tocca solo la durata non azzera session_type esistente."""
-    mod = {"id": "m3", "status": "proposed", "proposed_changes": [
+    mod = {"id": "m3", "status": "accepted", "proposed_changes": [
         {"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}},
     ]}
     existing = [{"planned_date": "2026-06-02", "sport": "run",
@@ -527,9 +573,6 @@ def test_h2_pick_test_date_bounded():
     class _SB:
         def table(self, *a, **k): return _Q()
 
-    for n in ["coach.utils.supabase_client", "coach.utils.dt"]:
-        if n in sys.modules and not hasattr(sys.modules[n], "today_rome") and n.endswith("dt"):
-            pass
     # dt reale serve; supabase non usato da _pick_test_date direttamente (sb passato)
     ts = _load("coach.coaching.test_scheduler", "coach/coaching/test_scheduler.py")
     result = ts._pick_test_date(_SB(), date(2026, 6, 1))
@@ -605,6 +648,7 @@ def test_g2_empty_llm_text_does_not_overwrite(tmp_path):
     sys.modules["coach.utils.supabase_client"] = types.ModuleType("coach.utils.supabase_client")
     sys.modules["coach.utils.supabase_client"].get_supabase = lambda: _SB()  # type: ignore
     # budget reale (ha BudgetExceededError); non sostituirlo.
+    _orig_llm = sys.modules.get("coach.utils.llm_client")
     sys.modules["coach.utils.llm_client"] = types.ModuleType("coach.utils.llm_client")
 
     mod = _load("coach.coaching.pattern_extraction", "coach/coaching/pattern_extraction.py")
@@ -621,9 +665,15 @@ def test_g2_empty_llm_text_does_not_overwrite(tmp_path):
 
     sys.modules["coach.utils.llm_client"].get_client_for_purpose = lambda p: _Client()  # type: ignore
 
-    out = mod.extract_patterns(days=28)
-    assert out is None
-    assert f.read_text(encoding="utf-8") == "CONTENUTO IMPORTANTE", "file non deve essere sovrascritto da testo vuoto"
+    try:
+        out = mod.extract_patterns(days=28)
+        assert out is None
+        assert f.read_text(encoding="utf-8") == "CONTENUTO IMPORTANTE", "file non deve essere sovrascritto da testo vuoto"
+    finally:
+        if _orig_llm is not None:
+            sys.modules["coach.utils.llm_client"] = _orig_llm
+        else:
+            sys.modules.pop("coach.utils.llm_client", None)
 
 
 # ===========================================================================
@@ -760,7 +810,7 @@ def test_o7_e4_code_on_conflict_aligned():
 def test_d1_expired_modulation_not_applied():
     from datetime import datetime, timezone, timedelta
     past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    mod = {"id": "mexp", "status": "proposed", "expires_at": past,
+    mod = {"id": "mexp", "status": "accepted", "expires_at": past,
            "proposed_changes": [{"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}}]}
     sb = _ModFakeSB(mod)
     mt = _load_modulation(sb)
@@ -770,7 +820,7 @@ def test_d1_expired_modulation_not_applied():
 
 
 def test_d1_null_expires_still_applies():
-    mod = {"id": "mok", "status": "proposed", "expires_at": None,
+    mod = {"id": "mok", "status": "accepted", "expires_at": None,
            "proposed_changes": [{"date": "2026-06-02", "sport": "run", "new": {"duration_s": 1800}}]}
     sb = _ModFakeSB(mod)
     mt = _load_modulation(sb)
@@ -928,11 +978,15 @@ def test_brief_session_robust_to_missing_fields():
 def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     sn = _load("scripts.send_notification", "scripts/send_notification.py")
     sent = []
-    sn.send_and_log_message = lambda *a, **k: sent.append(a)  # type: ignore
+    # Return 12345 (non-None) so the sys.exit(1) failure branch is not hit.
+    sn.send_and_log_message = lambda *a, **k: sent.append(a) or 12345  # type: ignore
+    # Bypass real DB check — always "not yet sent".
+    sn._already_sent_today = lambda purpose: False  # type: ignore
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
+    # 20:30 Rome, gate 21 → hour 20 not in (21, 22) → skip
     class _DT(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -943,7 +997,7 @@ def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     sn.main()
     assert sent == [], "alle 20:30 Rome con gate 21 non deve inviare"
 
-    # ora corretta → invia
+    # 21:30 Rome, gate 21 → hour 21 in (21, 22) → invia
     class _DT2(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -953,3 +1007,145 @@ def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
     sn.main()
     assert len(sent) == 1, "alle 21:30 Rome con gate 21 deve inviare"
+
+    # 22:15 Rome (job accodato 45min), gate 21 → hour 22 in (21, 22) → invia
+    class _DT3(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 15, 22, 15, tzinfo=ZoneInfo("Europe/Rome"))
+
+    monkeypatch.setattr(sn, "datetime", _DT3)
+    monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
+    sn.main()
+    assert len(sent) == 2, "alle 22:15 Rome (job accodato 45min) con gate 21 deve inviare"
+
+
+# ===========================================================================
+# PIPELINE-04 — brief idempotency: _brief_already_sent_today() unit test
+# (Wave 0 test gap — copertura esplicita per il guard di briefing.py main())
+# ===========================================================================
+
+class _IdempotencyFakeQuery:
+    """Fake supabase chained-builder per _brief_already_sent_today.
+
+    Implementa: .table("bot_messages").select(...).eq(col, val).gte(...).limit(1).execute()
+    Traccia gli argomenti passati a .eq() per verificare che il filtro corretto
+    venga applicato (purpose == 'morning_brief').
+    """
+
+    def __init__(self, rows: list[dict]):
+        self._rows = rows
+        self.eq_calls: list[tuple[str, str]] = []  # traccia (col, val) di ogni .eq()
+
+    def select(self, *a, **k) -> "_IdempotencyFakeQuery":
+        return self
+
+    def eq(self, col: str, val: str) -> "_IdempotencyFakeQuery":
+        self.eq_calls.append((col, val))
+        return self
+
+    def gte(self, field: str, value: str) -> "_IdempotencyFakeQuery":
+        """Filtra le righe mantenendo solo quelle con row[field] >= value (confronto stringa ISO 8601)."""
+        self._rows = [r for r in self._rows if r.get(field, "") >= value]
+        return self
+
+    def limit(self, *a, **k) -> "_IdempotencyFakeQuery":
+        return self
+
+    def execute(self):
+        return types.SimpleNamespace(data=list(self._rows))
+
+
+class _IdempotencyFakeSupabase:
+    """Fake supabase client per _brief_already_sent_today.
+
+    Espone .table() che ritorna sempre lo stesso _IdempotencyFakeQuery
+    configurato con le righe simulate, così i test possono ispezionare
+    eq_calls dopo l'esecuzione della funzione.
+    """
+
+    def __init__(self, rows: list[dict]):
+        self._query = _IdempotencyFakeQuery(rows)
+
+    def table(self, name: str) -> _IdempotencyFakeQuery:
+        return self._query
+
+
+def test_pipeline04_brief_idempotency_skips_when_already_sent():
+    """_brief_already_sent_today restituisce True quando esiste una riga morning_brief recente.
+
+    Assicura che il guard in briefing.main() blocchi correttamente un secondo invio
+    quando un brief è già stato spedito nella finestra di 6 ore.
+    Questo test chiude il gap di copertura PIPELINE-04 (Wave 0 VALIDATION.md).
+    """
+    from datetime import datetime, timezone, timedelta
+    from coach.planning.briefing import _brief_already_sent_today
+
+    recent_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    fake_sb = _IdempotencyFakeSupabase(
+        rows=[{"id": "abc123", "sent_at": recent_ts}]
+    )
+    result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+    assert result is True, (
+        "_brief_already_sent_today deve restituire True quando una riga morning_brief esiste"
+    )
+
+
+def test_pipeline04_brief_idempotency_sends_when_none():
+    """_brief_already_sent_today restituisce False quando non esistono righe morning_brief recenti.
+
+    Assicura che il guard non blocchi il primo invio mattutino.
+    """
+    from coach.planning.briefing import _brief_already_sent_today
+
+    fake_sb = _IdempotencyFakeSupabase(rows=[])
+    result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+    assert result is False, (
+        "_brief_already_sent_today deve restituire False quando nessuna riga morning_brief esiste"
+    )
+
+
+def test_pipeline04_brief_idempotency_filters_on_morning_brief_purpose():
+    """_brief_already_sent_today filtra esplicitamente su purpose == 'morning_brief'.
+
+    Verifica che il guard non si attivi per qualsiasi messaggio bot, ma solo
+    per quelli con purpose='morning_brief', evitando falsi positivi.
+    """
+    from coach.planning.briefing import _brief_already_sent_today
+
+    fake_sb = _IdempotencyFakeSupabase(rows=[])
+    _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+
+    eq_calls = fake_sb._query.eq_calls
+    assert ("purpose", "morning_brief") in eq_calls, (
+        f"_brief_already_sent_today deve filtrare su purpose='morning_brief'; "
+        f"eq_calls trovate: {eq_calls}"
+    )
+
+
+def test_pipeline04_brief_idempotency_old_brief_does_not_block():
+    """Una riga morning_brief con sent_at > 6h fa non deve bloccare il nuovo invio.
+
+    Verifica che la finestra temporale di 6h sia effettivamente applicata dal guard:
+    un brief inviato 8 ore fa non deve essere considerato "recente" e non deve
+    impedire un nuovo invio mattutino. Complemento di
+    test_pipeline04_brief_idempotency_skips_when_already_sent.
+    """
+    from unittest.mock import patch
+    from datetime import datetime, timezone, timedelta
+    from coach.planning.briefing import _brief_already_sent_today
+
+    # Timestamp fisso "ora" per rendere il test deterministico
+    frozen_now = datetime(2026, 6, 7, 9, 0, 0, tzinfo=timezone.utc)
+    # sent_at = 8h prima di frozen_now → fuori dalla finestra di 6h
+    old_ts = (frozen_now - timedelta(hours=8)).isoformat()
+    fake_sb = _IdempotencyFakeSupabase(rows=[{"id": "old", "sent_at": old_ts}])
+
+    with patch("coach.planning.briefing.datetime") as mock_dt:
+        mock_dt.now.return_value = frozen_now
+        result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
+
+    assert result is False, (
+        "_brief_already_sent_today deve restituire False per brief inviato 8h fa "
+        "(fuori dalla finestra di 6h)"
+    )

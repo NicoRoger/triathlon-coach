@@ -17,7 +17,14 @@
       "Bash(python -m pytest -q --ignore=scripts)",
       "Bash(git commit -q -m 'fix\\(analytics\\): B1/B2/B3/B11 — baseline HRV, fatigue consecutivo, PMC None, clamp sleep *)",
       "Bash(python -m pytest tests/test_audit_resilience.py tests/test_budget.py -q)",
-      "Bash(git commit -q -m 'fix\\(budget\\): I1/I2/I9 — hard-stop spesa reale, days_in_month, alert anti-spam *)"
+      "Bash(git commit -q -m 'fix\\(budget\\): I1/I2/I9 — hard-stop spesa reale, days_in_month, alert anti-spam *)",
+      "Bash(git commit -q -m 'fix\\(fitness/ingest\\): E1/E2/E3/E5/E6 + A4 — zone fisiologiche e parsing *)",
+      "Bash(git commit -q -m 'fix\\(ingest/validators\\): A1/A5/A6 — log HRV swallow, precedenza np_w, skip wellness vuoto *)",
+      "Bash(git commit -q -m 'fix\\(modulation/post-session\\): D2/D3/D4/D5 + E7/E8/E9 + helper to_rome_date *)",
+      "Bash(git commit -q -m 'fix\\(beliefs/race/test-sched\\): G1/G2/G3/H1/H2 *)",
+      "Bash(python -c \"from coach.planning.briefing import _last_sync_age_hours, _get_upcoming_race; print\\('OK'\\)\")",
+      "Bash(python -m pytest tests/test_audit_resilience.py::test_c3_last_sync_naive_timestamp_no_crash -q)",
+      "Bash(git pull *)"
     ]
   }
 }

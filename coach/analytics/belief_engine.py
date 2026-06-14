@@ -306,7 +306,7 @@ def list_beliefs(min_status: str = "weak_belief",
                  include_flagged: bool = False) -> list[Belief]:
     """Lista belief filtrate per status minimo + categoria."""
     sb = get_supabase()
-    query = sb.table("beliefs").select("*")
+    query = sb.table("beliefs").select("*").not_.eq("status", "retired")
     if category:
         query = query.eq("category", category)
     if not include_flagged:
