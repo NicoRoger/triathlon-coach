@@ -1,11 +1,11 @@
 # Progress Tracker
 
-*Aggiornato automaticamente il 2026-06-08*
+*Aggiornato automaticamente il 2026-06-15*
 
 ## Forma Fisica (CTL Trend)
 
 - **Readiness**: 54/100
-- **Trend settimanale**: ↗ (+6.0)
+- **Trend settimanale**: ↗ (+5.1)
 
 ## Zone Fisiologiche
 
@@ -15,20 +15,20 @@
 
 ## Infortuni Attivi
 
-- [2026-05-09] None: RPE 2, sensazioni molto buone in bici oggi. Nessun dolore, energia alta sonno pe
+- Nessun infortunio segnalato negli ultimi 30 giorni
 
 ## Compliance Piano
 
+- Sett. 08/06: ██████░░░░ 60% (6/10)
 - Sett. 01/06: █████░░░░░ 56% (5/9)
 - Sett. 25/05: ██████░░░░ 67% (4/6)
 - Sett. 18/05: ██████████ 100% (6/6)
-- Sett. 11/05: ████████░░ 83% (5/6)
 
 ## Mesociclo Corrente
 
 - **Build 1 — Introduzione Soglia** — fase `build`
-- Settimana 1 di 4 (2026-06-02 → 2026-06-29)
-- Avanzamento: ███████░░░░░░░░░░░░░ 7/28gg
+- Settimana 2 di 4 (2026-06-02 → 2026-06-29)
+- Avanzamento: ██████████████░░░░░░ 14/28gg
 - Note: Prima fase di sviluppo qualità post-Base 2. Introduzione graduale lavoro Z3 (tempo work) mantenendo volume aerobico. Pattern 3+1 (3 settimane carico progressivo + W4 deload).
 
 VINCOLI ATTIVI:
@@ -53,4 +53,4 @@ REGOLA SAFETY: se in W3 HRV mattutina sotto -1 z-score E readiness <60, swim rec
 
 ## Prossimo Obiettivo
 
-- **Lavarone Cross Sprint** (A): 2026-08-29 — 82 giorni
+- **Lavarone Cross Sprint** (A): 2026-08-29 — 75 giorni
