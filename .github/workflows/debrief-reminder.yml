@@ -2,10 +2,16 @@ name: debrief-reminder
 
 on:
   schedule:
-    # Audit L5: doppio cron (estate UTC+2 / inverno UTC+1). Il gate --rome-hour 21
-    # fa inviare SOLO il run che cade alle 21:xx Europe/Rome → 21:30 tutto l'anno.
-    - cron: '30 19 * * *'  # estate: 21:30 Rome
-    - cron: '30 20 * * *'  # inverno: 21:30 Rome
+    # Reliability: i cron di GitHub Actions ritardano (1-3h) e talvolta vengono
+    # droppati. Scheduliamo PIÙ tentativi serali; il gate catch-up in
+    # send_notification.py (--rome-hour 21) invia al primo run che cade dopo le
+    # 21:00 Europe/Rome e l'idempotency blocca i doppioni. Copre estate (UTC+2)
+    # e inverno (UTC+1) senza logica DST: il gate filtra per ora Rome.
+    - cron: '0 19 * * *'   # 21:00 Rome (estate) / 20:00 (inverno, skip→catch-up dopo)
+    - cron: '30 19 * * *'  # 21:30 Rome (estate)
+    - cron: '0 20 * * *'   # 22:00 Rome (estate) / 21:00 (inverno)
+    - cron: '30 20 * * *'  # 22:30 Rome (estate) / 21:30 (inverno)
+    - cron: '0 21 * * *'   # 23:00 Rome (estate) / 22:00 (inverno) — fallback tardo
   workflow_dispatch:
 
 jobs:

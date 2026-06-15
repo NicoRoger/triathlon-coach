@@ -1020,6 +1020,60 @@ def test_l5_dst_gate_skips_wrong_hour(monkeypatch):
     assert len(sent) == 2, "alle 22:15 Rome (job accodato 45min) con gate 21 deve inviare"
 
 
+def test_catch_up_gate_sends_when_cron_delayed_late(monkeypatch):
+    """REGRESSIONE 2026-06-15: i cron GitHub ritardano e un run che cadeva alle
+    23:xx Rome veniva SKIPPATO dalla vecchia finestra [21,22], quindi il reminder
+    non arrivava. Il gate catch-up deve inviare per qualsiasi ora >= target nello
+    stesso giorno Rome, e NON inviare dopo mezzanotte."""
+    sn = _load("scripts.send_notification", "scripts/send_notification.py")
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    def _run_at(h, m):
+        sent = []
+        sn.send_and_log_message = lambda *a, **k: sent.append(a) or 12345  # type: ignore
+        sn._already_sent_today = lambda purpose: False  # type: ignore
+
+        class _DT(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 6, 15, h, m, tzinfo=ZoneInfo("Europe/Rome"))
+
+        monkeypatch.setattr(sn, "datetime", _DT)
+        monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
+        sn.main()
+        return len(sent)
+
+    # 23:40 Rome (cron ritardato di ~2h) → ora INVIA (prima veniva skippato → bug)
+    assert _run_at(23, 40) == 1, "alle 23:40 Rome il catch-up deve inviare (era il bug)"
+    # 00:30 Rome (giorno dopo) → troppo presto, skip
+    assert _run_at(0, 30) == 0, "dopo mezzanotte non deve inviare"
+    # 20:30 Rome (prima dell'ora target) → skip
+    assert _run_at(20, 30) == 0, "prima dell'ora target non deve inviare"
+
+
+def test_catch_up_gate_idempotent_when_already_sent(monkeypatch):
+    """Con più cron serali, se il reminder è già stato inviato oggi i run
+    successivi NON devono duplicarlo."""
+    sn = _load("scripts.send_notification", "scripts/send_notification.py")
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    sent = []
+    sn.send_and_log_message = lambda *a, **k: sent.append(a) or 12345  # type: ignore
+    sn._already_sent_today = lambda purpose: True  # type: ignore  # già inviato
+
+    class _DT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 6, 15, 22, 0, tzinfo=ZoneInfo("Europe/Rome"))
+
+    monkeypatch.setattr(sn, "datetime", _DT)
+    monkeypatch.setattr("sys.argv", ["send_notification.py", "debrief-reminder", "--rome-hour", "21"])
+    sn.main()
+    assert sent == [], "se già inviato oggi, un secondo cron non deve duplicare"
+
+
 # ===========================================================================
 # PIPELINE-04 — brief idempotency: _brief_already_sent_today() unit test
 # (Wave 0 test gap — copertura esplicita per il guard di briefing.py main())
