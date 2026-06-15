@@ -425,6 +425,45 @@ def _format_result(test_type: str, result: float) -> str:
     return str(result)
 
 
+# ── Zone derivation (module-level, reusable) ──────────────────────────────
+
+def derive_zones_for_discipline(
+    discipline: str,
+    ftp_w: Optional[float] = None,
+    threshold_pace_s_per_km: Optional[float] = None,
+    css_pace_s_per_100m: Optional[float] = None,
+    lthr: Optional[float] = None,
+) -> dict:
+    """Deriva le zone fisiologiche Z1-Z5 per la disciplina specificata.
+
+    Riusa i @staticmethod esistenti di FitnessTestProcessor senza istanziare
+    il processore. Ritorna {} se il valore richiesto per la disciplina e' None.
+
+    Args:
+        discipline: "bike", "run" o "swim"
+        ftp_w: FTP in watt (per bici)
+        threshold_pace_s_per_km: passo soglia in s/km (per corsa)
+        css_pace_s_per_100m: CSS in s/100m (per nuoto)
+        lthr: soglia HR in bpm (parametro accettato, riservato a uso futuro)
+
+    Returns:
+        dict con chiavi zona (es. "Z2_endurance") o {} se dato mancante
+    """
+    if discipline == "bike":
+        if ftp_w is None:
+            return {}
+        return FitnessTestProcessor._compute_coggan_7zone(float(ftp_w))
+    if discipline == "run":
+        if threshold_pace_s_per_km is None:
+            return {}
+        return FitnessTestProcessor._compute_pace_5zone(float(threshold_pace_s_per_km))
+    if discipline == "swim":
+        if css_pace_s_per_100m is None:
+            return {}
+        return FitnessTestProcessor._compute_css_3zone(float(css_pace_s_per_100m))
+    return {}
+
+
 # ── CLI entry point ────────────────────────────────────────────────────────
 
 def check_recent() -> list[dict]:
@@ -432,7 +471,10 @@ def check_recent() -> list[dict]:
     sb = get_supabase()
     processor = FitnessTestProcessor()
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    # 48h window: a test done in the morning may not be processed until the
+    # next ingest cycle (runs every 3h). 6h missed late-morning tests processed
+    # by a 6pm ingest run when the activity synced at 9:30am.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     activities = sb.table("activities").select(
         "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits,notes"
     ).gte("started_at", cutoff).in_(
@@ -440,8 +482,10 @@ def check_recent() -> list[dict]:
     ).order("started_at", desc=True).limit(10).execute().data or []
 
     results = []
+    from coach.utils.dt import to_rome_date
     for activity in activities:
-        activity_date = str(activity.get("started_at", ""))[:10]
+        _d = to_rome_date(activity.get("started_at"))
+        activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
         sport = activity.get("sport")
 
         planned = sb.table("planned_sessions").select("*").eq(

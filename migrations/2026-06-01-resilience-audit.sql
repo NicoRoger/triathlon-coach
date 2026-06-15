@@ -59,6 +59,7 @@ BEGIN
         FOREIGN KEY (target_race_id) REFERENCES races(id) ON DELETE SET NULL;
 EXCEPTION
     WHEN duplicate_object THEN NULL;
+    WHEN duplicate_table THEN NULL;
 END $$;
 
 -- ── O6/D1: plan_modulations.expires_at ──────────────────────────────────────
@@ -105,6 +106,7 @@ BEGIN
         UNIQUE (planned_date, sport, session_type);
 EXCEPTION
     WHEN duplicate_object THEN NULL;
+    WHEN duplicate_table THEN NULL;
 END $$;
 
 -- ── O8: FK ON DELETE SET NULL (evita delete bloccati / orfani) ───────────────
@@ -117,6 +119,7 @@ BEGIN
         FOREIGN KEY (completed_activity_id) REFERENCES activities(id) ON DELETE SET NULL;
 EXCEPTION
     WHEN duplicate_object THEN NULL;
+    WHEN duplicate_table THEN NULL;
 END $$;
 
 DO $$
@@ -128,6 +131,7 @@ BEGIN
         FOREIGN KEY (test_activity_id) REFERENCES activities(id) ON DELETE SET NULL;
 EXCEPTION
     WHEN duplicate_object THEN NULL;
+    WHEN duplicate_table THEN NULL;
 END $$;
 
 -- ── O9: CHECK su plan_modulations.status (previene stati corrotti da typo) ───
@@ -141,6 +145,7 @@ BEGIN
                           'rejected','expired','discussing'));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
+    WHEN duplicate_table THEN NULL;
 END $$;
 
 -- ── K3: subjective_log.kind — aggiunge 'pattern_correction' ──────────────────

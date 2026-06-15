@@ -23,6 +23,38 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def expire_past_modulations() -> int:
+    """Scade tutte le modulazioni 'proposed' le cui session_date sono nel passato.
+
+    Ritorna il numero di modulazioni scadute.
+    """
+    sb = get_supabase()
+    today = date.today().isoformat()
+
+    res = sb.table("plan_modulations").select("id,proposed_changes").eq("status", "proposed").execute()
+    rows = res.data or []
+
+    expired_ids = []
+    for row in rows:
+        changes = row.get("proposed_changes") or []
+        if not isinstance(changes, list):
+            continue
+        dates = [c.get("date") for c in changes if isinstance(c, dict) and c.get("date")]
+        if dates and min(dates) < today:
+            expired_ids.append(row["id"])
+
+    if not expired_ids:
+        return 0
+
+    sb.table("plan_modulations").update({
+        "status": "expired",
+        "resolved_at": _now_iso(),
+    }).in_("id", expired_ids).execute()
+
+    logger.info("expire_past_modulations: scadute %d modulazioni obsolete", len(expired_ids))
+    return len(expired_ids)
+
+
 def should_trigger_modulation(analysis_text: str, metrics: Optional[dict]) -> bool:
     """Determina se l'analisi sessione richiede una modulazione mid-week."""
     triggers = []
@@ -57,6 +89,7 @@ def propose_modulation(
     trigger_event: str,
     trigger_data: dict,
     proposed_changes: list[dict],
+    source: str = "auto",
 ) -> Optional[str]:
     """Crea proposta modulazione e manda Telegram con bottoni.
 
@@ -64,10 +97,17 @@ def propose_modulation(
         trigger_event: es. "hrv_crash_post_session"
         trigger_data: es. {"hrv_z": -2.1, "rpe": 9, "analysis_id": "..."}
         proposed_changes: lista di modifiche [{date, old, new}]
+        source: "auto" (pipeline) o "coach" (decisione esplicita)
 
     Returns:
         modulation_id se creata, None se errore
     """
+    # Pulisci le modulazioni obsolete prima di crearne una nuova
+    try:
+        expire_past_modulations()
+    except Exception:
+        logger.warning("expire_past_modulations fallita, procedo comunque", exc_info=True)
+
     sb = get_supabase()
 
     # Salva proposta
@@ -76,6 +116,7 @@ def propose_modulation(
         "trigger_data": trigger_data,
         "proposed_changes": proposed_changes,
         "status": "proposed",
+        "source": source,
     }
     res = sb.table("plan_modulations").insert(record).execute()
     if not res.data:
@@ -106,12 +147,13 @@ def apply_modulation(modulation_id: str) -> bool:
         return False
 
     mod = res.data[0]
-    # Audit K1: accetta sia 'proposed' (applicazione diretta) sia 'accepted'
-    # (il bot Telegram setta 'accepted' al tap; il cron in ingest.yml chiama
-    # apply_accepted_modulations che porta 'accepted' → 'applied'). Stati
-    # terminali (applied/rejected/expired/...) non vengono riprocessati.
-    if mod.get("status") not in ("proposed", "accepted"):
-        logger.info("Modulation %s already %s", modulation_id, mod.get("status"))
+    # Solo le modulazioni con status='accepted' (tap atleta via Telegram) vengono
+    # applicate. Accettare 'proposed' aggirava la regola confirm-before-write (CLAUDE.md §5.4).
+    # apply_accepted_modulations() filtra già su 'accepted'; il bot Telegram setta
+    # status='accepted' prima di chiamare apply_modulation. Stati terminali non vengono
+    # riprocessati.
+    if mod.get("status") != "accepted":
+        logger.info("Modulation %s status=%s (not accepted), skipping", modulation_id, mod.get("status"))
         return False
 
     # Bug fix audit D1: rifiuta modulazioni scadute. Una proposta basata su
@@ -238,6 +280,12 @@ def _apply_single_change(sb, change: dict) -> bool:
             return base[key]
         return default
 
+    # Non applicare modulazioni su sessioni già completate — evita di resettare
+    # status='completed' a 'planned' su sessioni già eseguite.
+    if base.get("status") == "completed":
+        logger.warning("Skipping modulation on completed session: %s %s", target_date, sport)
+        return False
+
     payload = {
         "planned_date": target_date,
         "sport": sport,
@@ -283,8 +331,9 @@ def _format_modulation_message(
 
 def _send_modulation_telegram(message: str, mod_id: str) -> Optional[int]:
     """Manda messaggio con bottoni inline via Telegram e logga in bot_messages."""
-    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
-        logger.warning("Telegram not configured for modulation")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID") or os.environ.get("TELEGRAM_ALLOWED_CHAT_ID")
+    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not chat_id:
+        logger.warning("Telegram not configured for modulation (TELEGRAM_BOT_TOKEN or TELEGRAM_*_CHAT_ID missing)")
         return None
 
     from coach.utils.telegram_logger import send_and_log_message
@@ -365,7 +414,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply-accepted", action="store_true",
                         help="Applica le modulazioni con status='accepted'")
+    parser.add_argument("--expire", action="store_true",
+                        help="Scade le modulazioni 'proposed' con session_date nel passato")
     args = parser.parse_args()
+    if args.expire:
+        n = expire_past_modulations()
+        logger.info("Expired %d stale modulations", n)
     if args.apply_accepted:
         summary = apply_accepted_modulations()
         logger.info("apply_accepted_modulations summary: %s", summary)

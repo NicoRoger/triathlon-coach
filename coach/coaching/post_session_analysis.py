@@ -12,11 +12,12 @@ import argparse
 import json
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ def _get_historical(sb, sport: str, current_id: str, limit: int = 4) -> list[dic
 
 def _get_recent_debrief(sb, days: int = 3) -> list[dict]:
     """Ultimi debrief soggettivi."""
-    since = (date.today() - timedelta(days=days)).isoformat()
+    since = (today_rome() - timedelta(days=days)).isoformat()
     res = sb.table("subjective_log").select("*").gte(
         "logged_at", since
     ).order("logged_at", desc=True).limit(5).execute()
@@ -76,12 +77,31 @@ def _get_upcoming_sessions(sb, from_date: str, days: int = 3) -> list[dict]:
     return res.data or []
 
 
+def _get_physiology_zones(sb, discipline: str) -> Optional[dict]:
+    """Recupera le zone fisiologiche attive per la disciplina."""
+    today = today_rome().isoformat()
+    res = sb.table("physiology_zones").select("*").or_(
+        f"valid_to.is.null,valid_to.gte.{today}"
+    ).lte("valid_from", today).eq("discipline", discipline).order(
+        "valid_from", desc=True
+    ).limit(1).execute()
+    return res.data[0] if res.data else None
+
+
 def _compute_zone_compliance(planned: dict, activity: dict) -> Optional[dict]:
     """Confronta target_zones del piano con hr_zones_s effettivi.
 
     target_zones: {"z2": 0.8, "z4": 0.2}  — proporzioni (somma <= 1)
     hr_zones_s:   {"z1": 300, "z2": 3600, "z4": 120}  — secondi per zona
+
+    Per il nuoto la compliance HR è sempre inaffidabile (senza fascia toracica).
+    Restituisce None per le sessioni di nuoto — il chiamante aggiunge invece
+    il contesto pace vs CSS.
     """
+    sport = activity.get("sport", "")
+    if sport == "swim":
+        return None
+
     target = planned.get("target_zones")
     actual_raw = activity.get("hr_zones_s")
     if not target or not actual_raw:
@@ -149,6 +169,38 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     metrics = _get_daily_metrics(sb, activity_date)
     zone_compliance = _compute_zone_compliance(planned, activity) if planned else None
 
+    # Nuoto: pace vs CSS invece di compliance HR (HR pool inaffidabile)
+    swim_pace_context: Optional[str] = None
+    if sport == "swim":
+        zones_row = _get_physiology_zones(sb, "swim")
+        css_s = (zones_row or {}).get("css_pace_s_per_100m")
+        # avg_pace_s_per_km per nuoto = s/km; converti in s/100m dividendo per 10
+        avg_pace_km = activity.get("avg_pace_s_per_km")
+        avg_pace_100m = round(avg_pace_km / 10, 1) if avg_pace_km else None
+        if css_s and avg_pace_100m:
+            delta = round(avg_pace_100m - css_s, 1)
+            interp = (
+                "sotto CSS — sprint/Z4+" if delta < -5
+                else "± CSS — soglia/Z4" if abs(delta) <= 5
+                else f"+{abs(delta)}s/100m sopra CSS — aerobico Z2/Z3"
+            )
+            swim_pace_context = (
+                f"CSS: {css_s}s/100m | Pace media: {avg_pace_100m}s/100m | "
+                f"Delta: {delta:+.1f}s/100m ({interp})\n"
+                f"NOTA: dati HR pool inaffidabili — valuta compliance solo su pace e RPE."
+            )
+        else:
+            swim_pace_context = (
+                "CSS non disponibile o pace non registrata. "
+                "NOTA: dati HR pool inaffidabili — valuta su RPE e sensazione."
+            )
+
+    # ADAPT-01: classificazione deterministica cedimento (zero LLM)
+    from coach.analytics.readiness import classify_fatigue_type
+    splits = activity.get("splits") or None
+    debrief_rpe = next((int(d["rpe"]) for d in debrief if d.get("rpe") is not None), None)
+    fatigue_result = classify_fatigue_type(activity, splits, debrief_rpe)
+
     # Costruisci prompt
     context_parts = [
         f"## Attività analizzata\n{json.dumps(_clean_for_prompt(activity), indent=2, default=str)}",
@@ -162,6 +214,8 @@ def analyze_session(activity_id: str) -> Optional[dict]:
             f"target {zone_compliance['target']} / effettivo {zone_compliance['actual']}\n"
             f"Deviazioni per zona: {zone_compliance['deviations']}"
         )
+    if swim_pace_context:
+        context_parts.append(f"## Nuoto: Pace vs CSS\n{swim_pace_context}")
     if historical:
         context_parts.append(f"## Storico ultime {len(historical)} sessioni {sport}\n{json.dumps([_clean_for_prompt(h) for h in historical], indent=2, default=str)}")
     if metrics:
@@ -204,6 +258,9 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     record = {
         "activity_id": activity_id,
         "analysis_text": analysis_text,
+        "fatigue_type": fatigue_result.failure_type or "insufficient_data",
+        "fatigue_confidence": fatigue_result.confidence,
+        "sport": sport,
         "suggested_actions": actions,
         "model_used": result.get("model"),
         "cost_usd": result.get("cost_usd"),
@@ -251,7 +308,7 @@ def analyze_recent(days: int = 2) -> int:
         Numero di attività analizzate.
     """
     sb = get_supabase()
-    since = (date.today() - timedelta(days=days)).isoformat()
+    since = (today_rome() - timedelta(days=days)).isoformat()
 
     # Attività recenti
     activities = sb.table("activities").select("external_id").gte(

@@ -210,12 +210,105 @@ def _format_structured(structured) -> list[str]:
     return out
 
 
-def _build_session_section(planned_sessions: list[dict]) -> str:
+def _fetch_current_zones(sb) -> dict:
+    """Legge l'ultima riga physiology_zones per disciplina (valid_to is null).
+
+    Ritorna un dict {discipline: row_dict}. Degrada a {} su errore — non deve
+    mai far crashare il brief (pattern identico a _build_race_progress_section).
+    """
+    try:
+        res = (
+            sb.table("physiology_zones")
+            .select("discipline,ftp_w,threshold_pace_s_per_km,css_pace_s_per_100m,lthr,valid_from")
+            .is_("valid_to", "null")
+            .order("valid_from", desc=True)
+            .execute()
+        )
+        rows = res.data or []
+        zones_by_discipline: dict = {}
+        for row in rows:
+            disc = row.get("discipline")
+            # Tieni solo la riga piu' recente per disciplina
+            if disc and disc not in zones_by_discipline:
+                zones_by_discipline[disc] = row
+        return zones_by_discipline
+    except Exception:
+        logger.warning("_fetch_current_zones: impossibile leggere physiology_zones", exc_info=True)
+        return {}
+
+
+def _format_session_zones(sport: str, zones_by_discipline: dict) -> Optional[str]:
+    """Formatta una riga compatta con le zone misurate per la disciplina della sessione.
+
+    Placeholder esplicito per bici se FTP mancante (D-11). Ritorna None se nessun
+    dato disponibile per lo sport richiesto.
+    """
+    from coach.coaching.fitness_test_processor import derive_zones_for_discipline
+
+    # Mappa brick → run (la parte corsa e' quella con pace zone)
+    disc_map = {"swim": "swim", "bike": "bike", "run": "run", "brick": "run"}
+    discipline = disc_map.get(sport)
+    if discipline is None:
+        return None
+
+    row = zones_by_discipline.get(discipline)
+
+    # Caso speciale bici: se disciplina assente o FTP None → placeholder D-11
+    if discipline == "bike":
+        ftp = row.get("ftp_w") if row else None
+        if not ftp:
+            return "[FTP bici non ancora misurato — usa Z2 HR: 140-160bpm come riferimento]"
+        zones = derive_zones_for_discipline("bike", ftp_w=float(ftp))
+        z2 = zones.get("Z2_endurance", "")
+        z4 = zones.get("Z4_threshold", "")
+        parts = []
+        if z2:
+            parts.append(f"Z2: {z2}")
+        if z4:
+            parts.append(f"Z4: {z4}")
+        return " | ".join(parts) if parts else None
+
+    if row is None:
+        return None
+
+    if discipline == "run":
+        tp = row.get("threshold_pace_s_per_km")
+        if not tp:
+            return None
+        zones = derive_zones_for_discipline("run", threshold_pace_s_per_km=float(tp))
+        z2 = zones.get("Z2_endurance", "")
+        z4 = zones.get("Z4_threshold", "")
+        parts = []
+        if z2:
+            parts.append(f"Z2: {z2}")
+        if z4:
+            parts.append(f"Z4: {z4}")
+        return " | ".join(parts) if parts else None
+
+    if discipline == "swim":
+        css = row.get("css_pace_s_per_100m")
+        if not css:
+            return None
+        zones = derive_zones_for_discipline("swim", css_pace_s_per_100m=float(css))
+        css_minus5 = zones.get("CSS_minus5", "")
+        css_val = zones.get("CSS", "")
+        parts = []
+        if css_minus5:
+            parts.append(f"Z1-Z2: {css_minus5}")
+        if css_val:
+            parts.append(f"CSS: {css_val}")
+        return " | ".join(parts) if parts else None
+
+    return None
+
+
+def _build_session_section(planned_sessions: list[dict], zones_by_discipline: Optional[dict] = None) -> str:
     lines = ["<b>🎯 Cosa fare oggi</b>"]
     if planned_sessions:
         from html import escape as _esc
         sport_emoji_map = {"swim": "🏊", "bike": "🚴", "run": "🏃",
                            "brick": "🚴🏃", "strength": "💪"}
+        _zones = zones_by_discipline or {}
         for planned in planned_sessions:
             sport_emoji = sport_emoji_map.get(planned.get("sport"), "🏋️")
             dur_min = (planned.get("duration_s") or 0) // 60
@@ -225,10 +318,15 @@ def _build_session_section(planned_sessions: list[dict]) -> str:
             if planned.get("target_tss") is not None:
                 header += f" · TSS {round(float(planned['target_tss']))}"
             lines.append(header)
-            # Zone target
+            # Zone target (percentuali)
             zones_line = _format_target_zones(planned.get("target_zones"))
             if zones_line:
                 lines.append(f"Zone: {zones_line}")
+            # Zone misurate (da physiology_zones DB)
+            sport = planned.get("sport") or ""
+            measured_zones = _format_session_zones(sport, _zones)
+            if measured_zones:
+                lines.append(f"Zone misurate: {measured_zones}")
             # Descrizione COMPLETA (non troncata) — richiesta atleta: dettaglio
             # accurato come su calendar.
             if planned.get("description"):
@@ -629,6 +727,9 @@ def build_brief() -> str:
     ).eq("status", "planned").execute()
     planned_sessions = planned_res.data or []
 
+    # Zone misurate da physiology_zones (una sola query, passata a _build_session_section)
+    zones_by_discipline = _fetch_current_zones(sb)
+
     # Controlla se siamo in race week (T-7 a T-0 di una gara A/B)
     upcoming_race = _get_upcoming_race(today)
     
@@ -646,6 +747,7 @@ def build_brief() -> str:
             _build_freshness_warning(age),
             _build_wellness_section(wellness, metrics),
             _build_race_week_section(upcoming_race, today),
+            _build_session_section(planned_sessions, zones_by_discipline),
             _build_warnings_section(metrics),
             _build_risk_section(),
             _build_belief_insight_section(),
@@ -659,7 +761,7 @@ def build_brief() -> str:
             _build_freshness_warning(age),
             _build_wellness_section(wellness, metrics),
             _build_load_section(metrics),
-            _build_session_section(planned_sessions),
+            _build_session_section(planned_sessions, zones_by_discipline),
             _build_race_progress_section(today),
             _build_warnings_section(metrics),
             _build_risk_section(),

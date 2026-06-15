@@ -3,12 +3,12 @@
 Step 6: 3 livelli di protezione budget €5/mese.
 Livello 2 — soft cap con tracking persistente su Supabase (tabella api_usage).
 
-Soglie:
-  <$3.00  → OK, procedi
-  $3-$4   → WARNING, alert Telegram, procedi
-  $4-$4.50 → DEGRADED, declassa Sonnet→Haiku, alert
-  >$4.50  → BLOCKED non-critical, solo emergency
-  >$4.80  → BLOCKED tutto, solo purpose='emergency'
+Soglie (ROADMAP SC4 — verificato VERIFY-06):
+  <$3.00  → OK, procedi con modello preferito
+  $3-$4   → WARNING, alert Telegram, procedi con modello preferito
+  >=$4.00 → DEGRADED/BLOCKED_NON_CRITICAL, declassa Sonnet→Haiku (BUDGET_DEGRADED)
+  >$4.80  → BLOCKED tutto, solo purpose in EMERGENCY_PURPOSES
+  >=$5.00 → HARD CAP, blocca anche emergency
 """
 from __future__ import annotations
 
@@ -37,9 +37,13 @@ MODEL_IDS = {
 }
 
 # Budget thresholds (USD)
+# ROADMAP SC4 — soglia degrado allineata a €4.00 (VERIFY-06):
+#   BUDGET_DEGRADED = 4.00 → select_model declassa Sonnet→Haiku a partire da €4.00
+#   BUDGET_WARNING == BUDGET_DEGRADED: la fase "warning ma procedi" è soppressa
+#   poiché a €4.00 si entra direttamente in declassamento.
 BUDGET_OK = 3.00
 BUDGET_WARNING = 4.00
-BUDGET_DEGRADED = 4.50
+BUDGET_DEGRADED = 4.00  # era 4.50 — allineato a ROADMAP SC4 (VERIFY-06)
 BUDGET_BLOCKED = 4.80
 BUDGET_HARD_CAP = 5.00
 
@@ -111,10 +115,10 @@ def get_month_stats() -> dict:
     # Current budget level
     if total_cost < BUDGET_OK:
         level = "OK"
-    elif total_cost < BUDGET_WARNING:
-        level = "WARNING"
     elif total_cost < BUDGET_DEGRADED:
-        level = "DEGRADED"
+        # BUDGET_WARNING == BUDGET_DEGRADED == 4.00: the WARNING-only band collapses.
+        # Spending $3.00–$3.99 triggers WARNING label (model still preferred).
+        level = "WARNING"
     elif total_cost < BUDGET_BLOCKED:
         level = "BLOCKED_NON_CRITICAL"
     else:
@@ -151,22 +155,22 @@ def select_model(prefer: str, spend: Optional[float] = None) -> str:
     prefer_id = MODEL_IDS.get(prefer, prefer)
 
     if spend < BUDGET_OK:
-        # Tutto ok, rispetta preferenza
-        return prefer_id
-    elif spend < BUDGET_WARNING:
-        # Warning ma procedi con preferenza
+        # < $3.00 — tutto ok, rispetta preferenza
         return prefer_id
     elif spend < BUDGET_DEGRADED:
-        # Declassa: opus→sonnet, sonnet→haiku, haiku→haiku
+        # $3.00 – $3.99 — warning range, procedi con preferenza (nessun declasso)
+        # BUDGET_WARNING == BUDGET_DEGRADED == 4.00, quindi questo ramo copre $3.00–$3.99
+        return prefer_id
+    elif spend < BUDGET_BLOCKED:
+        # >= $4.00 e < $4.80 — zona DEGRADED/BLOCKED_NON_CRITICAL:
+        #   opus → sonnet (risparmio intermedio)
+        #   sonnet/haiku → haiku
         if prefer in ("opus", "claude-opus-4-6"):
             return MODEL_IDS["sonnet"]
         else:
             return MODEL_IDS["haiku"]
-    elif spend < BUDGET_BLOCKED:
-        # Solo haiku per qualsiasi cosa
-        return MODEL_IDS["haiku"]
     else:
-        # Blocked: restituisce haiku ma check_budget_or_raise bloccherà
+        # >= $4.80 — blocked: restituisce haiku ma check_budget_or_raise bloccherà
         return MODEL_IDS["haiku"]
 
 

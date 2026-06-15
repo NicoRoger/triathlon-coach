@@ -4,6 +4,8 @@ Devi produrre un'analisi di 5-8 righe in italiano. Sii diretto e analitico. Nien
 
 Se il contesto include una sezione "Compliance zone", usala come punto di partenza: riporta il punteggio e cosa ha deviato (es. "troppo tempo in Z3 invece di Z2").
 
+**NUOTO**: se il contesto include "Nuoto: Pace vs CSS", usa SOLO quella sezione per valutare l'intensità — ignora completamente i dati HR (inaffidabili in vasca senza fascia toracica). Valuta compliance su pace vs CSS e RPE soggettivo.
+
 Il tuo output DEVE contenere:
 1. Una prima riga di sintesi: indica se la sessione è stata ottima, buona, sotto le aspettative o problematica.
 2. 2-3 righe di analisi tecnica: confronta dati oggettivi (HR, pace, power, compliance zone se disponibile) con quelli soggettivi (RPE, note). Nota derive cardiache, pacing irregolare, deviazione dal piano.
