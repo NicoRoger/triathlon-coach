@@ -41,16 +41,19 @@ def main():
 
     if args.rome_hour is not None:
         rome_now = datetime.now(ZoneInfo("Europe/Rome"))
-        # Window +60min: se il job viene accodato fino a 59min dopo il cron,
-        # passa ancora (es. cron 19:30 UTC, job parte 20:25 UTC = 22:25 CEST)
-        # Il gate accetta [rome_hour, rome_hour+1) incluso.
-        if rome_now.hour not in (args.rome_hour, args.rome_hour + 1):
+        # Catch-up gate (sostituisce la vecchia finestra stretta [H, H+1]).
+        # I cron di GitHub Actions ritardano spesso di 1-3h e a volte vengono
+        # droppati: con la finestra stretta un run che cadeva alle 23:xx Rome
+        # veniva skippato e il reminder non arrivava (risultando comunque "success").
+        # Ora inviamo dall'ora target FINO A FINE GIORNATA Rome: il primo run utile
+        # invia, i successivi sono bloccati da _already_sent_today (idempotency).
+        if rome_now.hour < args.rome_hour:
             logger.info(
-                "DST gate: ora Rome %02d:%02d non in [%02d, %02d], skip invio %s",
-                rome_now.hour, rome_now.minute, args.rome_hour, args.rome_hour + 1, notif_type,
+                "Gate: ora Rome %02d:%02d < target %02d, troppo presto, skip %s",
+                rome_now.hour, rome_now.minute, args.rome_hour, notif_type,
             )
             return
-        # Idempotency: evita doppio invio se entrambi i cron passano il gate
+        # Idempotency: evita doppio invio quando più cron passano il gate nello stesso giorno
         if _already_sent_today(f"{notif_type.replace('-', '_')}"):
             logger.info("Gate: %s gia' inviato oggi, skip", notif_type)
             return
