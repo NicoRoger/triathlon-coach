@@ -212,13 +212,33 @@ const TOOLS = [
   },
   {
     name: "update_constraint",
-    description: "Marca un vincolo medico come risolto (resolved_at = now). Chiamare dopo valutazione clinica.",
+    description: "Aggiorna un vincolo medico attivo. Può marcare come risolto (resolved_at), aggiornare description, severity, symptom_status (symptomatic→asymptomatic→recovering) o aggiungere una nota. Ogni modifica è loggata in history.",
     inputSchema: {
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string", description: "UUID del vincolo da risolvere" },
-        resolved_at: { type: "string", format: "date-time", description: "Timestamp risoluzione (default: now)" },
+        id: { type: "string", description: "UUID del vincolo" },
+        resolved_at: { type: "string", format: "date-time", description: "Timestamp risoluzione. Imposta per chiudere il vincolo." },
+        description: { type: "string", description: "Aggiorna la descrizione del vincolo (es. cambia da 'sintomatica' ad 'asintomatica')" },
+        severity: { type: "string", enum: ["low", "medium", "high", "critical"], description: "Aggiorna la severità" },
+        symptom_status: { type: "string", enum: ["symptomatic", "asymptomatic", "recovering"], description: "Stato sintomatologico corrente" },
+        note: { type: "string", description: "Nota libera sull'aggiornamento (es. 'RM di controllo ok')" },
+      },
+    },
+  },
+  {
+    name: "create_constraint",
+    description: "Crea un nuovo vincolo medico/tattico attivo. Da usare quando emerge un nuovo infortunio, limitazione o vincolo contestuale. Da chiamare SOLO dopo conferma dell'atleta.",
+    inputSchema: {
+      type: "object",
+      required: ["type", "discipline", "description", "severity"],
+      properties: {
+        type: { type: "string", enum: ["injury", "medical", "tactical"] },
+        discipline: { type: "string", enum: ["swim", "bike", "run", "all", "strength"] },
+        description: { type: "string", description: "Descrizione dettagliata del vincolo e delle sue implicazioni pratiche" },
+        severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
+        symptom_status: { type: "string", enum: ["symptomatic", "asymptomatic", "recovering"] },
+        note: { type: "string" },
       },
     },
   },
@@ -289,6 +309,31 @@ const TOOLS = [
       required: ["id"],
       properties: {
         id: { type: "string", description: "UUID della modulazione da accettare" },
+      },
+    },
+  },
+  {
+    name: "refute_belief",
+    description: "Refuta una belief dell'atleta: riduce la confidence, la flagga come inaffidabile con una motivazione. Usare quando una belief è costruita su dati noti come falsati (es. HR nuoto, warm-down mal classificato).",
+    inputSchema: {
+      type: "object",
+      required: ["belief_key", "reason"],
+      properties: {
+        belief_key: { type: "string", description: "Chiave univoca della belief (es. 'swim_hr_compliance')" },
+        reason: { type: "string", description: "Motivazione della refutazione (es. 'HR pool inaffidabile: dati senza fascia toracica')" },
+        evidence_source: { type: "string", description: "Fonte dell'evidenza contraddittoria (default: 'coach_refutation')" },
+      },
+    },
+  },
+  {
+    name: "list_beliefs",
+    description: "Lista le belief attive dell'atleta con confidence, status e metadati fonte. Mostra separatamente le belief flaggate come inaffidabili.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        min_status: { type: "string", enum: ["hypothesis", "weak_belief", "validated_belief", "strong_belief"], default: "weak_belief" },
+        include_flagged: { type: "boolean", default: true, description: "Se true, include anche le belief flaggate (inaffidabili)" },
+        category: { type: "string", description: "Filtra per categoria (es. 'swim', 'bike', 'recovery')" },
       },
     },
   },
@@ -606,6 +651,12 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return dismissModulations(args, env);
     case "accept_modulation":
       return acceptModulation(args.id, env);
+    case "create_constraint":
+      return createConstraint(args, env);
+    case "refute_belief":
+      return refuteBelief(args, env);
+    case "list_beliefs":
+      return listBeliefs(args, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -1014,9 +1065,18 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   };
   if (args.target_tss !== undefined) payload.target_tss = args.target_tss;
   if (args.target_zones !== undefined) payload.target_zones = args.target_zones;
-  if (args.structured !== undefined) payload.structured = args.structured;
   if (args.mesocycle_id !== undefined) payload.mesocycle_id = args.mesocycle_id;
   if (args.calendar_event_id !== undefined) payload.calendar_event_id = args.calendar_event_id;
+
+  // Fix #5: auto-derive absolute zone ranges from active physiology_zones.
+  // Merged into structured.zones_derived so coach and compliance engine share the same baseline.
+  const zonesRow = await getActiveZoneForDiscipline(args.sport, env).catch(() => null);
+  const absoluteZones = computeAbsoluteZones(args.sport, zonesRow);
+  const structuredBase = args.structured || {};
+  payload.structured = absoluteZones
+    ? { ...structuredBase, zones_derived: absoluteZones }
+    : (Object.keys(structuredBase).length > 0 ? structuredBase : undefined);
+  if (payload.structured === undefined) delete payload.structured;
 
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}&session_type=eq.${encodeURIComponent(args.session_type)}`,
@@ -1059,6 +1119,75 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
 // ============================================================================
 // Physiology Zones
 // ============================================================================
+
+/** Recupera la riga physiology_zones attiva per la disciplina specificata. */
+async function getActiveZoneForDiscipline(discipline: string, env: Env): Promise<any | null> {
+  const today = todayRomeISO();
+  const rows = await sb(env, `physiology_zones?discipline=eq.${discipline}&or=(valid_to.is.null,valid_to.gte.${today})&valid_from=lte.${today}&order=valid_from.desc&limit=1`).catch(() => null);
+  return rows?.[0] || null;
+}
+
+/** Calcola zone fisiologiche assolute da una riga physiology_zones.
+ *  Usate in commit_plan_change per iniettare zone_derived in structured. */
+function computeAbsoluteZones(discipline: string, z: any): any | null {
+  if (!z) return null;
+
+  if (discipline === "bike" && z.ftp_w) {
+    const ftp: number = z.ftp_w;
+    const fmt = (w: number) => `${Math.round(w)}W`;
+    return {
+      discipline: "bike",
+      ftp_w: ftp,
+      lthr: z.lthr || null,
+      zones: {
+        z1: { label: "Recovery",   range: `<${fmt(ftp * 0.55)}` },
+        z2: { label: "Endurance",  range: `${fmt(ftp * 0.55)}–${fmt(ftp * 0.75)}` },
+        z3: { label: "Tempo",      range: `${fmt(ftp * 0.75)}–${fmt(ftp * 0.90)}` },
+        z4: { label: "Threshold",  range: `${fmt(ftp * 0.90)}–${fmt(ftp * 1.05)}` },
+        z5: { label: "VO2max",     range: `${fmt(ftp * 1.05)}–${fmt(ftp * 1.20)}` },
+        z6: { label: "Anaerobic",  range: `>${fmt(ftp * 1.20)}` },
+      },
+    };
+  }
+
+  if (discipline === "run" && z.threshold_pace_s_per_km) {
+    const tp: number = z.threshold_pace_s_per_km;
+    const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/km`;
+    return {
+      discipline: "run",
+      threshold_s_per_km: tp,
+      threshold_pace: fmt(tp),
+      lthr: z.lthr || null,
+      zones: {
+        z1: { label: "Recovery",  pace_slower_than: fmt(tp + 90) },
+        z2: { label: "Endurance", pace_range: `${fmt(tp + 90)}–${fmt(tp + 45)}` },
+        z3: { label: "Tempo",     pace_range: `${fmt(tp + 45)}–${fmt(tp + 15)}` },
+        z4: { label: "Threshold", pace_range: `${fmt(tp + 15)}–${fmt(tp - 15)}` },
+        z5: { label: "VO2max",    pace_faster_than: fmt(tp - 15) },
+      },
+    };
+  }
+
+  if (discipline === "swim" && z.css_pace_s_per_100m) {
+    const css: number = z.css_pace_s_per_100m;
+    const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/100m`;
+    return {
+      discipline: "swim",
+      css_s_per_100m: css,
+      css_pace: fmt(css),
+      zones: {
+        z1: { label: "Recovery",      pace_slower_than: fmt(css + 25) },
+        z2: { label: "Endurance",     pace_range: `${fmt(css + 25)}–${fmt(css + 10)}` },
+        z3: { label: "Threshold-ish", pace_range: `${fmt(css + 10)}–${fmt(css)}` },
+        z4: { label: "CSS/Threshold", pace_range: `${fmt(css)}–${fmt(css - 5)}` },
+        z5: { label: "VO2max",        pace_faster_than: fmt(css - 5) },
+      },
+    };
+  }
+
+  return null;
+}
+
 async function getPhysiologyZones(discipline: string, env: Env) {
   const today = todayRomeISO();
   let q = `physiology_zones?or=(valid_to.is.null,valid_to.gte.${today})&valid_from=lte.${today}&order=valid_from.desc`;
@@ -1205,13 +1334,44 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
 }
 
 // ============================================================================
-// Update Constraint
+// Constraint management (Fix #4)
 // ============================================================================
 async function updateConstraint(args: any, env: Env): Promise<any> {
   if (!args.id || !isUuid(args.id)) {
     throw new Error(`Invalid constraint id: must be a valid UUID`);
   }
-  const resolvedAt = args.resolved_at || new Date().toISOString();
+
+  const existing = await sb(env, `active_constraints?id=eq.${args.id}&limit=1`);
+  if (!existing || existing.length === 0) return { error: "Constraint not found", id: args.id };
+  const current = existing[0];
+
+  const patch: any = {};
+  if (args.resolved_at !== undefined) patch.resolved_at = args.resolved_at;
+  else if (args.resolve === true) patch.resolved_at = new Date().toISOString();
+  if (args.description !== undefined) patch.description = args.description;
+  if (args.severity !== undefined) {
+    if (!["low", "medium", "high", "critical"].includes(args.severity)) throw new Error(`Invalid severity: ${args.severity}`);
+    patch.severity = args.severity;
+  }
+  if (args.symptom_status !== undefined) {
+    if (!["symptomatic", "asymptomatic", "recovering"].includes(args.symptom_status)) throw new Error(`Invalid symptom_status: ${args.symptom_status}`);
+    patch.symptom_status = args.symptom_status;
+  }
+  if (args.note !== undefined) patch.note = args.note;
+
+  if (Object.keys(patch).length === 0) {
+    throw new Error("Nessun campo da aggiornare. Specifica resolved_at, description, severity, symptom_status o note.");
+  }
+
+  // Append to history audit trail
+  const historyEntry = {
+    timestamp: new Date().toISOString(),
+    changes: patch,
+    previous: Object.fromEntries(Object.keys(patch).map((k) => [k, (current as any)[k] ?? null])),
+  };
+  const prevHistory: any[] = Array.isArray(current.history) ? current.history : [];
+  patch.history = [...prevHistory, historyEntry];
+
   const updateResp = await fetch(`${env.SUPABASE_URL}/rest/v1/active_constraints?id=eq.${args.id}`, {
     method: "PATCH",
     headers: {
@@ -1220,10 +1380,44 @@ async function updateConstraint(args: any, env: Env): Promise<any> {
       "Content-Type": "application/json",
       "Prefer": "return=representation",
     },
-    body: JSON.stringify({ resolved_at: resolvedAt }),
+    body: JSON.stringify(patch),
   });
   if (!updateResp.ok) throw new Error(`Update failed: ${updateResp.status} ${await updateResp.text()}`);
-  return { status: "resolved", id: args.id, resolved_at: resolvedAt };
+  const result = (await updateResp.json()) as any[];
+  return { status: patch.resolved_at ? "resolved" : "updated", constraint: result[0] };
+}
+
+async function createConstraint(args: any, env: Env): Promise<any> {
+  const required = ["type", "discipline", "description", "severity"];
+  for (const k of required) {
+    if (!args[k]) throw new Error(`Missing required field: ${k}`);
+  }
+  if (!["injury", "medical", "tactical"].includes(args.type)) throw new Error(`Invalid type: ${args.type}`);
+  if (!["swim", "bike", "run", "all", "strength"].includes(args.discipline)) throw new Error(`Invalid discipline: ${args.discipline}`);
+  if (!["low", "medium", "high", "critical"].includes(args.severity)) throw new Error(`Invalid severity: ${args.severity}`);
+
+  const payload: any = {
+    type: args.type,
+    discipline: args.discipline,
+    description: args.description,
+    severity: args.severity,
+  };
+  if (args.symptom_status) payload.symptom_status = args.symptom_status;
+  if (args.note) payload.note = args.note;
+
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/active_constraints`, {
+    method: "POST",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(`Insert failed: ${resp.status} ${await resp.text()}`);
+  const result = (await resp.json()) as any[];
+  return { status: "created", constraint: result[0] };
 }
 
 // ============================================================================
@@ -1568,5 +1762,129 @@ async function acceptModulation(id: string, env: Env): Promise<any> {
     final_status: newStatus,
     planned_session_ids: applied,
     skipped,
+  };
+}
+
+// ============================================================================
+// Belief management (Fix #7)
+// ============================================================================
+async function refuteBelief(args: any, env: Env): Promise<any> {
+  if (!args.belief_key) throw new Error("belief_key is required");
+  if (!args.reason) throw new Error("reason is required");
+
+  const rows = await sb(env, `beliefs?belief_key=eq.${encodeURIComponent(args.belief_key)}&limit=1`);
+  if (!rows || rows.length === 0) return { error: "Belief not found", belief_key: args.belief_key };
+  const belief = rows[0];
+
+  if (belief.status === "retired") {
+    return { status: "already_retired", belief_key: args.belief_key, message: "Belief già ritirata." };
+  }
+
+  const CONTRADICT_PENALTY = 0.15;
+  const confBefore: number = belief.confidence ?? 0.5;
+  const confAfter = Math.max(0.05, confBefore - CONTRADICT_PENALTY);
+  const nAfter = (belief.evidence_n ?? 0) + 1;
+
+  // Mirror Python _compute_status logic: demote on low confidence
+  const STATUS_RANK: Record<string, number> = { hypothesis: 1, weak_belief: 2, validated_belief: 3, strong_belief: 4 };
+  let statusAfter = belief.status;
+  if (confAfter < 0.15 && nAfter >= 5) statusAfter = "retired";
+  else if (confAfter < 0.25 && (STATUS_RANK[statusAfter] || 0) >= 4) statusAfter = "validated_belief";
+  else if (confAfter < 0.25 && (STATUS_RANK[statusAfter] || 0) >= 3) statusAfter = "weak_belief";
+
+  const now = new Date().toISOString();
+  const patch = {
+    confidence: confAfter,
+    evidence_n: nAfter,
+    status: statusAfter,
+    flagged: true,
+    flag_reason: args.reason,
+    last_contradicted_at: now,
+    last_updated_at: now,
+  };
+
+  const patchResp = await fetch(`${env.SUPABASE_URL}/rest/v1/beliefs?id=eq.${belief.id}`, {
+    method: "PATCH",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!patchResp.ok) throw new Error(`Belief update failed: ${patchResp.status} ${await patchResp.text()}`);
+
+  // Log to beliefs_history (non-fatal if table schema differs)
+  await fetch(`${env.SUPABASE_URL}/rest/v1/beliefs_history`, {
+    method: "POST",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=minimal",
+    },
+    body: JSON.stringify({
+      belief_id: belief.id,
+      change_type: "refuted",
+      confidence_before: confBefore,
+      confidence_after: confAfter,
+      evidence_n_before: belief.evidence_n ?? 0,
+      evidence_n_after: nAfter,
+      status_before: belief.status,
+      status_after: statusAfter,
+      reason: args.reason,
+      metadata: { evidence_source: args.evidence_source || "coach_refutation" },
+    }),
+  }).catch(() => { /* non-fatal */ });
+
+  return {
+    success: true,
+    belief_key: args.belief_key,
+    previous: { confidence: confBefore, status: belief.status },
+    updated: { confidence: confAfter, status: statusAfter, flagged: true },
+    message: `Belief refutata: conf ${confBefore.toFixed(2)}→${confAfter.toFixed(2)}, flagged=true. Ragione: ${args.reason}`,
+  };
+}
+
+async function listBeliefs(args: any, env: Env): Promise<any> {
+  const minStatus = args.min_status || "weak_belief";
+  const includeFlagged: boolean = args.include_flagged ?? true;
+
+  let q = `beliefs?status=neq.retired&order=confidence.desc&select=belief_key,belief_text,status,confidence,evidence_n,source,source_metadata,flagged,flag_reason,last_updated_at`;
+  if (!includeFlagged) q += `&flagged=eq.false`;
+  if (args.category) q += `&category=eq.${encodeURIComponent(args.category)}`;
+
+  const rows = await sb(env, q);
+  const STATUS_RANK: Record<string, number> = { hypothesis: 1, weak_belief: 2, validated_belief: 3, strong_belief: 4 };
+  const minRank = STATUS_RANK[minStatus] || 1;
+  const filtered = (rows || []).filter((r: any) => (STATUS_RANK[r.status] || 0) >= minRank);
+
+  const flagged = filtered.filter((r: any) => r.flagged);
+  const active = filtered.filter((r: any) => !r.flagged);
+
+  return {
+    generated_at: new Date().toISOString(),
+    total: filtered.length,
+    flagged: flagged.map((r: any) => ({
+      belief_key: r.belief_key,
+      text: r.belief_text,
+      status: r.status,
+      confidence: r.confidence,
+      source: r.source,
+      flag_reason: r.flag_reason,
+    })),
+    active: active.map((r: any) => ({
+      belief_key: r.belief_key,
+      text: r.belief_text,
+      status: r.status,
+      confidence: r.confidence,
+      evidence_n: r.evidence_n,
+      source: r.source,
+      source_metadata: r.source_metadata,
+    })),
+    tip: flagged.length > 0
+      ? `${flagged.length} beliefs flaggate — usa refute_belief per ridurne la confidence o escludile dalla review.`
+      : undefined,
   };
 }
