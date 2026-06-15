@@ -222,6 +222,76 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "delete_planned_session",
+    description: "Soft-cancella una sessione pianificata (status→'cancelled'). Restituisce calendar_event_id se presente per cleanup GCal separato. Da chiamare SOLO dopo conferma esplicita dell'atleta.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string", description: "UUID della sessione in planned_sessions" },
+      },
+    },
+  },
+  {
+    name: "update_planned_session",
+    description: "Aggiorna campi di una sessione pianificata esistente (PATCH parziale). Usa per spostare data, modificare intensità/descrizione. Vietato: id, created_at, source. Da chiamare SOLO dopo conferma esplicita dell'atleta.",
+    inputSchema: {
+      type: "object",
+      required: ["id", "fields"],
+      properties: {
+        id: { type: "string", description: "UUID della sessione" },
+        fields: {
+          type: "object",
+          description: "Campi da aggiornare (parziale). Vietati: id, created_at, source.",
+          properties: {
+            planned_date: { type: "string", format: "date" },
+            sport: { type: "string", enum: ["swim", "bike", "run", "brick", "strength"] },
+            session_type: { type: "string" },
+            description: { type: "string" },
+            duration_s: { type: "integer" },
+            target_tss: { type: "number" },
+            structured: { type: "object" },
+            status: { type: "string", enum: ["planned", "completed", "skipped", "cancelled"] },
+            calendar_event_id: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: "list_pending_modulations",
+    description: "Lista le modulazioni in attesa (status='proposed'), raggruppate per source (auto=pipeline vs coach=decisione esplicita). Default: solo non scadute/future.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        include_past: { type: "boolean", default: false, description: "Se true, include anche modulazioni con session_date nel passato" },
+      },
+    },
+  },
+  {
+    name: "dismiss_modulations",
+    description: "Rigetta in blocco modulazioni obsolete (status→'dismissed'). Usa dismiss_all_past=true per pulire tutte le stantie. source_filter filtra per origine: 'auto' (pipeline), 'coach', 'all'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" }, description: "Lista di UUID specifici da rigettare" },
+        dismiss_all_past: { type: "boolean", description: "Se true, rigetta tutte le 'proposed' con session_date < oggi" },
+        source_filter: { type: "string", enum: ["auto", "coach", "all"], default: "all" },
+      },
+    },
+  },
+  {
+    name: "accept_modulation",
+    description: "Accetta una modulazione e la applica al piano (scrive su planned_sessions). Da chiamare SOLO dopo conferma esplicita dell'atleta.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string", description: "UUID della modulazione da accettare" },
+      },
+    },
+  },
 ];
 
 // ============================================================================
@@ -526,6 +596,16 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return commitMesocycle(args, env);
     case "update_constraint":
       return updateConstraint(args || {}, env);
+    case "delete_planned_session":
+      return deletePlannedSession(args.id, env);
+    case "update_planned_session":
+      return updatePlannedSession(args.id, args.fields, env);
+    case "list_pending_modulations":
+      return listPendingModulations(args.include_past ?? false, env);
+    case "dismiss_modulations":
+      return dismissModulations(args, env);
+    case "accept_modulation":
+      return acceptModulation(args.id, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -580,6 +660,36 @@ function isUuid(value: string): boolean {
 /** Validates that a value is a well-formed ISO date string (YYYY-MM-DD). */
 function isDateString(v: unknown): v is string {
   return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+// ── Data freshness helpers (Fix: temporal staleness) ─────────────────────────
+function oldestDateFromRecords(records: any[]): string | null {
+  const dates: string[] = [];
+  for (const r of records) {
+    if (!r) continue;
+    for (const c of [r.date, r.planned_date, r.started_at, r.logged_at, r.created_at, r.proposed_at]) {
+      if (c && typeof c === "string") dates.push(c.slice(0, 10));
+    }
+  }
+  return dates.length > 0 ? dates.sort()[0] : null;
+}
+
+function dataFreshness(recordGroups: any[][]): Record<string, any> {
+  const now = new Date();
+  const serverDateRome = todayRomeISO();
+  const oldest = oldestDateFromRecords(recordGroups.flat().filter(Boolean));
+  const ageHours = oldest ? Math.round((now.getTime() - new Date(oldest).getTime()) / 3600000) : null;
+  const isStale = ageHours !== null && ageHours > 6;
+  return {
+    server_date_utc: now.toISOString(),
+    server_date_rome: serverDateRome,
+    oldest_data_point: oldest,
+    data_age_hours: ageHours,
+    staleness_warning: isStale,
+    notice: isStale
+      ? `⚠️ DATI VECCHI: server_date=${serverDateRome}, record_più_vecchio=${oldest}, età=${ageHours}h — USA server_date_rome COME DATA ODIERNA, non inferire "oggi" dai record`
+      : `✅ server_date=${serverDateRome} — usa questa come data odierna`,
+  };
 }
 
 const VALID_SPORTS = new Set(["swim", "bike", "run", "brick", "strength", "all"]);
@@ -678,6 +788,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   return {
     generated_at: new Date().toISOString(),
     timezone: "Europe/Rome",
+    data_freshness: dataFreshness([metrics, wellness, activities, subjective, plannedPast, plannedUpcoming]),
     period: { today, completed_since: since, upcoming_until: until },
     coach_protocol: coachProtocol(),
     sync_status: summarizeSync(health),
@@ -699,6 +810,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     active_beliefs: beliefs || [],
     last_fatigue_by_sport: fatigueBySport,
     review_instructions: [
+      "PRIMO: leggi data_freshness.notice e usa server_date_rome come data odierna — NON inferire 'oggi' dal record più recente.",
       "Confronta planned_past vs completed_activities.",
       "Apri con HRV/readiness/carico e dati soggettivi rilevanti.",
       "Formula diagnosi e proposta prossima settimana.",
@@ -739,6 +851,7 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
   return {
     generated_at: new Date().toISOString(),
     timezone: "Europe/Rome",
+    data_freshness: dataFreshness([metrics, wellness, activities, subjective, planWindow]),
     coach_protocol: coachProtocol(),
     race,
     target_date: targetDate,
@@ -780,6 +893,7 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
 
   return {
     generated_at: new Date().toISOString(),
+    data_freshness: dataFreshness([[activity], subjective]),
     coach_protocol: coachProtocol(),
     activity,
     planned_session: planned?.[0] || null,
@@ -794,7 +908,13 @@ async function getUpcomingPlan(days: number, env: Env) {
   days = clampInt(days, 1, 60);
   const today = todayRomeISO();
   const until = daysFromISO(days);
-  return sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`);
+  const sessions = await sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&order=planned_date.asc`);
+  return {
+    generated_at: new Date().toISOString(),
+    data_freshness: dataFreshness([sessions]),
+    today,
+    sessions,
+  };
 }
 
 async function getHealth(env: Env) {
@@ -827,7 +947,12 @@ async function getLastFatigueBySport(env: Env, since: string): Promise<Record<st
 
 async function getRecentMetrics(days: number, env: Env) {
   const since = daysAgoISO(days);
-  return sb(env, `daily_metrics?date=gte.${since}&order=date.desc`);
+  const metrics = await sb(env, `daily_metrics?date=gte.${since}&order=date.desc`);
+  return {
+    generated_at: new Date().toISOString(),
+    data_freshness: dataFreshness([metrics]),
+    metrics,
+  };
 }
 
 async function getPlannedSession(date: string, env: Env) {
@@ -1187,5 +1312,261 @@ async function getDashboardData(env: Env) {
     races: races || [],
     zones,
     latest_metrics: (metrics || []).at(-1) || null,
+  };
+}
+
+// ============================================================================
+// Plan session management (Fix #2)
+// ============================================================================
+async function deletePlannedSession(id: string, env: Env): Promise<any> {
+  if (!id || !isUuid(id)) throw new Error(`Invalid session id: ${id}`);
+
+  const rows = await sb(env, `planned_sessions?id=eq.${id}&select=id,planned_date,sport,status,calendar_event_id`);
+  if (!rows || rows.length === 0) return { error: "Session not found", id };
+
+  const session = rows[0];
+  const today = todayRomeISO();
+  const isPast = session.planned_date < today;
+
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${id}`, {
+    method: "PATCH",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=minimal",
+    },
+    body: JSON.stringify({ status: "cancelled" }),
+  });
+  if (!resp.ok) throw new Error(`Delete failed: ${resp.status} ${await resp.text()}`);
+
+  return {
+    success: true,
+    id,
+    planned_date: session.planned_date,
+    sport: session.sport,
+    calendar_event_id: session.calendar_event_id || null,
+    gcal_action_needed: !!session.calendar_event_id,
+    ...(isPast ? { warning: "Cancellazione di una sessione passata" } : {}),
+  };
+}
+
+async function updatePlannedSession(id: string, fields: any, env: Env): Promise<any> {
+  if (!id || !isUuid(id)) throw new Error(`Invalid session id: ${id}`);
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+    throw new Error("fields deve essere un oggetto");
+  }
+
+  const FORBIDDEN = ["id", "created_at", "source"];
+  for (const f of FORBIDDEN) {
+    if (f in fields) throw new Error(`Campo vietato: ${f}`);
+  }
+  if (Object.keys(fields).length === 0) throw new Error("Nessun campo da aggiornare");
+
+  const rows = await sb(env, `planned_sessions?id=eq.${id}&select=id,planned_date,sport,calendar_event_id`);
+  if (!rows || rows.length === 0) return { error: "Session not found", id };
+
+  const session = rows[0];
+
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${id}`, {
+    method: "PATCH",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify(fields),
+  });
+  if (!resp.ok) throw new Error(`Update failed: ${resp.status} ${await resp.text()}`);
+
+  const updated = (await resp.json()) as any[];
+  const calendarNeedsUpdate = ("planned_date" in fields || "description" in fields || "session_type" in fields) && !!session.calendar_event_id;
+
+  return {
+    success: true,
+    session: updated[0] || null,
+    ...(calendarNeedsUpdate ? {
+      gcal_action_needed: true,
+      calendar_event_id: session.calendar_event_id,
+      note: "Data o descrizione cambiata — aggiorna anche Google Calendar con calendar_event_id",
+    } : {}),
+  };
+}
+
+// ============================================================================
+// Modulation management tools (Fix #3)
+// ============================================================================
+async function listPendingModulations(includePast: boolean, env: Env): Promise<any> {
+  const today = todayRomeISO();
+  const rows: any[] = await sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,source,proposed_at,expires_at`);
+
+  const current = includePast ? rows : rows.filter((r: any) => {
+    const changes: any[] = r.proposed_changes || [];
+    const dates = changes.filter((c: any) => c?.date).map((c: any) => c.date as string);
+    if (dates.length === 0) return true;
+    return dates.some((d) => d >= today);
+  });
+
+  const fmt = (r: any) => {
+    const changes: any[] = r.proposed_changes || [];
+    const firstChange = changes[0] || {};
+    return {
+      id: r.id,
+      session_date: firstChange.date || null,
+      sport: firstChange.sport || null,
+      proposed_change: firstChange.new?.description || null,
+      source: r.source || "auto",
+      trigger: r.trigger_event,
+      proposed_at: r.proposed_at,
+      expires_at: r.expires_at,
+    };
+  };
+
+  const coachItems = current.filter((r: any) => r.source === "coach").map(fmt);
+  const autoItems = current.filter((r: any) => r.source !== "coach").map(fmt);
+
+  return {
+    generated_at: new Date().toISOString(),
+    total: current.length,
+    total_all: rows.length,
+    include_past: includePast,
+    coach: coachItems,
+    auto: autoItems,
+    tip: rows.length > current.length
+      ? `${rows.length - current.length} modulazioni obsolete nascoste. Usa dismiss_modulations({ dismiss_all_past: true }) per pulirle.`
+      : current.length === 0 ? "Nessuna modulazione pending." : undefined,
+  };
+}
+
+async function dismissModulations(args: any, env: Env): Promise<any> {
+  if (!args.ids?.length && !args.dismiss_all_past) {
+    throw new Error("Specifica ids[] oppure dismiss_all_past=true");
+  }
+
+  const today = todayRomeISO();
+  const sourceFilter: string = args.source_filter || "all";
+  const now = new Date().toISOString();
+  let targetIds: string[] = [];
+
+  if (args.dismiss_all_past) {
+    const rows: any[] = await sb(env, `plan_modulations?status=eq.proposed&select=id,proposed_changes,source`);
+    for (const r of rows) {
+      if (sourceFilter !== "all" && (r.source || "auto") !== sourceFilter) continue;
+      const changes: any[] = r.proposed_changes || [];
+      const dates = changes.filter((c: any) => c?.date).map((c: any) => c.date as string);
+      if (dates.length === 0 || dates.every((d) => d < today)) {
+        targetIds.push(r.id);
+      }
+    }
+  }
+
+  if (args.ids?.length) {
+    let idsToAdd: string[] = args.ids;
+    if (sourceFilter !== "all") {
+      const rows: any[] = await sb(env, `plan_modulations?id=in.(${idsToAdd.join(",")})&select=id,source`);
+      idsToAdd = rows.filter((r: any) => (r.source || "auto") === sourceFilter).map((r: any) => r.id);
+    }
+    for (const id of idsToAdd) {
+      if (!targetIds.includes(id)) targetIds.push(id);
+    }
+  }
+
+  if (targetIds.length === 0) {
+    return { dismissed_count: 0, ids: [], message: "Nessuna modulazione da rigettare con i criteri specificati" };
+  }
+
+  const patchResp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/plan_modulations?id=in.(${targetIds.join(",")})`,
+    {
+      method: "PATCH",
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+      },
+      body: JSON.stringify({ status: "dismissed", resolved_at: now }),
+    }
+  );
+  if (!patchResp.ok) throw new Error(`dismiss PATCH failed: ${patchResp.status} ${await patchResp.text()}`);
+
+  return {
+    dismissed_count: targetIds.length,
+    ids: targetIds,
+    message: `${targetIds.length} modulazioni rigettate (status='dismissed').`,
+  };
+}
+
+async function acceptModulation(id: string, env: Env): Promise<any> {
+  if (!id) throw new Error("id is required");
+
+  const rows: any[] = await sb(env, `plan_modulations?id=eq.${encodeURIComponent(id)}&limit=1`);
+  const mod = rows?.[0];
+  if (!mod) return { error: "Modulation not found", id };
+  if (mod.status !== "proposed") {
+    return { success: false, message: `Modulazione già in status '${mod.status}', non accettabile.` };
+  }
+
+  const changes: any[] = mod.proposed_changes || [];
+  const applied: string[] = [];
+  const skipped: string[] = [];
+
+  for (const change of changes) {
+    const targetDate = change?.date;
+    const sport = change?.sport;
+    const newSession = change?.new || {};
+    if (!targetDate || !sport) { skipped.push(JSON.stringify(change)); continue; }
+
+    const existingRows: any[] = await sb(env, `planned_sessions?planned_date=eq.${targetDate}&sport=eq.${sport}&limit=1`);
+    const base: any = existingRows?.[0] || {};
+    if (base.status === "completed") { skipped.push(`${targetDate}/${sport}: già completata`); continue; }
+
+    const pick = (key: string, def: any) => newSession[key] != null ? newSession[key] : (base[key] != null ? base[key] : def);
+    const payload = {
+      planned_date: targetDate,
+      sport,
+      session_type: pick("session_type", "recovery"),
+      duration_s: pick("duration_s", 3600),
+      description: pick("description", "Sessione modificata per recupero"),
+      status: "planned",
+    };
+
+    const upsertResp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions`, {
+      method: "POST",
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!upsertResp.ok) {
+      skipped.push(`${targetDate}/${sport}: ${upsertResp.status}`);
+    } else {
+      const result = (await upsertResp.json()) as any[];
+      applied.push(result?.[0]?.id || `${targetDate}/${sport}`);
+    }
+  }
+
+  const newStatus = skipped.length === 0 && applied.length > 0 ? "applied" : applied.length > 0 ? "partial" : "failed";
+  await fetch(`${env.SUPABASE_URL}/rest/v1/plan_modulations?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=minimal",
+    },
+    body: JSON.stringify({ status: newStatus, resolved_at: new Date().toISOString() }),
+  });
+
+  return {
+    success: newStatus !== "failed",
+    modulation_id: id,
+    final_status: newStatus,
+    planned_session_ids: applied,
+    skipped,
   };
 }
