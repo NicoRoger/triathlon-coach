@@ -17,7 +17,7 @@
  (completed 2026-06-07)
 
 - [x] **Phase 5: Workout Prescription Quality** — Le sessioni proposte sono strutturate, professionali, calibrate su fisiologia misurata e vincoli medici di Nicolò (completed 2026-06-08)
-- [ ] **Phase 6: Physiological Adaptation Intelligence** — Il sistema distingue cedimento muscolare da cardiovascolare e integra i beliefs di adattamento nelle prescrizioni
+- [x] **Phase 6: Physiological Adaptation Intelligence** — Il sistema distingue cedimento muscolare da cardiovascolare e integra i beliefs di adattamento nelle prescrizioni (completed 2026-06-09)
 - [ ] **Phase 7: Situational Resilience & Automation** — Gestione automatica di spostamenti, sessioni saltate, trasferte Croazia e malattia — senza aumentare i costi LLM
 - [ ] **Phase 8: Brief Quality** — Il brief mattutino ha qualità da coaching pro: dati numerici reali, sessione strutturata, discrepanza readiness, countdown gara
 - [ ] **Phase 9: Post-Session Analysis Quality** — Le analisi post-sessione sono a livello coach professionista: confronto vs piano, citation tags, pattern adattamento, vincolo spalla
@@ -333,6 +333,101 @@ Plans:
 **Total v1 requirements:** 50
 **Mapped:** 50/50 ✓
 **Unmapped:** 0
+
+---
+
+---
+
+## Gap Backlog — Identificati in produzione (2026-06-15)
+
+> Gap rilevati da Claude.ai durante l'utilizzo reale del sistema come coach interattivo.
+> Non ancora mappati su fasi — candidati alla prossima iterazione di pianificazione.
+
+### 🔴 Infrastruttura
+
+#### GAP-08: Sync Garmin fragile — tre modalità di fallimento
+
+**Problema:** Tre failure mode osservati in produzione: (1) limite 1h che blocca `force_garmin_sync` dal coach interattivo, (2) errore 403 su token GitHub (`Resource not accessible`) durante dispatch Actions, (3) worker MCP che non risponde al discovery. Quando il sync fallisce silenziosamente, il coach ragiona su dati vecchi senza saperlo.
+
+**Impatto:** Dati stantii nelle analisi, weekly review su base incompleta.
+
+**Fix candidato:**
+- Abbassare il cooldown `force_garmin_sync` da 60 min a 15 min (o renderlo override-able con flag `force=true`)
+- Loggare il 403 di GitHub in `health` table con il codice preciso
+- Aggiungere nel worker un endpoint `/health` che risponde senza auth per il discovery check
+- Nel brief: se `garmin_age_minutes > 180`, aggiungere riga "⚠️ Sync Garmin stale — dati di N ore fa"
+
+---
+
+#### GAP-09: Attività non sincronizzate = buchi invisibili
+
+**Problema:** Sessioni eseguite ma non caricate in Garmin (es. bici del 03/06) risultano indistinguibili da "sessione non fatta". Il coach non può separare "planned ma non eseguita" da "planned, eseguita, ma dati assenti".
+
+**Impatto:** Weekly review riporta compliance errata; analisi della settimana sono falsate.
+
+**Fix candidato:**
+- Nel `get_weekly_context`, aggiungere `reconciliation` block: per ogni sessione in `planned_past` con `status='planned'`, verificare se esiste un'attività corrispondente in `activities` per data+sport. Elencare i gap espliciti.
+- Template: `"⚠️ 03/06 bike: sessione pianificata senza attività Garmin corrispondente — non fatta o non sincronizzata?"`
+- Tool MCP: `mark_session_done_manually(planned_session_id, notes)` per segnare manualmente una sessione come eseguita senza dati Garmin
+
+---
+
+#### GAP-10: `last_fatigue_by_sport` sempre null
+
+**Problema:** Il campo `last_fatigue_by_sport` nel `get_weekly_context` è sempre null per tutte le discipline. Il job `post_session_analysis` scrive `fatigue_type` in `session_analyses`, ma la query in `getLastFatigueBySport` sembra non trovare mai righe.
+
+**Ipotesi causa:** La colonna `sport` in `session_analyses` non è popolata (o la query `&sport=eq.${sport}` non matcha), oppure `fatigue_type` è null dopo il fix migrate.
+
+**Fix candidato:**
+- Verificare che le righe in `session_analyses` abbiano `sport` valorizzato (non null)
+- `getLastFatigueBySport` dovrebbe fare fallback a query su `activity_id → activities.sport` se `session_analyses.sport` è null
+- Aggiungere smoke test: dopo ogni `post_session_analysis`, verificare che `session_analyses.sport` e `fatigue_type` siano non-null
+
+---
+
+#### GAP-11: `current_progression_step` e `progression_plan` sempre null
+
+**Problema:** Il `progression_plan` del mesociclo corrente non è mai valorizzato — il coach non vede la progressione strutturata settimana per settimana. `current_progression_step` è derivato da `progression_plan`, quindi è sempre null di conseguenza.
+
+**Impatto:** Il coach deve ricostruire la progressione qualitativa a mano dalle note in testo libero del mesociclo.
+
+**Fix candidato:**
+- Quando si committa un mesociclo, `commit_mesocycle` dovrebbe suggerire / auto-generare il `progression_plan` per le discipline principali basandosi su `physiology_zones` e la fase corrente
+- Documentare il formato atteso in CLAUDE.md con un esempio completo
+- Aggiungere `progression_plan` come campo esplicito nel template di weekly review
+
+---
+
+### 🟢 Processo
+
+#### GAP-12: Logica di coaching in testo libero non interrogabile
+
+**Problema:** Vincoli medici, regole safety, progressione, razionali delle sessioni — tutto in campi `notes` come prosa. Funziona se li legge il coach, ma non è interrogabile né azionabile dagli automatismi.
+
+**Impatto:** Il sistema non può verificare automaticamente la compliance ai vincoli (es. "max +10% volume corsa") perché il vincolo non è un campo strutturato.
+
+**Fix candidato:**
+- Strutturare le regole safety in `active_constraints` con campo `rule_expression` (es. `{"field": "weekly_run_km", "max_delta_pct": 10}`) interrogabile dal layer analytics
+- Progressione: usare `progression_plan` nel mesociclo (GAP-11) invece di note testuali
+- Razionali sessioni: aggiungere `rationale_structured` JSONB in `planned_sessions` separato dalla `description` libera
+
+---
+
+#### GAP-13: Nessuna fonte di verità tra backend, Google Calendar e realtà
+
+**Problema:** Quando backend, Google Calendar e piano reale divergono, non c'è una gerarchia chiara su chi vince. Il campo `calendar_event_id` è quasi sempre null nelle sessioni — piano e calendario non sono collegati.
+
+**Impatto:** Sessioni create dal coach su Claude.ai non appaiono in GCal; sessioni GCal non riflettono le modifiche fatte via MCP.
+
+**Fix candidato:**
+- Quando `commit_plan_change` crea una sessione, restituire un flag `gcal_sync_needed: true` con istruzioni su come creare l'evento GCal e linkarlo via `update_planned_session(id, {calendar_event_id})`
+- Considerare uno script periodico `sync_gcal.py` che riconcilia `planned_sessions` (con `calendar_event_id` non null) con gli eventi GCal corrispondenti e segnala divergenze
+- Fonte di verità: il DB (`planned_sessions`) è la fonte primaria; GCal è un mirror per visibilità; la realtà è definita da `activities`
+
+---
+
+*Gap backlog aggiornato: 2026-06-15*
+*Fonte: Claude.ai — utilizzo interattivo sistema coaching*
 
 ---
 
