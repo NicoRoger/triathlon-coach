@@ -136,7 +136,10 @@ def _pick_test_date(sb, today: date) -> date:
         .eq("planned_date", candidate.isoformat())
         .execute()
     )
-    while res.data:
+    # Bug fix audit H2: cap iterazioni per evitare loop infinito se ogni
+    # martedì/sabato è occupato (piano molto denso). Orizzonte 26 settimane.
+    max_iter = 52
+    while res.data and max_iter > 0:
         candidate += timedelta(days=1)
         while candidate.weekday() not in (1, 5):
             candidate += timedelta(days=1)
@@ -145,6 +148,12 @@ def _pick_test_date(sb, today: date) -> date:
             .select("id")
             .eq("planned_date", candidate.isoformat())
             .execute()
+        )
+        max_iter -= 1
+    if res.data:
+        logger.warning(
+            "_pick_test_date: nessuno slot libero entro l'orizzonte, uso %s comunque",
+            candidate.isoformat(),
         )
     return candidate
 

@@ -30,6 +30,18 @@ SPORT_MAP = {"bike": "bike", "run": "run", "swim": "swim"}
 # (threshold_bike_hr), non FTP a potenza. I test a potenza restano supportati
 # per il futuro (se arriverà un wattmetro).
 TEST_CYCLE_ORDER = ["threshold_bike_hr", "threshold_run_30min", "css_swim_400_200", "lthr_run"]
+
+# Bound di plausibilità fisiologica per test_type (audit E — confermati
+# dall'atleta, 2026-06-01). Risultati fuori range = estrazione errata
+# (unità/split sbagliati) → scartati per non corrompere le zone.
+PLAUSIBLE_BOUNDS = {
+    "ftp_bike_20min": (80, 450),       # W
+    "ftp_bike_ramp": (80, 450),        # W
+    "threshold_bike_hr": (120, 200),   # bpm
+    "threshold_run_30min": (150, 360), # s/km
+    "css_swim_400_200": (70, 150),     # s/100m
+    "lthr_run": (120, 200),            # bpm
+}
 TEST_CYCLE_NEXT = {
     "threshold_bike_hr": "threshold_run_30min",
     "threshold_run_30min": "css_swim_400_200",
@@ -133,11 +145,28 @@ class FitnessTestProcessor:
             return {"status": "needs_coach_review", "test_type": test_type,
                     "activity_id": str(activity_id)}
 
+        # Audit E: bound di plausibilità. Un risultato fuori range indica
+        # estrazione errata (unità/split) → NON sovrascrivere le zone con dati corrotti.
+        bounds = PLAUSIBLE_BOUNDS.get(test_type)
+        if bounds and not (bounds[0] <= result <= bounds[1]):
+            logger.warning(
+                "Fitness test %s: risultato %s fuori range plausibile %s, scartato",
+                test_type, result, bounds,
+            )
+            self._notify_telegram(
+                test_type, result, {}, success=False,
+                error_msg=f"Risultato estratto ({result}) fuori range plausibile {bounds}. "
+                          f"Probabile errore di rilevamento split. Verifica manualmente su Claude.ai.",
+            )
+            return {"status": "implausible_result", "test_type": test_type, "result": result}
+
         zone_system = structured.get("zone_system") or DEFAULT_ZONE_SYSTEM.get(test_type, "coggan_7zone")
         zones = self._compute_zones(zone_system, result)
 
         sport = _test_type_to_sport(test_type)
-        activity_date = str(activity.get("started_at", ""))[:10]
+        from coach.utils.dt import to_rome_date
+        _d = to_rome_date(activity.get("started_at"))
+        activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
 
         self._upsert_physiology_zones(
             sport=sport,
@@ -171,8 +200,11 @@ class FitnessTestProcessor:
         extraction = (structured.get("extraction") or {}).get("primary", {})
         idx = extraction.get("interval_index", 1)
         if splits and isinstance(splits, list) and len(splits) > idx:
-            avg_power = splits[idx].get("avg_power_w") or splits[idx].get("averageSpeed")
-            if avg_power:
+            # Bug fix audit E1: NIENTE fallback su averageSpeed — velocità (m/s) e
+            # potenza (W) non sono interscambiabili; usarla come watt corrompe FTP
+            # e tutte le zone. Senza potenza per-split, ritorna None (no dato).
+            avg_power = splits[idx].get("avg_power_w")
+            if avg_power and float(avg_power) > 0:
                 return round(float(avg_power) * 0.95, 1)
         return None
 
@@ -209,8 +241,11 @@ class FitnessTestProcessor:
         extraction = (structured.get("extraction") or {}).get("primary", {})
         idx = extraction.get("interval_index", 1)
         if splits and isinstance(splits, list) and len(splits) > idx:
-            pace = splits[idx].get("avg_pace_s_per_km") or splits[idx].get("averagePace")
-            if pace:
+            # Bug fix audit E2: NIENTE fallback su averagePace (chiave raw Garmin
+            # con unità diversa da s/km) — usiamo solo il campo normalizzato dal
+            # nostro ingest. Unità errata produrrebbe zone senza senso.
+            pace = splits[idx].get("avg_pace_s_per_km")
+            if pace and float(pace) > 0:
                 return round(float(pace), 1)
         return None
 
@@ -231,7 +266,10 @@ class FitnessTestProcessor:
             elif 180 <= dist <= 250 and t200 is None:
                 t200 = time_s
 
-        if t400 is not None and t200 is not None:
+        # Bug fix audit E3: guard t400 > t200. Se gli split sono mal rilevati
+        # (es. warmup catturato come t400) la formula darebbe CSS negativo/assurdo
+        # che corromperebbe le zone. Richiediamo t400 > t200 (e tempi positivi).
+        if t400 is not None and t200 is not None and t400 > t200 > 0:
             css_per_100m = (t400 - t200) / 2
             return round(css_per_100m, 1)
         return None
@@ -340,8 +378,11 @@ class FitnessTestProcessor:
             "notes": json.dumps({"zones": zones, "zone_system": zone_system}),
         }
 
+        # Audit E4: chiave unique (discipline, valid_from, method) — prima non
+        # esisteva alcun vincolo unique (upsert sarebbe fallito a runtime) e
+        # test diversi lo stesso giorno si sarebbero sovrascritti.
         self.sb.table("physiology_zones").upsert(
-            record, on_conflict="discipline,valid_from"
+            record, on_conflict="discipline,valid_from,method"
         ).execute()
         logger.info("Physiology zones upserted: %s %s=%s", discipline, db_field, result)
 
@@ -530,6 +571,45 @@ def _format_result(test_type: str, result: float) -> str:
     return str(result)
 
 
+# ── Zone derivation (module-level, reusable) ──────────────────────────────
+
+def derive_zones_for_discipline(
+    discipline: str,
+    ftp_w: Optional[float] = None,
+    threshold_pace_s_per_km: Optional[float] = None,
+    css_pace_s_per_100m: Optional[float] = None,
+    lthr: Optional[float] = None,
+) -> dict:
+    """Deriva le zone fisiologiche Z1-Z5 per la disciplina specificata.
+
+    Riusa i @staticmethod esistenti di FitnessTestProcessor senza istanziare
+    il processore. Ritorna {} se il valore richiesto per la disciplina e' None.
+
+    Args:
+        discipline: "bike", "run" o "swim"
+        ftp_w: FTP in watt (per bici)
+        threshold_pace_s_per_km: passo soglia in s/km (per corsa)
+        css_pace_s_per_100m: CSS in s/100m (per nuoto)
+        lthr: soglia HR in bpm (parametro accettato, riservato a uso futuro)
+
+    Returns:
+        dict con chiavi zona (es. "Z2_endurance") o {} se dato mancante
+    """
+    if discipline == "bike":
+        if ftp_w is None:
+            return {}
+        return FitnessTestProcessor._compute_coggan_7zone(float(ftp_w))
+    if discipline == "run":
+        if threshold_pace_s_per_km is None:
+            return {}
+        return FitnessTestProcessor._compute_pace_5zone(float(threshold_pace_s_per_km))
+    if discipline == "swim":
+        if css_pace_s_per_100m is None:
+            return {}
+        return FitnessTestProcessor._compute_css_3zone(float(css_pace_s_per_100m))
+    return {}
+
+
 # ── CLI entry point ────────────────────────────────────────────────────────
 
 def check_recent() -> list[dict]:
@@ -537,16 +617,21 @@ def check_recent() -> list[dict]:
     sb = get_supabase()
     processor = FitnessTestProcessor()
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    # 48h window: a test done in the morning may not be processed until the
+    # next ingest cycle (runs every 3h). 6h missed late-morning tests processed
+    # by a 6pm ingest run when the activity synced at 9:30am.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     activities = sb.table("activities").select(
-        "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits"
+        "id,external_id,started_at,sport,duration_s,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,avg_pace_s_per_100m,tss,splits,notes"
     ).gte("started_at", cutoff).in_(
         "sport", ["bike", "run", "swim"]
     ).order("started_at", desc=True).limit(10).execute().data or []
 
     results = []
+    from coach.utils.dt import to_rome_date
     for activity in activities:
-        activity_date = str(activity.get("started_at", ""))[:10]
+        _d = to_rome_date(activity.get("started_at"))
+        activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
         sport = activity.get("sport")
 
         planned = sb.table("planned_sessions").select("*").eq(
@@ -557,8 +642,14 @@ def check_recent() -> list[dict]:
 
         if planned:
             logger.info("Matched planned fitness test: %s %s", sport, activity_date)
-            result = processor.process_fitness_test(activity, planned[0])
-            results.append(result)
+            # Bug fix audit E5: isola ogni attività — un errore (estrazione, cast,
+            # write DB) non deve abortire il processing delle restanti.
+            try:
+                result = processor.process_fitness_test(activity, planned[0])
+                results.append(result)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Errore processing fitness test per %s", activity.get("external_id"))
+                results.append({"status": "error", "activity": activity.get("external_id"), "error": str(e)})
             continue
 
         name = (activity.get("notes") or activity.get("external_id") or "").lower()

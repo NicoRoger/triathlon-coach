@@ -235,7 +235,7 @@ class TestEmptyActivities(unittest.TestCase):
 # Bug: personalized_insert inseriva testo libero (osservazioni auto-estratte)
 #      nel brief HTML SENZA escape. Contenuti come "TSB < -30" producevano '<'
 #      grezzi che Telegram rifiuta con 400 Bad Request → brief mai inviato
-#      (watchdog: 27h senza successo).
+#      (watchdog: 27h senza successo). Fix: html.escape + fallback testo semplice.
 # ===========================================================================
 class TestPersonalizedInsertHtmlEscape(unittest.TestCase):
 

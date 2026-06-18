@@ -5,6 +5,17 @@ description: Proponi e gestisci test fitness (FTP, soglia corsa, CSS nuoto, LTHR
 
 # Skill: Fitness Test
 
+## Step 0 — Check FTP age (SEMPRE per sessioni bici)
+
+1. Chiama `get_physiology_zones('bike')`
+2. Leggi `zones[0].age_days` nel response
+3. Se `age_days > 42` (6 settimane) o zones e vuoto:
+   "FTP non aggiornato da [age_days] giorni (>6 settimane). Propongo un test FTP bici.
+   Data ottimale: [calcola: post 1-2gg Z2/recovery, non in settimana di carico max, non entro 10gg da gara A]
+   TSB target al test: >0 per almeno 2 giorni."
+
+La condizione `age_days > 42` DEVE usare il valore numerico dal response del DB (data-driven), NON il testo statico "6 settimane" presente nella sezione sottostante. Se `age_days` e disponibile nel response, cita il numero esatto: es. "FTP non aggiornato da 47 giorni."
+
 ## Quando proporre un test
 
 Proponi test quando:

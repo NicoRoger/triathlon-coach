@@ -340,7 +340,9 @@ def update_athlete_beliefs() -> None:
         lines.append("| Tipologia | n | Bias medio % | StdDev % | In-range % | Status |")
         lines.append("|-----------|---|--------------|----------|------------|--------|")
         for r in accuracy_rows:
-            n = int(r.get("n", 0))
+            # Bug fix audit G3: la view può restituire n=None (LEFT JOIN senza
+            # outcome); int(None) crasherebbe l'intero render beliefs a metà run.
+            n = int(r.get("n") or 0)
             status = _belief_status(n, r.get("mean_abs_delta_pct"))
             lines.append(
                 f"| `{r['prediction_type']}` | {n} | "

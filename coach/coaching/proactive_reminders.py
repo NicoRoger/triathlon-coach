@@ -426,18 +426,36 @@ def run_proactive_reminders(
             sent += 1
             continue
 
+        # Bug fix audit F1/F2: CLAIM-before-send. Inseriamo la riga dedup PRIMA
+        # di inviare; un conflitto sull'indice unique (trigger_type, sent_date)
+        # significa "già inviato oggi" → skip. Così:
+        #  - se il logging fallisse DOPO l'invio non avremmo re-invio (era F1);
+        #  - due run concorrenti non inviano due volte (era F2).
+        if not skip_dedup:
+            try:
+                _log_sent(sb, trigger_type, today_iso, None, r.get("context", {}))
+            except Exception:
+                logger.info("Skip reminder (già inviato/claim fallito): %s", trigger_type)
+                continue
+
         try:
             from coach.utils.telegram_logger import send_and_log_message
-            result = send_and_log_message(
+            # send_and_log_message ritorna message_id (int) o None — NON un dict.
+            msg_id = send_and_log_message(
                 r["text"],
                 purpose="proactive_reminder",
                 context_data={"trigger_type": trigger_type, **r.get("context", {})},
             )
-            msg_id = result.get("message_id") if isinstance(result, dict) else None
-            if not skip_dedup:
-                _log_sent(sb, trigger_type, today_iso, msg_id, r.get("context", {}))
             sent += 1
             logger.info("Sent reminder: %s", trigger_type)
+            # aggiorna il message_id sulla riga claimata (best effort)
+            if not skip_dedup and isinstance(msg_id, int):
+                try:
+                    sb.table("sent_reminders").update({"message_id": msg_id}).eq(
+                        "trigger_type", trigger_type
+                    ).eq("sent_date", today_iso).execute()
+                except Exception:
+                    logger.warning("Impossibile aggiornare message_id per %s", trigger_type)
         except Exception:
             logger.exception("Failed to send reminder %s", trigger_type)
 

@@ -3,15 +3,16 @@
 Step 6: 3 livelli di protezione budget €5/mese.
 Livello 2 — soft cap con tracking persistente su Supabase (tabella api_usage).
 
-Soglie:
-  <$3.00  → OK, procedi
-  $3-$4   → WARNING, alert Telegram, procedi
-  $4-$4.50 → DEGRADED, declassa Sonnet→Haiku, alert
-  >$4.50  → BLOCKED non-critical, solo emergency
-  >$4.80  → BLOCKED tutto, solo purpose='emergency'
+Soglie (ROADMAP SC4 — verificato VERIFY-06):
+  <$3.00  → OK, procedi con modello preferito
+  $3-$4   → WARNING, alert Telegram, procedi con modello preferito
+  >=$4.00 → DEGRADED/BLOCKED_NON_CRITICAL, declassa Sonnet→Haiku (BUDGET_DEGRADED)
+  >$4.80  → BLOCKED tutto, solo purpose in EMERGENCY_PURPOSES
+  >=$5.00 → HARD CAP, blocca anche emergency
 """
 from __future__ import annotations
 
+import calendar
 import logging
 import os
 from datetime import datetime, timezone
@@ -36,9 +37,13 @@ MODEL_IDS = {
 }
 
 # Budget thresholds (USD)
+# ROADMAP SC4 — soglia degrado allineata a €4.00 (VERIFY-06):
+#   BUDGET_DEGRADED = 4.00 → select_model declassa Sonnet→Haiku a partire da €4.00
+#   BUDGET_WARNING == BUDGET_DEGRADED: la fase "warning ma procedi" è soppressa
+#   poiché a €4.00 si entra direttamente in declassamento.
 BUDGET_OK = 3.00
 BUDGET_WARNING = 4.00
-BUDGET_DEGRADED = 4.50
+BUDGET_DEGRADED = 4.00  # era 4.50 — allineato a ROADMAP SC4 (VERIFY-06)
 BUDGET_BLOCKED = 4.80
 BUDGET_HARD_CAP = 5.00
 
@@ -93,7 +98,8 @@ def get_month_stats() -> dict:
     total_cost = sum(float(r.get("cost_usd_estimated", 0)) for r in rows)
     total_calls = len(rows)
     successful = sum(1 for r in rows if r.get("success"))
-    days_in_month = (now.replace(month=now.month % 12 + 1, day=1) - now.replace(day=1)).days if now.month < 12 else 31
+    # Bug fix audit I2: usa calendar.monthrange (corretto per ogni mese, dicembre incluso)
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
     days_elapsed = now.day
     days_remaining = days_in_month - days_elapsed
 
@@ -109,10 +115,10 @@ def get_month_stats() -> dict:
     # Current budget level
     if total_cost < BUDGET_OK:
         level = "OK"
-    elif total_cost < BUDGET_WARNING:
-        level = "WARNING"
     elif total_cost < BUDGET_DEGRADED:
-        level = "DEGRADED"
+        # BUDGET_WARNING == BUDGET_DEGRADED == 4.00: the WARNING-only band collapses.
+        # Spending $3.00–$3.99 triggers WARNING label (model still preferred).
+        level = "WARNING"
     elif total_cost < BUDGET_BLOCKED:
         level = "BLOCKED_NON_CRITICAL"
     else:
@@ -149,22 +155,22 @@ def select_model(prefer: str, spend: Optional[float] = None) -> str:
     prefer_id = MODEL_IDS.get(prefer, prefer)
 
     if spend < BUDGET_OK:
-        # Tutto ok, rispetta preferenza
-        return prefer_id
-    elif spend < BUDGET_WARNING:
-        # Warning ma procedi con preferenza
+        # < $3.00 — tutto ok, rispetta preferenza
         return prefer_id
     elif spend < BUDGET_DEGRADED:
-        # Declassa: opus→sonnet, sonnet→haiku, haiku→haiku
+        # $3.00 – $3.99 — warning range, procedi con preferenza (nessun declasso)
+        # BUDGET_WARNING == BUDGET_DEGRADED == 4.00, quindi questo ramo copre $3.00–$3.99
+        return prefer_id
+    elif spend < BUDGET_BLOCKED:
+        # >= $4.00 e < $4.80 — zona DEGRADED/BLOCKED_NON_CRITICAL:
+        #   opus → sonnet (risparmio intermedio)
+        #   sonnet/haiku → haiku
         if prefer in ("opus", "claude-opus-4-6"):
             return MODEL_IDS["sonnet"]
         else:
             return MODEL_IDS["haiku"]
-    elif spend < BUDGET_BLOCKED:
-        # Solo haiku per qualsiasi cosa
-        return MODEL_IDS["haiku"]
     else:
-        # Blocked: restituisce haiku ma check_budget_or_raise bloccherà
+        # >= $4.80 — blocked: restituisce haiku ma check_budget_or_raise bloccherà
         return MODEL_IDS["haiku"]
 
 
@@ -181,7 +187,19 @@ def check_budget_or_raise(estimated_cost: float, purpose: str) -> str:
     projected = spend + estimated_cost
     is_emergency = purpose in EMERGENCY_PURPOSES
 
-    if projected > BUDGET_BLOCKED and not is_emergency:
+    def _crosses(threshold: float) -> bool:
+        """True solo quando QUESTA chiamata supera la soglia per la prima volta.
+        Dedup stateless degli alert (audit I9): le chiamate che proseguono
+        loggano il costo e fanno salire `spend`, quindi una volta sopra soglia
+        `spend <= threshold` diventa falso e l'alert non si ripete."""
+        return spend <= threshold < projected
+
+    # Bug fix audit I1: hard-stop sulla spesa REALE già sostenuta, non solo sulla
+    # proiezione. `estimated_cost` è una stima conservativa che può sottostimare
+    # il costo effettivo; senza questo controllo la spesa reale può superare il
+    # cap di $5.00. Blocca quando la spesa reale ha raggiunto il cap, OPPURE
+    # quando la proiezione supera la soglia di blocco $4.80.
+    if (spend >= BUDGET_HARD_CAP or projected > BUDGET_BLOCKED) and not is_emergency:
         _send_budget_alert(
             f"🛑 Budget API ESAURITO (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
             f"Tutte le chiamate AI disabilitate fino a fine mese. "
@@ -193,21 +211,22 @@ def check_budget_or_raise(estimated_cost: float, purpose: str) -> str:
         )
 
     if projected > BUDGET_DEGRADED and not is_emergency:
-        _send_budget_alert(
-            f"⚠️ Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
-            f"Declassato a Haiku. Chiamate non critiche bloccate sopra $4.80."
-        )
+        if _crosses(BUDGET_DEGRADED):
+            _send_budget_alert(
+                f"⚠️ Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
+                f"Declassato a Haiku. Chiamate non critiche bloccate sopra $4.80."
+            )
         return "BLOCKED_NON_CRITICAL"
 
     if projected > BUDGET_WARNING:
-        _send_budget_alert(
-            f"📊 Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
-            f"Modello declassato a Haiku per risparmiare."
-        )
+        if _crosses(BUDGET_WARNING):
+            _send_budget_alert(
+                f"📊 Budget API al {spend/BUDGET_HARD_CAP*100:.0f}% (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
+                f"Modello declassato a Haiku per risparmiare."
+            )
         return "DEGRADED"
 
     if projected > BUDGET_OK:
-        # Alert solo la prima volta (check se già mandato oggi)
         logger.info("Budget warning: $%.2f / $%.2f", spend, BUDGET_HARD_CAP)
         return "WARNING"
 

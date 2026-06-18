@@ -49,17 +49,17 @@ jobs:
       - name: Garmin sync (with retries)
         id: garmin
         run: |
+          # Bug fix audit L1: senza questo, l'ultima cmd del loop su fallimento
+          # era `sleep` (exit 0) → lo step risultava VERDE anche dopo 3 fallimenti,
+          # mascherando uno stop sync e facendo girare i downstream su dati stantii.
           ok=0
           for i in 1 2 3; do
             echo "Garmin attempt $i"
-            if python -m coach.ingest.garmin; then
-              ok=1
-              break
-            fi
+            if python -m coach.ingest.garmin; then ok=1; break; fi
             sleep $((i * 30))
           done
-          if [ "$ok" != "1" ]; then
-            echo "::error::Garmin sync failed after 3 attempts"
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::Garmin sync fallito dopo 3 tentativi"
             exit 1
           fi
 
@@ -68,7 +68,6 @@ jobs:
         #run: python -m coach.ingest.strava
 
       - name: Compute daily metrics
-        if: always()
         run: python -m coach.analytics.daily
 
       - name: Post-session analysis
@@ -77,6 +76,7 @@ jobs:
 
       - name: Detect and process fitness tests
         if: success()
+        continue-on-error: true
         run: python -m coach.coaching.fitness_test_processor --check-recent
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -91,6 +91,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Apply accepted modulations (audit K1)
+        # Il bot Telegram setta status='accepted' al tap; qui le applichiamo
+        # davvero al piano (apply_accepted_modulations → status 'applied').
+        # D-06: nessun if: su questo step → defaults a success(). Il step gira solo
+        # se il Garmin sync ha avuto successo (exit 0), mai su dati stantii.
+        continue-on-error: true
+        run: python -m coach.coaching.modulation --apply-accepted
 
       - name: ETL health check
         if: always()

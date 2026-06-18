@@ -126,6 +126,20 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 | `migrations/2026-05-14-cognitive-mvp.sql` | Phase 4.3+4.4 | ⏳ Run once (beliefs + beliefs_history + recommendations tables) |
 | `migrations/2026-05-30-rls-and-fk-integrity.sql` | Security (RLS gap) + FK integrity | ⏳ Run once — abilita RLS sulle 8 tabelle scoperte + ON DELETE SET NULL su FK orfane. Vedi `docs/audit_2026-05-30.md` |
 | `migrations/2026-05-30-seed-run-zones-provisional.sql` | BUG-010 recovery | ⏳ Run once — zone corsa provvisorie (threshold 4:23/km, LTHR 183) dal test 30/05 non auto-processato |
+| `migrations/2026-06-01-resilience-audit.sql` | Audit resilienza 2026-06-01 | ⏳ Run once (races/mesocycles/plan_modulations/physiology_zones/planned_sessions constraints + expires_at + FK ON DELETE + status/kind CHECK). **Coordinata col codice del branch audit-resilience-2026-06-01** |
+
+---
+
+## Audit di resilienza 2026-06-01
+
+Audit sistematico completo in `docs/audit_resilience_2026-06-01.md` (15 aree,
+tassonomia guasti, ~45 fix con test di regressione). Vedi quel file per lo stato
+per-area e la lista "Da fare manualmente".
+
+- **Branch**: `audit-resilience-2026-06-01`
+- **Auth MCP**: piano in `docs/mcp_auth_hardening_plan.md` (non ancora applicato).
+- **Deploy richiesti**: Telegram bot (`wrangler deploy`) per K2/K3/K4/K5.
+- **Migration**: `2026-06-01-resilience-audit.sql` (vedi sopra).
 
 ---
 

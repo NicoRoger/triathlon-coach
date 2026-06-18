@@ -490,7 +490,7 @@ class TestTelegramLogger(unittest.TestCase):
     def test_html_400_falls_back_to_plain_text(self):
         """REGRESSIONE 2026-06-14: Telegram 400 su HTML malformato (es. brief con
         'TSB < -30' non escaped) → ritenta in testo semplice invece di azzerare il
-        messaggio. Prima il brief mattutino non veniva inviato affatto."""
+        messaggio. Prima il brief mattutino non veniva inviato affatto (watchdog 27h)."""
         import os
         os.environ["TELEGRAM_BOT_TOKEN"] = "test_token"
         os.environ["TELEGRAM_CHAT_ID"] = "123456"
@@ -526,8 +526,7 @@ class TestTelegramLogger(unittest.TestCase):
 
     def test_html_to_plain_strips_tags_and_unescapes(self):
         """Il fallback rimuove i tag e decodifica le entità HTML."""
-        mock_post = MagicMock()
-        tl = self._build_tl_module(mock_post, MagicMock())
+        tl = self._build_tl_module(MagicMock(), MagicMock())
         out = tl._html_to_plain("<b>X</b> TSB &lt; -30 <i>ok</i>")
         self.assertEqual(out, "X TSB < -30 ok")
 

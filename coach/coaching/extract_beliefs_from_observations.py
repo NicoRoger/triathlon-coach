@@ -198,6 +198,20 @@ def sync_beliefs_from_observations(content: Optional[str] = None) -> dict:
                 logger.exception("Failed to create belief %s", key)
                 counts["skipped"] += 1
 
+    # Bug fix audit G1: se il parsing non ha prodotto ALCUN candidato, NON
+    # contraddire le belief. Un parse vuoto indica quasi sempre un file in
+    # formato inatteso (es. fallback biometrico scritto quando il budget LLM è
+    # esaurito), NON la prova che tutte le belief siano sbagliate. Senza questo
+    # guard una singola domenica con budget esaurito degraderebbe a cascata
+    # tutte le belief recenti.
+    if not candidates:
+        logger.warning(
+            "Beliefs sync: 0 candidati parsati (formato observations inatteso?) — "
+            "salto il passo di contraddizione per non degradare le belief"
+        )
+        logger.info("Beliefs sync done: %s", counts)
+        return counts
+
     # Beliefs in DB ma non più nelle observations → contraddizione cauta
     # Solo se ancora attive (status != retired) e non flagged
     for b in existing_beliefs:

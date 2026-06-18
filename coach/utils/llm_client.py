@@ -212,7 +212,14 @@ class GeminiClient:
         temperature: float = 0.3,
     ) -> dict:
         """Chiama Gemini. Stessa interfaccia di LLMClient.call()."""
-        user_content = messages[-1]["content"] if messages else ""
+        # Bug fix audit I6: concatena TUTTI i messaggi (con ruolo), non solo
+        # l'ultimo — altrimenti il contesto multi-turno viene perso silenziosamente.
+        if messages:
+            user_content = "\n\n".join(
+                f"[{m.get('role', 'user')}] {m.get('content', '')}" for m in messages
+            )
+        else:
+            user_content = ""
 
         try:
             response = self._client.models.generate_content(
@@ -225,7 +232,9 @@ class GeminiClient:
                     thinking_config=self._types.ThinkingConfig(thinking_budget=0),
                 ),
             )
-            text = response.text
+            # Bug fix audit I7: response.text può essere None (safety block /
+            # MAX_TOKENS). Coercizione a "" per non propagare None ai consumer.
+            text = response.text or ""
             usage = response.usage_metadata
             input_tokens = getattr(usage, "prompt_token_count", 0) or 0
             output_tokens = getattr(usage, "candidates_token_count", 0) or 0

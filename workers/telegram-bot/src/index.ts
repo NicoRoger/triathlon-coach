@@ -109,7 +109,14 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method !== "POST") return new Response("OK", { status: 200 });
 
-    const update = (await req.json()) as TelegramUpdate;
+    // Bug fix audit K4: body non-JSON/vuoto non deve generare un 500 → Telegram
+    // ritenterebbe lo stesso update all'infinito (retry storm). Rispondiamo 200.
+    let update: TelegramUpdate;
+    try {
+      update = (await req.json()) as TelegramUpdate;
+    } catch {
+      return new Response("OK", { status: 200 });
+    }
 
     // Dedup update (Telegram retry)
     const seenKey = `upd:${update.update_id}`;
@@ -488,12 +495,21 @@ async function handleManualActivity(env: Env, chatId: number, t: string): Promis
       `❌ Errore inserimento attività:\n<code>${errText.slice(0, 200)}</code>`);
   }
 
+  // Bug fix audit K7: recupera l'id dell'attività appena inserita e collega
+  // l'RPE via activity_id (prima non era linkato, impedendo la correlazione
+  // RPE↔attività nell'analisi post-sessione).
+  let insertedActivityId: string | null = null;
+  try {
+    const inserted = await actResp.json() as any[];
+    insertedActivityId = inserted?.[0]?.id ?? null;
+  } catch {
+    insertedActivityId = null;
+  }
+
   // Insert RPE in subjective_log linkata all'attività
-  await insertSubjective(env, {
-    kind: "post_session",
-    rpe,
-    raw_text: t,
-  });
+  const rpeRow: any = { kind: "post_session", rpe, raw_text: t };
+  if (insertedActivityId) rpeRow.activity_id = insertedActivityId;
+  await insertSubjective(env, rpeRow);
 
   const distLabel = distanceM ? ` · ${(distanceM / 1000).toFixed(1)}km` : "";
   await sendMessage(env, chatId,
@@ -784,8 +800,14 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     else if (action === "reject") { status = "rejected"; msg = "❌ Modulazione rifiutata. Piano invariato."; }
     else { status = "discussing"; msg = "💬 D'accordo. Apri Claude Code quando vuoi per discutere."; }
 
-    await supabaseFetch(env, `/rest/v1/plan_modulations?id=eq.${modId}`, "PATCH",
+    // Bug fix audit K5: verifica l'esito della PATCH prima di confermare all'utente.
+    const modResp = await supabaseFetch(env, `/rest/v1/plan_modulations?id=eq.${modId}`, "PATCH",
       { status, resolved_at: new Date().toISOString() }, { Prefer: "return=minimal" });
+    if (!modResp.ok) {
+      console.error(`plan_modulations PATCH failed: ${modResp.status} ${await modResp.text()}`);
+      await sendMessage(env, chatId, "⚠️ Errore nel salvataggio della scelta. Riprova tra poco.");
+      return;
+    }
     await sendMessage(env, chatId, msg);
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
@@ -846,8 +868,15 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
       label = "sintomo/dolore";
     } else if (classType === "rpe") {
       kind = "post_session";
-      const m = rawText.match(/\d{1,2}/);
-      if (m) extraFields = { rpe: parseInt(m[0], 10) };
+      // Bug fix audit K8: valida 1-10 (il CHECK su subjective_log.rpe lo impone).
+      // Prima un numero qualsiasi (es. una data "il 25") finiva come rpe=25 → insert 400.
+      const m = rawText.match(/\b([1-9]|10)\b/);
+      if (m) {
+        extraFields = { rpe: parseInt(m[1], 10) };
+      } else {
+        await sendMessage(env, chatId, "Non ho trovato un RPE valido (1-10) nel messaggio. Riprova con un numero da 1 a 10.");
+        return;
+      }
       label = "RPE post-sessione";
     }
 
@@ -877,7 +906,10 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     const pending = await getPendingConfirmation(env, pendingId);
     if (!pending || pending.status !== "pending") return;
 
-    await resolvePendingConfirmation(env, pendingId, `routed_${routeType}`);
+    // Bug fix audit K2: 'routed_*' violava il CHECK su pending_confirmations.status
+    // (la PATCH falliva e la riga restava 'pending' per sempre). Usiamo 'confirmed'
+    // (valore valido); il tipo di routing è già veicolato dall'azione eseguita.
+    await resolvePendingConfirmation(env, pendingId, "confirmed");
 
     if (routeType === "weekly") {
       await sendMessage(env, chatId, "📋 Nota taggata per la prossima weekly review. Il coach la vedrà domenica.");
@@ -1180,26 +1212,59 @@ async function getPendingConfirmation(env: Env, id: string): Promise<PendingConf
 }
 
 async function resolvePendingConfirmation(env: Env, id: string, status: string): Promise<void> {
-  await supabaseFetch(env, `/rest/v1/pending_confirmations?id=eq.${id}`, "PATCH",
+  // Bug fix audit K5: controlla resp.ok — una PATCH fallita (constraint, RLS,
+  // rete) lasciava la riga 'pending' mentre l'UI mostrava successo.
+  const resp = await supabaseFetch(env, `/rest/v1/pending_confirmations?id=eq.${id}`, "PATCH",
     { status, resolved_at: new Date().toISOString() }, { Prefer: "return=minimal" });
+  if (!resp.ok) {
+    console.error(`resolvePendingConfirmation PATCH failed: ${resp.status} ${await resp.text()}`);
+    throw new Error(`pending_confirmations PATCH failed: ${resp.status}`);
+  }
 }
 
 // ============================================================================
 // Telegram API helpers
 // ============================================================================
 
+// Bug fix audit K6: split a 4096 char (limite Telegram). Un messaggio lungo
+// (es. /status, /history) altrimenti riceve HTTP 400 e non viene consegnato.
+function splitTelegram(text: string, limit = 4000): string[] {
+  if (text.length <= limit) return [text];
+  const chunks: string[] = [];
+  let current = "";
+  for (let line of text.split("\n")) {
+    while (line.length > limit) {
+      if (current) { chunks.push(current); current = ""; }
+      chunks.push(line.slice(0, limit));
+      line = line.slice(limit);
+    }
+    if (current.length + line.length + 1 > limit) { chunks.push(current); current = line; }
+    else { current = current ? `${current}\n${line}` : line; }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 async function sendMessage(env: Env, chatId: number, text: string, replyMarkup?: any): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-    }),
-  });
+  const chunks = splitTelegram(text);
+  for (let i = 0; i < chunks.length; i++) {
+    const isLast = i === chunks.length - 1;
+    const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: chunks[i],
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        // reply_markup solo sull'ultimo chunk
+        ...(replyMarkup && isLast ? { reply_markup: replyMarkup } : {}),
+      }),
+    });
+    if (!resp.ok) {
+      console.error(`sendMessage failed: ${resp.status} ${await resp.text()}`);
+    }
+  }
 }
 
 async function sendAndLogMessage(

@@ -267,5 +267,85 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(_fmt_swim_pace(95), "1:35")
 
 
+# ===========================================================================
+# Audit 2026-06-01 — E1/E2/E3: corruzione zone fisiologiche da unità/logica
+# ===========================================================================
+class TestAuditUnitCorruption(unittest.TestCase):
+
+    def test_e1_no_speed_fallback_for_power(self):
+        """E1: senza avg_power_w nello split, NON usare averageSpeed come watt."""
+        proc = _make_processor()
+        activity = {
+            "id": "e1", "sport": "bike",
+            "splits": [
+                {"averageSpeed": 8.0, "duration_s": 1200},
+                {"averageSpeed": 8.5, "duration_s": 1200},  # 8.5 m/s, NON è potenza
+            ],
+        }
+        result = proc._extract_ftp_bike_20min(activity, _ftp_structured())
+        self.assertIsNone(result, "averageSpeed non deve diventare FTP")
+
+    def test_e1_power_still_works(self):
+        proc = _make_processor()
+        activity = {"id": "e1b", "sport": "bike",
+                    "splits": [{"avg_power_w": 100}, {"avg_power_w": 250}]}
+        self.assertAlmostEqual(proc._extract_ftp_bike_20min(activity, _ftp_structured()), 237.5, places=1)
+
+    def test_e2_no_averagepace_fallback(self):
+        """E2: senza avg_pace_s_per_km, NON usare averagePace (unità diversa)."""
+        proc = _make_processor()
+        structured = {"test_type": "threshold_run_30min", "extraction": {"primary": {"interval_index": 1}}}
+        activity = {"id": "e2", "sport": "run",
+                    "splits": [{"averagePace": 5.0}, {"averagePace": 5.2}]}
+        self.assertIsNone(proc._extract_threshold_run(activity, structured))
+
+    def test_e3_css_guard_t400_gt_t200(self):
+        """E3: split mal rilevati (t400 < t200) → None, niente CSS negativo."""
+        proc = _make_processor()
+        structured = {"test_type": "css_swim_400_200"}
+        # 400m in 170s ma 200m in 360s → impossibile, mis-detection
+        bad = {"id": "e3", "sport": "swim",
+               "splits": [{"distance_m": 400, "duration_s": 170},
+                          {"distance_m": 200, "duration_s": 360}]}
+        self.assertIsNone(proc._extract_css_swim(bad, structured))
+
+    def test_e3_css_valid(self):
+        proc = _make_processor()
+        structured = {"test_type": "css_swim_400_200"}
+        good = {"id": "e3b", "sport": "swim",
+                "splits": [{"distance_m": 400, "duration_s": 360},
+                           {"distance_m": 200, "duration_s": 170}]}
+        # (360-170)/2 = 95
+        self.assertAlmostEqual(proc._extract_css_swim(good, structured), 95.0, places=1)
+
+
+# ===========================================================================
+# Audit 2026-06-01 — E5: un'attività che esplode non aborta le altre
+# ===========================================================================
+class TestAuditCheckRecentIsolation(unittest.TestCase):
+
+    def test_e5_exception_isolated(self):
+        """E5: process_fitness_test che solleva → loggato come error, loop prosegue."""
+        check_recent = _mod.check_recent
+        # fake supabase: 1 attività che matcha una planned fitness_test
+        fake_sb = MagicMock()
+        act_q = MagicMock()
+        act_q.data = [{"id": "x", "external_id": "garmin_1", "started_at": "2026-06-15T08:00:00Z",
+                       "sport": "bike", "splits": [], "notes": None}]
+        # catena select...execute per activities
+        fake_sb.table.return_value.select.return_value.gte.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value = act_q
+        # planned_sessions lookup → trova una sessione
+        planned_q = MagicMock()
+        planned_q.data = [{"structured": {"test_type": "ftp_bike_20min"}}]
+        fake_sb.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = planned_q
+
+        with patch.object(_mod, "get_supabase", return_value=fake_sb), \
+             patch.object(_mod, "FitnessTestProcessor") as MockProc:
+            inst = MockProc.return_value
+            inst.process_fitness_test.side_effect = RuntimeError("boom")
+            results = check_recent()  # NON deve sollevare
+        self.assertTrue(any(r.get("status") == "error" for r in results))
+
+
 if __name__ == "__main__":
     unittest.main()
