@@ -1074,6 +1074,21 @@ def test_catch_up_gate_idempotent_when_already_sent(monkeypatch):
     assert sent == [], "se già inviato oggi, un secondo cron non deve duplicare"
 
 
+def test_already_sent_today_queries_sent_at_not_created_at(monkeypatch):
+    """REGRESSIONE doppio debrief: _already_sent_today interrogava 'created_at'
+    (colonna inesistente in bot_messages) → query in errore → 'non inviato' →
+    ogni cron rimandava il reminder. Deve filtrare su 'sent_at'."""
+    from datetime import datetime, timezone, timedelta
+    sn = _load("scripts.send_notification", "scripts/send_notification.py")
+
+    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    fake = _IdempotencyFakeSupabase(rows=[{"id": "x", "sent_at": recent}])
+    monkeypatch.setattr(sn, "get_supabase", lambda: fake)
+
+    assert sn._already_sent_today("debrief_reminder") is True
+    assert ("purpose", "debrief_reminder") in fake._query.eq_calls
+
+
 # ===========================================================================
 # PIPELINE-04 — brief idempotency: _brief_already_sent_today() unit test
 # (Wave 0 test gap — copertura esplicita per il guard di briefing.py main())
@@ -1203,3 +1218,20 @@ def test_pipeline04_brief_idempotency_old_brief_does_not_block():
         "_brief_already_sent_today deve restituire False per brief inviato 8h fa "
         "(fuori dalla finestra di 6h)"
     )
+
+
+def test_brief_floor_gate_skips_before_5am_rome(monkeypatch):
+    """Floor gate: il brief non deve partire prima delle 05:00 Rome (evita che il
+    cron 03:00 UTC d'inverno = 04:00 Rome invii in anticipo)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import coach.planning.briefing as b
+
+    monkeypatch.delenv("FORCE_SEND", raising=False)
+    monkeypatch.setattr(b, "datetime",
+                        type("DT", (), {"now": staticmethod(
+                            lambda tz=None: datetime(2026, 1, 15, 4, 0, tzinfo=ZoneInfo("Europe/Rome")))}))
+    called = []
+    monkeypatch.setattr(b, "build_brief", lambda: called.append(1))
+    b.main()
+    assert called == [], "prima delle 05 Rome il brief non deve essere costruito/inviato"

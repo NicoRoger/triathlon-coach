@@ -1353,20 +1353,39 @@ function computeAbsoluteZones(discipline: string, z: any): any | null {
     };
   }
 
+  // Bici senza wattmetro: zone HR da LTHR (stesse % di _compute_lthr_5zone in Python).
+  if (discipline === "bike" && z.lthr) {
+    const lthr: number = z.lthr;
+    const fmt = (h: number) => `${Math.round(h)} bpm`;
+    return {
+      discipline: "bike",
+      lthr,
+      zones: {
+        z1: { label: "Recovery",  hr_below: fmt(lthr * 0.81) },
+        z2: { label: "Aerobic",   hr_range: `${fmt(lthr * 0.81)}–${fmt(lthr * 0.89)}` },
+        z3: { label: "Tempo",     hr_range: `${fmt(lthr * 0.90)}–${fmt(lthr * 0.95)}` },
+        z4: { label: "Threshold", hr_range: `${fmt(lthr * 0.96)}–${fmt(lthr)}` },
+        z5: { label: "Above",     hr_above: fmt(lthr) },
+      },
+    };
+  }
+
   if (discipline === "run" && z.threshold_pace_s_per_km) {
     const tp: number = z.threshold_pace_s_per_km;
     const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/km`;
+    // Formula moltiplicativa (Friel), identica a _compute_pace_5zone in Python:
+    // unica fonte di verità, altrimenti il coach prescrive su zone diverse dal brief.
     return {
       discipline: "run",
       threshold_s_per_km: tp,
       threshold_pace: fmt(tp),
       lthr: z.lthr || null,
       zones: {
-        z1: { label: "Recovery",  pace_slower_than: fmt(tp + 90) },
-        z2: { label: "Endurance", pace_range: `${fmt(tp + 90)}–${fmt(tp + 45)}` },
-        z3: { label: "Tempo",     pace_range: `${fmt(tp + 45)}–${fmt(tp + 15)}` },
-        z4: { label: "Threshold", pace_range: `${fmt(tp + 15)}–${fmt(tp - 15)}` },
-        z5: { label: "VO2max",    pace_faster_than: fmt(tp - 15) },
+        z1: { label: "Recovery",  pace_slower_than: fmt(tp * 1.25) },
+        z2: { label: "Endurance", pace_range: `${fmt(tp * 1.25)}–${fmt(tp * 1.15)}` },
+        z3: { label: "Tempo",     pace_range: `${fmt(tp * 1.15)}–${fmt(tp * 1.05)}` },
+        z4: { label: "Threshold", pace_range: `${fmt(tp * 1.05)}–${fmt(tp * 0.97)}` },
+        z5: { label: "VO2max",    pace_faster_than: fmt(tp * 0.97) },
       },
     };
   }
@@ -1976,7 +1995,10 @@ async function acceptModulation(id: string, env: Env): Promise<any> {
       status: "planned",
     };
 
-    const upsertResp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions`, {
+    // on_conflict sulla chiave UNIQUE reale: senza, la POST collide con
+    // (planned_date,sport,session_type) e va in 409 → la modifica a una
+    // sessione esistente veniva skippata. Match con _apply_single_change (Python).
+    const upsertResp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?on_conflict=planned_date,sport,session_type`, {
       method: "POST",
       headers: {
         "apikey": env.SUPABASE_SERVICE_KEY,

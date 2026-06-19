@@ -827,6 +827,13 @@ def main() -> None:
     # Idempotenza: skip se un brief è stato già inviato nelle ultime 6h
     # (workflow_dispatch può forzare via FORCE_SEND=true)
     force_send = os.environ.get("FORCE_SEND", "").lower() in ("true", "1", "yes")
+
+    # Floor gate: target 05:00 Rome. I cron coprono estate/inverno (03/04 UTC);
+    # questo evita che il cron 03:00 UTC d'inverno (= 04:00 Rome) invii in anticipo.
+    if not force_send and datetime.now(ZoneInfo("Europe/Rome")).hour < 5:
+        logger.info("Brief gate: prima delle 05 Rome, troppo presto — skip")
+        return
+
     if not force_send:
         sb = get_supabase()
         if _brief_already_sent_today(sb):
