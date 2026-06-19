@@ -27,8 +27,15 @@ CREATE TABLE IF NOT EXISTS active_constraints (
 -- tutti gli altri ruoli negati per default (nessuna policy = zero righe visibili).
 -- La policy esplicita rende l'intento auditabile e protegge da futuri ruoli authenticated.
 ALTER TABLE active_constraints ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "service_role_full_access" ON active_constraints
-  FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- NB: CREATE POLICY non supporta IF NOT EXISTS in PostgreSQL → wrap in DO block
+-- per restare idempotente al re-run.
+DO $$
+BEGIN
+    CREATE POLICY "service_role_full_access" ON active_constraints
+        FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ── mesocycles.progression_plan JSONB ────────────────────────────────────────
 -- Colonna JSONB per il piano di progressione qualità multi-sessione (D-27).
