@@ -1074,6 +1074,21 @@ def test_catch_up_gate_idempotent_when_already_sent(monkeypatch):
     assert sent == [], "se già inviato oggi, un secondo cron non deve duplicare"
 
 
+def test_already_sent_today_queries_sent_at_not_created_at(monkeypatch):
+    """REGRESSIONE doppio debrief: _already_sent_today interrogava 'created_at'
+    (colonna inesistente in bot_messages) → query in errore → 'non inviato' →
+    ogni cron rimandava il reminder. Deve filtrare su 'sent_at'."""
+    from datetime import datetime, timezone, timedelta
+    sn = _load("scripts.send_notification", "scripts/send_notification.py")
+
+    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    fake = _IdempotencyFakeSupabase(rows=[{"id": "x", "sent_at": recent}])
+    monkeypatch.setattr(sn, "get_supabase", lambda: fake)
+
+    assert sn._already_sent_today("debrief_reminder") is True
+    assert ("purpose", "debrief_reminder") in fake._query.eq_calls
+
+
 # ===========================================================================
 # PIPELINE-04 — brief idempotency: _brief_already_sent_today() unit test
 # (Wave 0 test gap — copertura esplicita per il guard di briefing.py main())

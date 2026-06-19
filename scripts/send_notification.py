@@ -16,10 +16,12 @@ def _already_sent_today(purpose: str) -> bool:
     try:
         sb = get_supabase()
         rome_today = datetime.now(ZoneInfo("Europe/Rome")).date().isoformat()
-        # bot_messages ha created_at UTC; controlliamo se e' presente un record
-        # con questo purpose e created_at >= mezzanotte Rome di oggi.
+        # bot_messages.sent_at e' UTC; record con questo purpose oggi (Rome).
+        # NB: la colonna e' sent_at, non created_at — interrogare created_at
+        # (inesistente) faceva fallire la query → except → "non inviato" →
+        # ogni cron rimandava il debrief (doppione serale).
         res = sb.table("bot_messages").select("id").eq("purpose", purpose).gte(
-            "created_at", f"{rome_today}T00:00:00+02:00"
+            "sent_at", f"{rome_today}T00:00:00+02:00"
         ).limit(1).execute()
         return bool(res.data)
     except Exception:
