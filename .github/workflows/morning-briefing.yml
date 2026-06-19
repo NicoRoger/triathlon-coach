@@ -2,12 +2,15 @@ name: morning-briefing
 
 on:
   schedule:
-    # Fallback: si attiva solo se l'ingest mattutino non l'ha già triggerato.
-    # L'ingest gira alle 06:00 UTC e chiama `gh workflow run` dopo il successo;
-    # questo schedule a 06:20 è il safety net per ingest lento o fallito.
-    # NOTA: idempotenza gestita lato Python in coach/planning/briefing.py
-    # (check su bot_messages per skip se già inviato nelle ultime 6h).
-    - cron: '20 6 * * *'
+    # Target: brief alle 05:00 Europe/Rome. 5am Rome = 03:00 UTC (estate, UTC+2)
+    # / 04:00 UTC (inverno, UTC+1). Il floor gate in briefing.py (skip se ora
+    # Rome < 5) impedisce l'invio anticipato del cron 03:00 d'inverno; il primo
+    # run utile invia e l'idempotency 6h blocca i doppioni. '20 6' resta come
+    # safety net tardo (ingest mattutino lento/fallito).
+    - cron: '0 3 * * *'    # 05:00 Rome (estate) / 04:00 (inverno → gate skip)
+    - cron: '30 3 * * *'   # 05:30 Rome (estate) catch-up se 03:00 droppato
+    - cron: '0 4 * * *'    # 05:00 Rome (inverno) / 06:00 (estate → idempotency)
+    - cron: '20 6 * * *'   # safety net tardo
   workflow_dispatch:
     inputs:
       force_send:
