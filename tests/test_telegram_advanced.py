@@ -495,6 +495,7 @@ class TestTelegramLogger(unittest.TestCase):
         os.environ["TELEGRAM_BOT_TOKEN"] = "test_token"
         os.environ["TELEGRAM_CHAT_ID"] = "123456"
 
+        # 1ª risposta: 400 (HTML rifiutato). 2ª: ok (plain text).
         resp_400 = MagicMock()
         resp_400.status_code = 400
         resp_400.ok = False

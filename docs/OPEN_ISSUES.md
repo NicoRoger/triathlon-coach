@@ -124,6 +124,8 @@ Bugs found during initial rollout. Each entry has status, fix applied, and regre
 | `migrations/2026-05-14-season-year.sql` | Phase 2.7 | ⏳ Run once (multi-race architecture) |
 | `migrations/2026-05-14-hypothesis-and-audit.sql` | Phase 3.1+3.4 | ⏳ Run once (hypothesis_tests + decision_audit tables) |
 | `migrations/2026-05-14-cognitive-mvp.sql` | Phase 4.3+4.4 | ⏳ Run once (beliefs + beliefs_history + recommendations tables) |
+| `migrations/2026-05-30-rls-and-fk-integrity.sql` | Security (RLS gap) + FK integrity | ⏳ Run once — abilita RLS sulle 8 tabelle scoperte + ON DELETE SET NULL su FK orfane. Vedi `docs/audit_2026-05-30.md` |
+| `migrations/2026-05-30-seed-run-zones-provisional.sql` | BUG-010 recovery | ⏳ Run once — zone corsa provvisorie (threshold 4:23/km, LTHR 183) dal test 30/05 non auto-processato |
 | `migrations/2026-06-01-resilience-audit.sql` | Audit resilienza 2026-06-01 | ⏳ Run once (races/mesocycles/plan_modulations/physiology_zones/planned_sessions constraints + expires_at + FK ON DELETE + status/kind CHECK). **Coordinata col codice del branch audit-resilience-2026-06-01** |
 
 ---
@@ -200,3 +202,26 @@ Skill weekly_review, generate_mesocycle, propose_session richiedono citation tag
 ### Phase 5 — Future cognitive expansion (post-MVP, da valutare)
 
 Coaching philosophy layer, multi-memory architecture, psycho-physiological modeling, environmental intelligence, communication mode adaptation. Rimandata oltre l'orizzonte attuale.
+
+## BUG-011 — Weekly review: l'agente "dimentica" / va corretto spesso ✅
+- **Sintomo**: durante la weekly review il software non ricorda bene i dati e l'atleta deve correggerlo spesso.
+- **Misurazione** (da output reale `get_weekly_context`, 70.023 char totali):
+  `open_modulations` 23.101 char/14 item · `planned_past` 9.732/9 · `session_analyses` 7.739/8 · `daily_metrics` 4.315/21 · `subjective_log` 3.986/12 · `daily_wellness` 3.802/21.
+- **Root cause (2 cause)**:
+  1. **Payload gonfio**: il contesto pesava ~70K caratteri → l'LLM perde il filo e confonde i numeri. I contributi maggiori: (a) `open_modulations` query `status=eq.proposed` **senza limite** → 14 modulazioni mai risolte accumulate, ognuna col JSONB `proposed_changes`; (b) `planned_past`/`planned_upcoming` **senza projection** → trascinavano i JSONB `structured` e `target_zones` non necessari alla review. (NB: `activities`/`daily_wellness` proiettavano già le colonne — niente `raw_payload`.)
+  2. **Doppio caricamento**: la skill `weekly_review.md` (Fase 1) chiedeva i tool granulari (`get_activity_history`, `get_recent_metrics`, `query_subjective_log`, `get_planned_session` per ogni giorno) OLTRE a `get_weekly_context`, caricando gli stessi dati due volte in forme diverse → incongruenze.
+- **Fix**:
+  1. `workers/mcp-server/src/index.ts` — `getWeeklyContext`: projection esplicita su `planned_past`/`planned_upcoming` (drop `structured`/`target_zones`), `limit=5` su `open_modulations`, `limit=8` su `session_analyses`. **Richiede redeploy del worker mcp-server.**
+  2. `skills/weekly_review.md` — Fase 0/1 riscritte: `get_weekly_context` è la singola fonte di verità, caricata UNA volta; vietato duplicare con i tool granulari.
+- **Test**: dopo redeploy, `get_weekly_context(days=7)` restituisce un payload nettamente più piccolo; la weekly review in Claude.ai non deve più richiedere correzioni sui dati base.
+
+---
+
+## BUG-012 — Modulazioni `proposed` mai chiuse si accumulano ✅
+- **Sintomo**: 14 modulazioni in stato `proposed` mai accettate/rifiutate. Si accumulavano, gonfiavano `get_weekly_context` (causa #1 di BUG-011) e generavano reminder ripetuti su proposte ormai obsolete.
+- **Root cause**: nessun meccanismo di scadenza. Una modulazione propone modifiche ai "prossimi 3 giorni"; se l'atleta non risponde, resta `proposed` per sempre.
+- **Fix** (`coach/coaching/modulation.py` + `coach/coaching/proactive_reminders.py`):
+  - `expire_stale_modulations(max_age_days=4)` marca `expired` le proposte più vecchie di 4 giorni (`resolved_at` valorizzato).
+  - Chiamata all'inizio di `run_proactive_reminders()` (cron ogni 30 min) → housekeeping continuo.
+  - NB: `plan_modulations.status` non ha CHECK constraint → nessuna migration necessaria per il valore `expired`.
+- **Test**: `tests/test_regressions.py::test_expire_stale_modulations_marks_expired`. Le 14 appese si auto-scadono al primo run del workflow `proactive-reminders`.

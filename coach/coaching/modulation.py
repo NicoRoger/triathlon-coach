@@ -252,6 +252,33 @@ def reject_modulation(modulation_id: str) -> bool:
     return True
 
 
+# Una modulazione propone modifiche ai "prossimi 3 giorni": oltre questa finestra
+# la proposta è obsoleta (i dati sono cambiati). La scadiamo per non lasciarla
+# 'proposed' all'infinito — le proposte appese gonfiavano get_weekly_context e
+# confondevano l'agente (BUG-011).
+STALE_MODULATION_DAYS = 4
+
+
+def expire_stale_modulations(max_age_days: int = STALE_MODULATION_DAYS) -> int:
+    """Marca 'expired' le modulazioni 'proposed' più vecchie di max_age_days.
+
+    Idempotente. Ritorna il numero di righe scadute.
+    """
+    sb = get_supabase()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    res = (
+        sb.table("plan_modulations")
+        .update({"status": "expired", "resolved_at": _now_iso()})
+        .eq("status", "proposed")
+        .lt("proposed_at", cutoff)
+        .execute()
+    )
+    n = len(res.data or [])
+    if n:
+        logger.info("Expired %d stale modulation(s) older than %dd", n, max_age_days)
+    return n
+
+
 def _apply_single_change(sb, change: dict) -> bool:
     """Applica una singola modifica al piano (upsert planned_sessions).
 

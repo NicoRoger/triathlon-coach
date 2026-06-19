@@ -100,3 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_decision_audit_unapplied
 
 COMMENT ON TABLE decision_audit IS
   'Audit trail di tutte le decisioni strutturali del coach. Permette analisi retrospettiva: "perché abbiamo proposto X?". Citazioni e beliefs sono dati strutturati, non solo testo.';
+
+-- RLS: allinea al pattern single-user di schema.sql (deny-all anon, service_role bypassa).
+ALTER TABLE hypothesis_tests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE decision_audit   ENABLE ROW LEVEL SECURITY;

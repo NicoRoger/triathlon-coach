@@ -98,6 +98,14 @@ def compute_for(day: date, history_days: int = 90) -> dict:
     hist_rows = [r for r in wellness_rows if r["date"] != today_iso]
     hrv_history = [r["hrv_rmssd"] for r in hist_rows if r.get("hrv_rmssd") is not None]
 
+    # Baseline = storia HRV ESCLUSO oggi (escluso per data, non per valore:
+    # escludere per valore rimuoverebbe tutti i giorni con lo stesso HRV di oggi).
+    baseline = [
+        r["hrv_rmssd"]
+        for r in wellness_rows
+        if r.get("hrv_rmssd") is not None and r["date"] != day.isoformat()
+    ]
+
     z = None
     baseline_28 = None
     baseline_sd = None

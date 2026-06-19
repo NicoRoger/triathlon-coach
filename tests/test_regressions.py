@@ -248,7 +248,7 @@ class TestPersonalizedInsertHtmlEscape(unittest.TestCase):
         content = (
             "# Osservazioni\n\n"
             "- Pattern lunedì: dopo sessioni con TSB < -30 inserire recupero & cautela.\n"
-            + "x" * 100
+            + "x" * 100  # supera il minimo di 100 char
         )
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(content)
