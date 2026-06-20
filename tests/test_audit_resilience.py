@@ -1192,31 +1192,25 @@ def test_pipeline04_brief_idempotency_filters_on_morning_brief_purpose():
     )
 
 
-def test_pipeline04_brief_idempotency_old_brief_does_not_block():
-    """Una riga morning_brief con sent_at > 6h fa non deve bloccare il nuovo invio.
-
-    Verifica che la finestra temporale di 6h sia effettivamente applicata dal guard:
-    un brief inviato 8 ore fa non deve essere considerato "recente" e non deve
-    impedire un nuovo invio mattutino. Complemento di
-    test_pipeline04_brief_idempotency_skips_when_already_sent.
-    """
-    from unittest.mock import patch
+def test_pipeline04_brief_idempotency_yesterday_does_not_block():
+    """Once-per-day: un brief inviato IERI (giorno Rome precedente) non blocca
+    quello di oggi; uno inviato OGGI sì."""
     from datetime import datetime, timezone, timedelta
+    from zoneinfo import ZoneInfo
     from coach.planning.briefing import _brief_already_sent_today
 
-    # Timestamp fisso "ora" per rendere il test deterministico
-    frozen_now = datetime(2026, 6, 7, 9, 0, 0, tzinfo=timezone.utc)
-    # sent_at = 8h prima di frozen_now → fuori dalla finestra di 6h
-    old_ts = (frozen_now - timedelta(hours=8)).isoformat()
-    fake_sb = _IdempotencyFakeSupabase(rows=[{"id": "old", "sent_at": old_ts}])
+    # Ieri pomeriggio (sicuramente prima di mezzanotte Rome di oggi)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).replace(hour=15).isoformat()
+    fake_sb = _IdempotencyFakeSupabase(rows=[{"id": "old", "sent_at": yesterday}])
+    assert _brief_already_sent_today(fake_sb) is False, (  # type: ignore[arg-type]
+        "un brief di ieri non deve bloccare quello di oggi"
+    )
 
-    with patch("coach.planning.briefing.datetime") as mock_dt:
-        mock_dt.now.return_value = frozen_now
-        result = _brief_already_sent_today(fake_sb)  # type: ignore[arg-type]
-
-    assert result is False, (
-        "_brief_already_sent_today deve restituire False per brief inviato 8h fa "
-        "(fuori dalla finestra di 6h)"
+    # Stamattina presto (stesso giorno Rome) → blocca
+    today_early = datetime.now(ZoneInfo("Europe/Rome")).replace(hour=5, minute=30)
+    fake_sb2 = _IdempotencyFakeSupabase(rows=[{"id": "new", "sent_at": today_early.astimezone(timezone.utc).isoformat()}])
+    assert _brief_already_sent_today(fake_sb2) is True, (  # type: ignore[arg-type]
+        "un brief già inviato oggi deve bloccare un secondo invio"
     )
 
 

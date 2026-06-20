@@ -107,12 +107,17 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Trigger morning brief (solo run mattutino 05-07 UTC)
+      - name: Trigger morning brief (ingest mattutino 03-09 UTC)
         if: success()
         continue-on-error: true
+        # L'ingest (ogni 3h) è puntuale, gli scheduled cron di GitHub ritardano
+        # 4-6h: triggeriamo il brief dall'ingest. Il floor gate (Rome>=5) e
+        # l'idempotency once-per-day in briefing.py garantiscono UN solo invio,
+        # al primo ingest dopo le 05:00 Rome. Finestra larga 03-09 UTC per
+        # catturare il run mattutino nonostante il jitter dello scheduler.
         run: |
           HOUR=$(date -u +%H)
-          if [ "$HOUR" -ge "5" ] && [ "$HOUR" -le "7" ]; then
+          if [ "$HOUR" -ge "3" ] && [ "$HOUR" -le "9" ]; then
             echo "Morning ingest: triggering briefing"
             gh workflow run morning-briefing.yml --ref "$GITHUB_REF_NAME"
           else
