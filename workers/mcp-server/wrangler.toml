@@ -8,5 +8,11 @@ compatibility_date = "2025-04-01"
 # - MCP_BEARER_TOKEN  (genera: openssl rand -base64 48)
 # - GH_PAT_TRIGGER    (PAT GitHub con scope `repo` + `workflow` per force_garmin_sync)
 
+# Cron: 03:00 e 04:00 UTC = 05:00 Rome (estate/inverno). Cloudflare cron è
+# puntuale → dispatcha il brief alle 5; briefing.py (floor gate + once-per-day)
+# garantisce un solo invio. Vedi handler `scheduled` in src/index.ts.
+[triggers]
+crons = ["0 3 * * *", "0 4 * * *"]
+
 [observability]
 enabled = true
