@@ -415,6 +415,26 @@ function escapeHtml(s: string): string {
 // Main fetch handler
 // ============================================================================
 export default {
+  // Cron trigger (03:00 e 04:00 UTC = 05:00 Rome estate/inverno). I cron di
+  // Cloudflare sono puntuali, a differenza degli scheduled di GitHub (4-6h di
+  // ritardo). Dispatcha il brief; il floor gate Rome>=5 e l'idempotency
+  // once-per-day in briefing.py garantiscono un solo invio alle ~05:00 Rome.
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    const ghRepo = env.GH_REPO || "NicoRoger/triathlon-coach";
+    ctx.waitUntil(
+      fetch(`https://api.github.com/repos/${ghRepo}/actions/workflows/morning-briefing.yml/dispatches`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${env.GH_PAT_TRIGGER}`,
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "triathlon-coach-mcp",
+        },
+        body: JSON.stringify({ ref: "main" }),
+      }).then(() => undefined)
+    );
+  },
+
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
 
