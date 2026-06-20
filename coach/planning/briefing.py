@@ -797,14 +797,16 @@ def send_to_telegram(message: str, purpose: str = "morning_brief", parent_workfl
         raise RuntimeError("send_to_telegram failed (see logs)")
 
 
-def _brief_already_sent_today(sb, *, window_hours: int = 6) -> bool:
-    """Idempotenza: True se un morning_brief è stato inviato negli ultimi N ore.
+def _brief_already_sent_today(sb) -> bool:
+    """Idempotenza: True se un morning_brief è già stato inviato OGGI (giorno Rome).
 
-    Previene doppio invio quando sia il trigger da ingest che il cron fallback
-    di morning-briefing.yml partono nella stessa finestra mattutina.
+    Una-volta-per-giorno (non finestra mobile): robusto a trigger multipli e
+    ritardati (ingest mattutino + cron schedule di GitHub che arriva a mezzogiorno).
+    Una finestra di 6h lasciava passare un secondo brief pomeridiano.
     """
-    from datetime import timezone, timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
+    rome = ZoneInfo("Europe/Rome")
+    midnight_rome = datetime.now(rome).replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff = midnight_rome.astimezone(timezone.utc).isoformat()
     try:
         res = (
             sb.table("bot_messages")
