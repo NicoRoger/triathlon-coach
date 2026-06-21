@@ -1,16 +1,16 @@
 # Progress Tracker
 
-*Aggiornato automaticamente il 2026-06-15*
+*Aggiornato automaticamente il 2026-06-22*
 
 ## Forma Fisica (CTL Trend)
 
-- **Readiness**: 54/100
-- **Trend settimanale**: ↗ (+5.1)
+- **Readiness**: 53/100
+- **Trend settimanale**: ↗ (+4.7)
 
 ## Zone Fisiologiche
 
 - **swim**: CSS 1:20/100m (test 2026-06-04, CSS Test 400-200 (vasca lunga 50m, 04/06/2026). 400m in 5:20 (320s), 200m in 2:40 (160s). CSS = (400-200)/(320-160) = 1.25 m/s = 80 s/100m.)
-- **run**: soglia 4:20/km, LTHR 172bpm (test 2026-05-30, Threshold Run 20min continui (30/05/2026, eseguiti 20' invece di 30' per errore di lettura durata). HR media test = 183 bpm. LTHR = 183 × 0.95 = 174, corretta a 172 per caldo (29°C). Pace soglia ~4:20/km (primi 3km prima della deriva).)
+- **run**: soglia 4:23/km, LTHR 183bpm (test 2026-05-30, threshold_run_20min_provisional)
 - **bike**: LTHR 170bpm (test 2026-05-26, FTP Test 20min (26/05/2026, Padova, percorso piatto). HR media 20' = 182 bpm. LTHR = 182 × 0.95 = 173, corretta a 170 per caldo (33°C alza HR di 5-8 bpm). Atleta SENZA wattmetro → zone basate su LTHR, non watt.)
 
 ## Infortuni Attivi
@@ -19,16 +19,16 @@
 
 ## Compliance Piano
 
+- Sett. 15/06: ██░░░░░░░░ 29% (2/7)
 - Sett. 08/06: ██████░░░░ 60% (6/10)
 - Sett. 01/06: █████░░░░░ 56% (5/9)
 - Sett. 25/05: ██████░░░░ 67% (4/6)
-- Sett. 18/05: ██████████ 100% (6/6)
 
 ## Mesociclo Corrente
 
 - **Build 1 — Introduzione Soglia** — fase `build`
-- Settimana 2 di 4 (2026-06-02 → 2026-06-29)
-- Avanzamento: ██████████████░░░░░░ 14/28gg
+- Settimana 3 di 4 (2026-06-02 → 2026-06-29)
+- Avanzamento: ████████████████████ 21/28gg
 - Note: Prima fase di sviluppo qualità post-Base 2. Introduzione graduale lavoro Z3 (tempo work) mantenendo volume aerobico. Pattern 3+1 (3 settimane carico progressivo + W4 deload).
 
 VINCOLI ATTIVI:
@@ -53,4 +53,4 @@ REGOLA SAFETY: se in W3 HRV mattutina sotto -1 z-score E readiness <60, swim rec
 
 ## Prossimo Obiettivo
 
-- **Lavarone Cross Sprint** (A): 2026-08-29 — 75 giorni
+- **Lavarone Cross Sprint** (A): 2026-08-29 — 68 giorni
