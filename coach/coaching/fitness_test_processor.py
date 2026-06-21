@@ -349,11 +349,16 @@ class FitnessTestProcessor:
     @staticmethod
     def _compute_lthr_5zone(lthr: float) -> dict:
         lthr = int(lthr)
+        # Confini CONTIGUI: la fine di una zona è l'inizio della successiva,
+        # niente buchi (prima Z2→0.89 e Z3→0.90 lasciavano 151-153 scoperto).
+        b1 = round(lthr * 0.81)
+        b2 = round(lthr * 0.89)
+        b3 = round(lthr * 0.95)
         return {
-            "Z1_recovery": f"<{round(lthr * 0.81)} bpm",
-            "Z2_aerobic": f"{round(lthr * 0.81)}-{round(lthr * 0.89)} bpm",
-            "Z3_tempo": f"{round(lthr * 0.90)}-{round(lthr * 0.95)} bpm",
-            "Z4_threshold": f"{round(lthr * 0.96)}-{round(lthr * 1.00)} bpm",
+            "Z1_recovery": f"<{b1} bpm",
+            "Z2_aerobic": f"{b1}-{b2} bpm",
+            "Z3_tempo": f"{b2}-{b3} bpm",
+            "Z4_threshold": f"{b3}-{lthr} bpm",
             "Z5_above": f">{lthr} bpm",
         }
 
@@ -368,6 +373,22 @@ class FitnessTestProcessor:
         db_field, discipline = field_map.get(test_type, (None, sport))
         if not db_field:
             return
+
+        # Lock correzione manuale: se esiste una zona attiva con method 'manual*'
+        # (es. correzione caldo della soglia), NON sovrascriverla con un ricalcolo
+        # automatico. L'atleta l'ha messa a mano e deve restare finché non la cambia.
+        try:
+            locked = self.sb.table("physiology_zones").select("method").eq(
+                "discipline", discipline
+            ).is_("valid_to", "null").like("method", "manual%").limit(1).execute()
+            if locked.data:
+                logger.warning(
+                    "Zona %s bloccata manualmente (%s) — skip ricalcolo automatico %s",
+                    discipline, locked.data[0]["method"], test_type,
+                )
+                return
+        except Exception:
+            logger.warning("Check lock zona manuale fallito, procedo", exc_info=True)
 
         record = {
             "discipline": discipline,
