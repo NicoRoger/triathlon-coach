@@ -10,6 +10,15 @@ from coach.utils.telegram_logger import send_and_log_message
 
 logger = logging.getLogger(__name__)
 
+# purpose loggato in bot_messages per ciascun notif_type. DEVE combaciare con
+# il purpose passato a send_and_log_message sotto, altrimenti l'idempotency non
+# trova il record e ogni cron reinvia (era il bug del 3× weekly review:
+# "weekly-review".replace('-','_') = "weekly_review" ≠ "weekly_review_reminder").
+NOTIF_PURPOSE = {
+    "debrief-reminder": "debrief_reminder",
+    "weekly-review": "weekly_review_reminder",
+}
+
 
 def _already_sent_today(purpose: str) -> bool:
     """Controlla se e' gia' stato inviato un messaggio con questo purpose oggi (Rome)."""
@@ -56,7 +65,7 @@ def main():
             )
             return
         # Idempotency: evita doppio invio quando più cron passano il gate nello stesso giorno
-        if _already_sent_today(f"{notif_type.replace('-', '_')}"):
+        if _already_sent_today(NOTIF_PURPOSE.get(notif_type, notif_type.replace('-', '_'))):
             logger.info("Gate: %s gia' inviato oggi, skip", notif_type)
             return
 

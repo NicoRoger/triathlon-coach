@@ -1074,6 +1074,30 @@ def test_catch_up_gate_idempotent_when_already_sent(monkeypatch):
     assert sent == [], "se già inviato oggi, un secondo cron non deve duplicare"
 
 
+def test_weekly_review_idempotency_uses_logged_purpose(monkeypatch):
+    """REGRESSIONE 3× weekly review: l'idempotency deve interrogare lo STESSO
+    purpose che viene loggato ('weekly_review_reminder'), non 'weekly_review'."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    sn = _load("scripts.send_notification", "scripts/send_notification.py")
+
+    checked = []
+    sn._already_sent_today = lambda purpose: checked.append(purpose) or False  # type: ignore
+    sn.send_and_log_message = lambda *a, **k: 1  # type: ignore
+
+    class _DT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 6, 21, 19, 0, tzinfo=ZoneInfo("Europe/Rome"))  # domenica 19:00
+
+    monkeypatch.setattr(sn, "datetime", _DT)
+    monkeypatch.setattr("sys.argv", ["send_notification.py", "weekly-review", "--rome-hour", "19"])
+    sn.main()
+    assert checked == ["weekly_review_reminder"], (
+        f"idempotency deve usare il purpose loggato; usato invece: {checked}"
+    )
+
+
 def test_already_sent_today_queries_sent_at_not_created_at(monkeypatch):
     """REGRESSIONE doppio debrief: _already_sent_today interrogava 'created_at'
     (colonna inesistente in bot_messages) → query in errore → 'non inviato' →
