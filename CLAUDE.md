@@ -61,8 +61,8 @@ discipline:
     no_wattmetro: true
     debolezze: muscular endurance post-pausa (primo cedimento muscolare, non cardiovascolare)
   corsa:
-    threshold_pace_per_km: 4:23/km (263 s/km, metodo: threshold_run_20min_provisional, data: 2026-05-30)
-    lthr_corsa: 183 bpm | hr_max: 194 bpm (dal test 2026-05-30)
+    threshold_pace_per_km: 4:20/km (260 s/km, metodo: manual_heat_corrected, data: 2026-06-21)
+    lthr_corsa: 172 bpm (corretta per il caldo, NON 183 grezza) | hr_max: 194 bpm
     debolezze: muscular endurance, carico progressivo limitato da fascite plantare sx
     vincolo_fascite: max +10% volume/settimana, cap 14-15km/settimana attuale
 

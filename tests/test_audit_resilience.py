@@ -1102,10 +1102,13 @@ def test_already_sent_today_queries_sent_at_not_created_at(monkeypatch):
     """REGRESSIONE doppio debrief: _already_sent_today interrogava 'created_at'
     (colonna inesistente in bot_messages) → query in errore → 'non inviato' →
     ogni cron rimandava il reminder. Deve filtrare su 'sent_at'."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     sn = _load("scripts.send_notification", "scripts/send_notification.py")
 
-    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    # mezzogiorno OGGI (Rome) → sempre dentro la finestra "da mezzanotte oggi",
+    # robusto anche se il test gira poco dopo la mezzanotte.
+    recent = datetime.now(ZoneInfo("Europe/Rome")).replace(hour=12, minute=0, second=0).isoformat()
     fake = _IdempotencyFakeSupabase(rows=[{"id": "x", "sent_at": recent}])
     monkeypatch.setattr(sn, "get_supabase", lambda: fake)
 
@@ -1171,10 +1174,15 @@ def test_pipeline04_brief_idempotency_skips_when_already_sent():
     quando un brief è già stato spedito nella finestra di 6 ore.
     Questo test chiude il gap di copertura PIPELINE-04 (Wave 0 VALIDATION.md).
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
     from coach.planning.briefing import _brief_already_sent_today
 
-    recent_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    # mezzogiorno OGGI (Rome) in UTC → sempre dentro la finestra "da mezzanotte
+    # oggi", robusto anche subito dopo la mezzanotte.
+    recent_ts = datetime.now(ZoneInfo("Europe/Rome")).replace(
+        hour=12, minute=0, second=0, microsecond=0
+    ).astimezone(timezone.utc).isoformat()
     fake_sb = _IdempotencyFakeSupabase(
         rows=[{"id": "abc123", "sent_at": recent_ts}]
     )

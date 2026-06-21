@@ -314,6 +314,17 @@ const TOOLS = [
     },
   },
   {
+    name: "reject_modulation",
+    description: "Rifiuta UNA modulazione specifica (status→'rejected'). Non tocca il piano. Per scartare una singola proposta divergente dal piano concordato.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string", description: "UUID della modulazione da rifiutare" },
+      },
+    },
+  },
+  {
     name: "refute_belief",
     description: "Refuta una belief dell'atleta: riduce la confidence, la flagga come inaffidabile con una motivazione. Usare quando una belief è costruita su dati noti come falsati (es. HR nuoto, warm-down mal classificato).",
     inputSchema: {
@@ -727,6 +738,8 @@ async function callTool(name: string, args: any, env: Env): Promise<any> {
       return dismissModulations(args, env);
     case "accept_modulation":
       return acceptModulation(args.id, env);
+    case "reject_modulation":
+      return rejectModulation(args.id, env);
     case "create_constraint":
       return createConstraint(args, env);
     case "refute_belief":
@@ -1380,11 +1393,12 @@ function computeAbsoluteZones(discipline: string, z: any): any | null {
     return {
       discipline: "bike",
       lthr,
+      // Confini CONTIGUI (fine zona = inizio successiva), come Python _compute_lthr_5zone.
       zones: {
         z1: { label: "Recovery",  hr_below: fmt(lthr * 0.81) },
         z2: { label: "Aerobic",   hr_range: `${fmt(lthr * 0.81)}–${fmt(lthr * 0.89)}` },
-        z3: { label: "Tempo",     hr_range: `${fmt(lthr * 0.90)}–${fmt(lthr * 0.95)}` },
-        z4: { label: "Threshold", hr_range: `${fmt(lthr * 0.96)}–${fmt(lthr)}` },
+        z3: { label: "Tempo",     hr_range: `${fmt(lthr * 0.89)}–${fmt(lthr * 0.95)}` },
+        z4: { label: "Threshold", hr_range: `${fmt(lthr * 0.95)}–${fmt(lthr)}` },
         z5: { label: "Above",     hr_above: fmt(lthr) },
       },
     };
@@ -2055,6 +2069,29 @@ async function acceptModulation(id: string, env: Env): Promise<any> {
     planned_session_ids: applied,
     skipped,
   };
+}
+
+/** Rifiuta una singola modulazione (status→'rejected'). Non tocca il piano. */
+async function rejectModulation(id: string, env: Env): Promise<any> {
+  if (!id) throw new Error("id is required");
+  const rows: any[] = await sb(env, `plan_modulations?id=eq.${encodeURIComponent(id)}&limit=1`);
+  const mod = rows?.[0];
+  if (!mod) return { error: "Modulation not found", id };
+  if (mod.status !== "proposed") {
+    return { success: false, message: `Modulazione già in status '${mod.status}', non rifiutabile.` };
+  }
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/plan_modulations?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      "apikey": env.SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=minimal",
+    },
+    body: JSON.stringify({ status: "rejected", resolved_at: new Date().toISOString() }),
+  });
+  if (!resp.ok) throw new Error(`reject failed: ${resp.status} ${await resp.text()}`);
+  return { success: true, modulation_id: id, final_status: "rejected" };
 }
 
 // ============================================================================

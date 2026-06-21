@@ -201,9 +201,15 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     debrief_rpe = next((int(d["rpe"]) for d in debrief if d.get("rpe") is not None), None)
     fatigue_result = classify_fatigue_type(activity, splits, debrief_rpe)
 
-    # Costruisci prompt
+    # Costruisci prompt. Nel nuoto l'HR della fascia non è indossata: rimuovi i
+    # campi HR dall'attività così l'LLM NON giudica su Z3/Z4 fantasma (valuta su
+    # pace vs CSS, fornito sotto in swim_pace_context).
+    prompt_activity = _clean_for_prompt(activity)
+    if sport == "swim":
+        for hr_field in ("hr_zones_s", "avg_hr", "max_hr", "hr_drift"):
+            prompt_activity.pop(hr_field, None)
     context_parts = [
-        f"## Attività analizzata\n{json.dumps(_clean_for_prompt(activity), indent=2, default=str)}",
+        f"## Attività analizzata\n{json.dumps(prompt_activity, indent=2, default=str)}",
     ]
     if planned:
         context_parts.append(f"## Sessione pianificata\n{json.dumps(_clean_for_prompt(planned), indent=2, default=str)}")

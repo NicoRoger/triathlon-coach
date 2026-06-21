@@ -110,6 +110,24 @@ def propose_modulation(
 
     sb = get_supabase()
 
+    # Dedup: non rigenerare una proposta che tocca gli stessi giorni/sport di una
+    # già 'proposed' aperta (era il bug delle 24 modulazioni "rest/recovery"
+    # accumulate, una per sessione ogni giorno).
+    def _change_keys(changes) -> set:
+        return {
+            (c.get("date"), c.get("sport"))
+            for c in (changes or []) if isinstance(c, dict) and c.get("date")
+        }
+    new_keys = _change_keys(proposed_changes)
+    if new_keys:
+        open_res = sb.table("plan_modulations").select(
+            "proposed_changes"
+        ).eq("status", "proposed").execute()
+        for row in (open_res.data or []):
+            if _change_keys(row.get("proposed_changes")) & new_keys:
+                logger.info("propose_modulation: proposta duplicata sugli stessi giorni, skip")
+                return None
+
     # Salva proposta
     record = {
         "trigger_event": trigger_event,

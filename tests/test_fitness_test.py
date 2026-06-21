@@ -349,3 +349,17 @@ class TestAuditCheckRecentIsolation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestZoneContiguity(unittest.TestCase):
+    def test_lthr_5zone_no_gaps(self):
+        """Zone HR contigue: fine di una = inizio della successiva
+        (regressione buco Z2→151 / Z3→153)."""
+        import re
+        z = FitnessTestProcessor._compute_lthr_5zone(172)
+        nums = lambda s: [int(x) for x in re.findall(r"\d+", s)]
+        z2_end = nums(z["Z2_aerobic"])[1]
+        z3 = nums(z["Z3_tempo"])
+        z4 = nums(z["Z4_threshold"])
+        self.assertEqual(z2_end, z3[0], "Z3 deve iniziare dove finisce Z2")
+        self.assertEqual(z3[1], z4[0], "Z4 deve iniziare dove finisce Z3")
