@@ -617,9 +617,12 @@ def derive_zones_for_discipline(
         dict con chiavi zona (es. "Z2_endurance") o {} se dato mancante
     """
     if discipline == "bike":
-        if ftp_w is None:
-            return {}
-        return FitnessTestProcessor._compute_coggan_7zone(float(ftp_w))
+        # Atleta senza wattmetro: zone bici da LTHR. FTP solo se disponibile.
+        if ftp_w is not None:
+            return FitnessTestProcessor._compute_coggan_7zone(float(ftp_w))
+        if lthr is not None:
+            return FitnessTestProcessor._compute_lthr_5zone(float(lthr))
+        return {}
     if discipline == "run":
         if threshold_pace_s_per_km is None:
             return {}

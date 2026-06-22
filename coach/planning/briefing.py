@@ -268,20 +268,25 @@ def _format_session_zones(sport: str, zones_by_discipline: dict) -> Optional[str
 
     row = zones_by_discipline.get(discipline)
 
-    # Caso speciale bici: se disciplina assente o FTP None → placeholder D-11
+    # Bici: atleta SENZA wattmetro → zone da LTHR (HR). FTP solo se presente.
     if discipline == "bike":
         ftp = row.get("ftp_w") if row else None
-        if not ftp:
-            return "[FTP bici non ancora misurato — usa Z2 HR: 140-160bpm come riferimento]"
-        zones = derive_zones_for_discipline("bike", ftp_w=float(ftp))
-        z2 = zones.get("Z2_endurance", "")
-        z4 = zones.get("Z4_threshold", "")
+        lthr = row.get("lthr") if row else None
+        if ftp:
+            zones = derive_zones_for_discipline("bike", ftp_w=float(ftp))
+            z2, z4 = zones.get("Z2_endurance", ""), zones.get("Z4_threshold", "")
+        elif lthr:
+            zones = derive_zones_for_discipline("bike", lthr=float(lthr))
+            z2, z4 = zones.get("Z2_aerobic", ""), zones.get("Z4_threshold", "")
+        else:
+            return "[zone bici non misurate — fai un test soglia HR 20']"
         parts = []
         if z2:
             parts.append(f"Z2: {z2}")
         if z4:
             parts.append(f"Z4: {z4}")
-        return " | ".join(parts) if parts else None
+        suffix = "" if ftp else " (HR, no wattmetro)"
+        return (" | ".join(parts) + suffix) if parts else None
 
     if row is None:
         return None

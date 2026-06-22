@@ -363,3 +363,12 @@ class TestZoneContiguity(unittest.TestCase):
         z4 = nums(z["Z4_threshold"])
         self.assertEqual(z2_end, z3[0], "Z3 deve iniziare dove finisce Z2")
         self.assertEqual(z3[1], z4[0], "Z4 deve iniziare dove finisce Z3")
+
+
+class TestBikeZonesFromLTHR(unittest.TestCase):
+    def test_bike_derives_from_lthr_without_power(self):
+        """Senza wattmetro le zone bici si derivano da LTHR (HR), non vuote."""
+        from coach.coaching.fitness_test_processor import derive_zones_for_discipline
+        z = derive_zones_for_discipline("bike", lthr=170)
+        self.assertTrue(z, "le zone bici da LTHR non devono essere vuote")
+        self.assertIn("Z4_threshold", z)
