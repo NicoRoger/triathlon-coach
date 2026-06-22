@@ -928,7 +928,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
       sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`).catch(() => []),
-      sb(env, `beliefs?status=neq.retired&confidence=gte.0.55&order=confidence.desc&select=belief_key,belief_text,status,confidence`).catch(() => []),
+      sb(env, `beliefs?status=neq.retired&flagged=eq.false&confidence=gte.0.55&order=confidence.desc&select=belief_key,belief_text,status,confidence,source,evidence_n`).catch(() => []),
       getLastFatigueBySport(env, since),
     ]);
 

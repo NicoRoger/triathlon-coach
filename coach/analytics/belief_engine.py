@@ -214,6 +214,14 @@ def reinforce_belief(belief_key: str, related_outcome_id: Optional[str] = None,
         logger.warning("Belief %s not found for reinforcement", belief_key)
         return None
     b = res.data[0]
+
+    # Una belief confutata a mano (flagged) NON va ri-rinforzata in automatico:
+    # la confutazione con un fatto noto deve "tenere" finché un umano non la
+    # sblocca. Prima il reinforce post-sessione la gonfiava di nuovo.
+    if b.get("flagged"):
+        logger.info("Belief %s flagged (confutata) — skip reinforce automatico", belief_key)
+        return _row_to_belief(b)
+
     conf_before = float(b["confidence"])
     n_before = int(b["evidence_n"])
     status_before = b["status"]
