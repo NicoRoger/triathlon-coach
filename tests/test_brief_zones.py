@@ -139,13 +139,18 @@ def test_format_session_zones_swim_contains_per100m():
     assert "/100m" in result, f"Deve contenere '/100m', trovato: {result!r}"
 
 
-def test_format_session_zones_bike_ftp_none_placeholder():
-    """Test 7: bike con ftp_w=None -> placeholder con 'FTP' e 'non'."""
+def test_format_session_zones_bike_no_ftp_no_lthr_placeholder():
+    """Bici senza FTP né LTHR -> placeholder, nessun crash."""
     fn = _get_briefing()._format_session_zones
     result = fn("bike", {"bike": {"ftp_w": None}})
-    assert result is not None, "Non deve ritornare None per bici senza FTP"
-    assert "FTP" in result, f"Deve contenere 'FTP', trovato: {result!r}"
-    assert "non" in result.lower(), f"Deve contenere 'non', trovato: {result!r}"
+    assert result is not None and "non misurat" in result.lower(), f"trovato: {result!r}"
+
+
+def test_format_session_zones_bike_from_lthr():
+    """Bici SENZA wattmetro: con LTHR mostra zone HR (no placeholder)."""
+    fn = _get_briefing()._format_session_zones
+    result = fn("bike", {"bike": {"ftp_w": None, "lthr": 170}})
+    assert result is not None and "bpm" in result and "HR" in result, f"trovato: {result!r}"
 
 
 def test_format_session_zones_bike_no_data_no_crash():
