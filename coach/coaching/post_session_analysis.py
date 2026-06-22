@@ -88,6 +88,31 @@ def _get_physiology_zones(sb, discipline: str) -> Optional[dict]:
     return res.data[0] if res.data else None
 
 
+# Zona attesa per tipo di sessione pianificata (#4): l'analisi confronta col
+# session_type, non con un recovery generico.
+SESSION_TYPE_ZONE = {
+    "recovery": "Z1", "recupero": "Z1",
+    "easy": "Z2", "endurance": "Z2", "long": "Z2", "lungo": "Z2", "lsd": "Z2", "fondo": "Z2",
+    "tempo": "Z3",
+    "threshold": "Z4", "soglia": "Z4",
+    "intervals": "Z5", "vo2max": "Z5", "vo2": "Z5", "ripetute": "Z5",
+}
+
+
+def _our_hr_zone(avg_hr: float, lthr: float) -> str:
+    """Classifica una HR media nella NOSTRA zona (LTHR 5-zone, confini contigui)."""
+    r = avg_hr / lthr
+    if r < 0.81:
+        return "Z1"
+    if r < 0.89:
+        return "Z2"
+    if r < 0.95:
+        return "Z3"
+    if r < 1.0:
+        return "Z4"
+    return "Z5"
+
+
 def _compute_zone_compliance(planned: dict, activity: dict) -> Optional[dict]:
     """Confronta target_zones del piano con hr_zones_s effettivi.
 
@@ -208,6 +233,36 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     if sport == "swim":
         for hr_field in ("hr_zones_s", "avg_hr", "max_hr", "hr_drift"):
             prompt_activity.pop(hr_field, None)
+    elif sport in ("run", "bike", "brick"):
+        # hr_zones_s sono le zone del DEVICE Garmin, non le nostre → fuorvianti
+        # (una corsa Z2 a 143bpm cadeva in "Garmin Z3"). Le togliamo e diamo
+        # sotto il confronto sulla NOSTRA zona vs il session_type pianificato (#4).
+        prompt_activity.pop("hr_zones_s", None)
+
+    # #4: intensità reale (nostra zona) vs zona attesa dal session_type pianificato.
+    intensity_context: Optional[str] = None
+    if sport in ("run", "bike", "brick"):
+        disc = "run" if sport == "brick" else sport
+        try:
+            zr = _get_physiology_zones(sb, disc) or {}
+        except Exception:
+            zr = {}
+        lthr = zr.get("lthr")
+        avg_hr = activity.get("avg_hr")
+        st = ((planned or {}).get("session_type") or "").lower()
+        exp = SESSION_TYPE_ZONE.get(st)
+        if lthr and avg_hr:
+            actz = _our_hr_zone(float(avg_hr), float(lthr))
+            planned_line = f"Pianificato: {st or 'n/d'}"
+            if exp:
+                planned_line += f" → zona attesa {exp}"
+            intensity_context = (
+                f"{planned_line}\n"
+                f"Eseguito: HR media {avg_hr} bpm = nostra {actz} (LTHR {int(lthr)}).\n"
+                f"Giudica l'intensità su {actz} vs la zona attesa del tipo pianificato, "
+                f"NON sui bucket Garmin (hr_zones_s, rimossi perché zone del device)."
+            )
+
     context_parts = [
         f"## Attività analizzata\n{json.dumps(prompt_activity, indent=2, default=str)}",
     ]
@@ -220,6 +275,8 @@ def analyze_session(activity_id: str) -> Optional[dict]:
             f"target {zone_compliance['target']} / effettivo {zone_compliance['actual']}\n"
             f"Deviazioni per zona: {zone_compliance['deviations']}"
         )
+    if intensity_context:
+        context_parts.append(f"## Intensità: nostra zona vs piano\n{intensity_context}")
     if swim_pace_context:
         context_parts.append(f"## Nuoto: Pace vs CSS\n{swim_pace_context}")
     if historical:
