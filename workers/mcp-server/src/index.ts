@@ -776,6 +776,20 @@ function todayRomeISO(): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+/** Data di calendario Europe/Rome (YYYY-MM-DD) di un timestamp UTC.
+ *  Serve a confrontare started_at (UTC) con planned_date (data Rome): una corsa
+ *  serale/notturna a cavallo di mezzanotte ha data UTC diversa da quella Rome. */
+function toRomeDateISO(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
 function daysAgoISO(n: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - n);
@@ -927,6 +941,22 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     .filter((s: any) => s.planned_date >= week7ago)
     .reduce((sum: number, s: any) => sum + (s.target_tss || 0), 0);
 
+  // Riconciliazione planned↔completed (#8): per ogni sessione passata, esiste
+  // un'attività con stessa data Rome + sport? Se no → gap (saltata O non
+  // sincronizzata: il coach può proporre force_garmin_sync per distinguere).
+  const actKeys = new Set(
+    (activities as any[])
+      .map((a: any) => `${toRomeDateISO(a.started_at)}_${a.sport}`)
+  );
+  const planGaps = (plannedPast as any[])
+    .filter((s: any) => `${s.planned_date}_${s.sport}` !== "null_undefined"
+      && !actKeys.has(`${s.planned_date}_${s.sport}`)
+      && s.status !== "cancelled" && s.status !== "skipped")
+    .map((s: any) => ({
+      planned_date: s.planned_date, sport: s.sport,
+      session_type: s.session_type, status: s.status,
+    }));
+
   return {
     generated_at: new Date().toISOString(),
     timezone: "Europe/Rome",
@@ -942,6 +972,9 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     completed_activities: activities,
     subjective_log: subjective,
     planned_past: plannedPast,
+    // Sessioni passate senza attività corrispondente (saltate o non sincronizzate).
+    // Se non vuoto, valuta force_garmin_sync prima di concludere "non fatta".
+    plan_gaps: planGaps,
     planned_upcoming: plannedUpcoming,
     session_analyses: sessionAnalyses,
     open_modulations: modulations,
@@ -1022,7 +1055,9 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
   const activity = activityRows?.[0] || null;
   if (!activity) return { status: "not_found", activity_id: activityId || null };
 
-  const activityDate = String(activity.started_at || "").slice(0, 10);
+  // Data Rome (non slice UTC): un'attività a cavallo di mezzanotte matcha il
+  // planned_date corretto (fix #9 — corsa di venerdì che risultava giovedì).
+  const activityDate = toRomeDateISO(activity.started_at) || String(activity.started_at || "").slice(0, 10);
   const sport = VALID_SPORTS.has(activity.sport) ? activity.sport : "all";
 
   const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
