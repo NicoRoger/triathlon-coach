@@ -850,19 +850,31 @@ const VALID_SPORTS = new Set(["swim", "bike", "run", "brick", "strength", "all"]
 const VALID_KINDS  = new Set(["all", "post_session", "illness", "injury", "evening_debrief", "free_note"]);
 
 function deriveProgressionStep(mesocycle: any, today: string): any {
-  if (!mesocycle || !mesocycle.progression_plan || !mesocycle.start_date) return null;
-  const startDate = new Date(mesocycle.start_date);
-  const todayDate = new Date(today);
-  // Use UTC-midnight arithmetic to avoid DST transitions skewing week boundaries.
-  const utcStart = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
-  const utcToday = Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate());
-  const weekNumber = Math.floor((utcToday - utcStart) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  const plan = mesocycle.progression_plan;
-  const result: any = {};
-  for (const [sessionType, weeks] of Object.entries(plan as Record<string, any>)) {
-    result[sessionType] = (weeks as any)[`week${weekNumber}`] || null;
+  // "A che punto siamo": settimana N di M, derivata dalle date — funziona SEMPRE,
+  // anche senza progression_plan (prima tornava null e current_progression_step
+  // restava vuoto). Gli step per-sessione si aggiungono solo se il piano c'è.
+  if (!mesocycle || !mesocycle.start_date) return null;
+  const utcDay = (d: string) => {
+    const x = new Date(d);
+    return Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate());
+  };
+  const utcStart = utcDay(mesocycle.start_date);
+  const utcToday = utcDay(today);
+  const week = 7 * 24 * 60 * 60 * 1000;
+  const weekNumber = Math.floor((utcToday - utcStart) / week) + 1;
+  const totalWeeks = mesocycle.end_date
+    ? Math.floor((utcDay(mesocycle.end_date) - utcStart) / week) + 1
+    : null;
+
+  const out: any = { week_number: weekNumber, total_weeks: totalWeeks };
+  if (mesocycle.progression_plan) {
+    const steps: any = {};
+    for (const [sessionType, weeks] of Object.entries(mesocycle.progression_plan as Record<string, any>)) {
+      steps[sessionType] = (weeks as any)[`week${weekNumber}`] || null;
+    }
+    out.steps = steps;
   }
-  return { week_number: weekNumber, steps: result };
+  return out;
 }
 
 function coachProtocol() {
