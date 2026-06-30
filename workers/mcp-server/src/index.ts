@@ -1231,6 +1231,25 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
     : (Object.keys(structuredBase).length > 0 ? structuredBase : undefined);
   if (payload.structured === undefined) delete payload.structured;
 
+  // Guardrail: se structured.steps è presente, la somma delle durate deve
+  // coincidere con duration_s (±5%). Previene sessioni strutturalmente incoerenti
+  // prima che raggiungano il DB.
+  const steps = (args.structured as any)?.steps;
+  if (Array.isArray(steps) && steps.length > 0) {
+    const stepSum = steps.reduce((acc: number, s: any) => acc + (Number(s.duration_s) || 0), 0);
+    if (stepSum > 0) {
+      const tolerance = Math.round(args.duration_s * 0.05);
+      const delta = stepSum - args.duration_s;
+      if (Math.abs(delta) > tolerance) {
+        throw new Error(
+          `Struttura incoerente: somma step=${stepSum}s, duration_s=${args.duration_s}s ` +
+          `(delta ${delta > 0 ? "+" : ""}${delta}s, tolleranza ±${tolerance}s). ` +
+          `Correggi gli step o il duration_s prima di committare.`
+        );
+      }
+    }
+  }
+
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}&session_type=eq.${encodeURIComponent(args.session_type)}`,
     { headers: { "apikey": env.SUPABASE_SERVICE_KEY, "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
