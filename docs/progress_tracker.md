@@ -1,11 +1,14 @@
 # Progress Tracker
 
-*Aggiornato automaticamente il 2026-06-28*
+*Aggiornato automaticamente il 2026-07-05*
 
 ## Forma Fisica (CTL Trend)
 
-- **Readiness**: 67/100
-- **Trend settimanale**: ↗ (+5.0)
+- **CTL attuale**: 45.4
+- **Delta 90gg**: +21.6 (+91%)
+- **TSB oggi**: -16.0
+- **Readiness**: 69/100
+- **Trend settimanale**: ↗ (+2.2)
 
 ## Zone Fisiologiche
 
@@ -19,38 +22,36 @@
 
 ## Compliance Piano
 
+- Sett. 22/06: █████░░░░░ 50% (4/8)
 - Sett. 15/06: ████░░░░░░ 43% (3/7)
 - Sett. 08/06: ██████░░░░ 60% (6/10)
 - Sett. 01/06: █████░░░░░ 56% (5/9)
-- Sett. 25/05: ██████░░░░ 67% (4/6)
 
 ## Mesociclo Corrente
 
-- **Build 1 — Introduzione Soglia** — fase `build`
-- Settimana 4 di 4 (2026-06-02 → 2026-06-29)
-- Avanzamento: ████████████████████ 27/28gg
-- Note: Prima fase di sviluppo qualità post-Base 2. Introduzione graduale lavoro Z3 (tempo work) mantenendo volume aerobico. Pattern 3+1 (3 settimane carico progressivo + W4 deload).
+- **Specific — Race-Readiness Lavarone** — fase `specific`
+- Settimana 1 di 5 (2026-06-30 → 2026-08-03)
+- Avanzamento: ██████░░░░░░░░░░░░░░ 6/35gg
+- Note: Fase gara-specifica per Lavarone Cross Sprint (29/08, off-road Monte Rust). Obiettivo: tradurre il motore aerobico di Build 1 in capacità-gara cross.
 
-VINCOLI ATTIVI:
-- Fascite plantare: cap 14km/sett corsa (rivedibile dopo W2 se sintomi assenti)
-- Spalla destra: continua esercizi fisio, no Z4+ nuoto, stop se RPE >5
-- Nuoto senza fascia cardio: uso pace CSS come target, non HR
-- Bici: target potenza/FTP post-test 26/05
-- Compliance zone target ≥85% (più stretto rispetto a Base 2)
+PILASTRI:
+1. BRICK (combinati bike→run) nel weekend = sessione chiave settimanale. Progressione: 15' run dopo bici → 30' → 45' con blocchi in salita.
+2. SPECIFICITÀ OFF-ROAD: MTB su dislivello/sterrato (Colli Euganei), trail run su salita. In salita HR sale a parità di sforzo → usare anche RPE, non solo HR.
+3. INTENSITÀ CROSS: sforzi variabili e ripetuti (strappi/recuperi/cambi ritmo) come in gara, non solo blocchi tempo lineari.
 
-PATTERN SETTIMANALE: 3 swim + 2 bike + 2 run (no rest day fisso, sostituito da swim recovery domenica Z1 puro 30')
+PATTERN: 2 swim + 2-3 bike + 2 run. Brick + lungo MTB nel weekend. Nuoto declassato (frazione meno decisiva a Lavarone): 1 tecnica (obiettivo EFFICIENZA bracciata, retaggio agonismo nuoto da migliorare) + 1 aerobico.
 
-DISTRIBUZIONE INTENSITÀ: 80/20 (80% Z1-Z2, 20% Z3 tempo work). Una sola sessione qualità per disciplina/settimana, mai 2 Z3 ravvicinate.
+PROGRESSIONE TSS: S1 ~340, S2 ~390, S3 ~420 (picco), S4 ~280 (scarico), S5 ~380 (ricarico + simulazione gara parziale).
 
-PROGRESSIONE TSS: W1 ~280, W2 ~340, W3 ~380, W4 deload ~260.
-TARGET CTL fine ciclo: 42-45 (da ~32). TSB medio -10/-15.
+ZONE: bici LTHR 170, corsa LTHR 172 (NB: bug backend mostra 183, valore corretto è 172), nuoto CSS 1:20/100m.
 
-COMBINATI: 1 solo brick soft in W4 deload (bike 1h30 + run 15' Z2). I brick veri partiranno in Specific.
+VINCOLI AGGIORNATI (29/06):
+- Spalla: VIA LIBERA FISIO ai carichi, fuori fase critica, stato recovering. Carichi nuoto liberi, intensità reintroducibile gradualmente. Continua esercizi. (NB: update_constraint backend ha bug circular JSON, vincolo non aggiornabile via tool finché non fixato).
+- Fascite: sotto controllo da 19/06. Corsa intensità OK ma graduale, superficie morbida preferita. ATTENZIONE: fastidio segnalato "verso la caviglia, dipende da direzione" il 22/06 → da dire al fisio.
+- Intensità sessioni facili: lezione di Build 1, le easy devono essere VERAMENTE easy (pattern overpacing confermato su dati oggettivi bici/corsa).
 
-RACE-SPECIFIC NOTES: gara cross sprint Lavarone (off-road, dislivello). In W3 introdurre bike outdoor con dislivello (no rulli per lungo). Prima sessione trail run a metà giugno per testare fascite.
-
-REGOLA SAFETY: se in W3 HRV mattutina sotto -1 z-score E readiness <60, swim recovery domenicale diventa rest vero.
+LOGISTICA: piscina solo mattina lun/mar/gio. Caldo estremo inizio luglio (38°C) → outdoor presto mattino o sera. Partenza bici: via Armistizio Padova (default) o Fossona/Cervarese Santa Croce. Percorsi MTB Colli Euganei con GPX da Wikiloc/Euganeamente.
 
 ## Prossimo Obiettivo
 
-- **Lavarone Cross Sprint** (A): 2026-08-29 — 62 giorni
+- **Lavarone Cross Sprint** (A): 2026-08-29 — 55 giorni
