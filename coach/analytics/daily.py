@@ -11,6 +11,7 @@ from typing import Optional
 from coach.analytics.pmc import (
     DailyTSS,
     aggregate_daily_tss,
+    compute_pmc_for_today,
     compute_pmc_series,
 )
 from coach.analytics.readiness import (
@@ -34,15 +35,54 @@ def _fetch_activities_window(sb, start: date) -> list[dict]:
     return res.data or []
 
 
-def _fetch_wellness_window(sb, start: date) -> list[dict]:
-    res = sb.table("daily_wellness").select("*").gte("date", start.isoformat()).execute()
+def _fetch_wellness_window(sb, start: date, end: date) -> list[dict]:
+    """Wellness in [start, end]. Upper bound necessario in backfill: senza,
+    la baseline HRV 28d includerebbe dati FUTURI rispetto al giorno ricalcolato."""
+    res = (
+        sb.table("daily_wellness").select("*")
+        .gte("date", start.isoformat())
+        .lte("date", end.isoformat())
+        .execute()
+    )
     return sorted(res.data or [], key=lambda r: r["date"])
 
 
+def _fetch_lthr_by_sport(sb) -> dict[str, int]:
+    """LTHR attivo per disciplina da physiology_zones (valid_to IS NULL).
+
+    Usato dal fallback hrTSS in aggregate_daily_tss al posto del default
+    env/160. Le discipline (swim/bike/run) coincidono con activities.sport.
+    """
+    try:
+        res = sb.table("physiology_zones").select(
+            "discipline,lthr,valid_from,valid_to"
+        ).execute()
+    except Exception:  # noqa: BLE001
+        logger.warning("physiology_zones non leggibile, fallback LTHR env/default")
+        return {}
+    rows = [
+        r for r in (res.data or [])
+        if r.get("valid_to") is None and r.get("lthr") is not None
+    ]
+    # In caso di più righe attive per disciplina, vince la valid_from più recente
+    rows.sort(key=lambda r: str(r.get("valid_from") or ""))
+    out: dict[str, int] = {}
+    for r in rows:
+        out[r["discipline"]] = int(r["lthr"])
+    return out
+
+
 def _fetch_recent_subjective(sb, day: date) -> dict:
-    """Ultime 24h di subjective log."""
+    """Ultime 24h di subjective log (bounded a `day`: in backfill non deve
+    leggere righe future rispetto al giorno ricalcolato)."""
     since = (day - timedelta(days=1)).isoformat()
-    res = sb.table("subjective_log").select("*").gte("logged_at", since).execute()
+    until = (day + timedelta(days=1)).isoformat()
+    res = (
+        sb.table("subjective_log").select("*")
+        .gte("logged_at", since)
+        .lte("logged_at", until)
+        .execute()
+    )
     rows = res.data or []
     out = {
         "motivation": None,
@@ -65,7 +105,7 @@ def _fetch_recent_subjective(sb, day: date) -> dict:
     since_5 = (day - timedelta(days=5)).isoformat()
     res2 = sb.table("subjective_log").select("logged_at").eq(
         "illness_flag", True
-    ).gte("logged_at", since_5).execute()
+    ).gte("logged_at", since_5).lte("logged_at", until).execute()
     if res2.data:
         last = max(r["logged_at"] for r in res2.data)
         # Days since
@@ -82,13 +122,41 @@ def compute_for(day: date, history_days: int = 90) -> dict:
     window_start = day - timedelta(days=history_days)
 
     activities = _fetch_activities_window(sb, window_start)
-    daily_tss = aggregate_daily_tss(activities)
-    pmc_series = compute_pmc_series(daily_tss)
+    daily_tss = aggregate_daily_tss(activities, lthr_by_sport=_fetch_lthr_by_sport(sb))
+
+    # Seed PMC: CTL/ATL del giorno prima della finestra (se già calcolati).
+    # Senza seed la serie parte da 0 e la finestra 90gg porta ~11.7% di errore.
+    initial_ctl = initial_atl = 0.0
+    seed_res = (
+        sb.table("daily_metrics").select("ctl,atl")
+        .eq("date", (window_start - timedelta(days=1)).isoformat())
+        .execute()
+    )
+    seed_row = (seed_res.data or [None])[0]
+    if seed_row and seed_row.get("ctl") is not None and seed_row.get("atl") is not None:
+        initial_ctl = float(seed_row["ctl"])
+        initial_atl = float(seed_row["atl"])
+        # Ancora la serie a window_start (TSS=0) così il decay dal seed è
+        # continuo anche se la prima attività è giorni dopo (o assente).
+        if not any(t.day == window_start for t in daily_tss):
+            daily_tss = sorted(
+                daily_tss + [DailyTSS(day=window_start, tss=0.0)],
+                key=lambda t: t.day,
+            )
+
+    pmc_series = compute_pmc_series(daily_tss, initial_ctl=initial_ctl, initial_atl=initial_atl)
 
     today_pmc = next((p for p in pmc_series if p.day == day), None)
+    # Giorni senza attività (rest day, mattina prima della sessione): il punto
+    # per `day` manca dalla serie → estrapola a TSS=0 fino a `day` invece di
+    # scrivere ctl/atl/tsb NULL.
+    if today_pmc is None and pmc_series and pmc_series[-1].day < day:
+        today_pmc = compute_pmc_for_today(
+            daily_tss, today=day, initial_ctl=initial_ctl, initial_atl=initial_atl
+        )
 
     # HRV z-score
-    wellness_rows = _fetch_wellness_window(sb, day - timedelta(days=28))
+    wellness_rows = _fetch_wellness_window(sb, day - timedelta(days=28), day)
     today_iso = day.isoformat()
     today_wellness = next((r for r in wellness_rows if r["date"] == today_iso), {})
 
@@ -98,30 +166,37 @@ def compute_for(day: date, history_days: int = 90) -> dict:
     hist_rows = [r for r in wellness_rows if r["date"] != today_iso]
     hrv_history = [r["hrv_rmssd"] for r in hist_rows if r.get("hrv_rmssd") is not None]
 
-    # Baseline = storia HRV ESCLUSO oggi (escluso per data, non per valore:
-    # escludere per valore rimuoverebbe tutti i giorni con lo stesso HRV di oggi).
-    baseline = [
-        r["hrv_rmssd"]
-        for r in wellness_rows
-        if r.get("hrv_rmssd") is not None and r["date"] != day.isoformat()
-    ]
-
     z = None
     baseline_28 = None
     baseline_sd = None
     if today_wellness.get("hrv_rmssd") is not None and len(hrv_history) >= 7:
         import statistics
         baseline_28 = statistics.fmean(hrv_history)
-        baseline_sd = statistics.pstdev(hrv_history) if len(hrv_history) > 1 else 0
+        # SD campionaria (stdev), coerente con hrv_z_score — non pstdev.
+        baseline_sd = statistics.stdev(hrv_history) if len(hrv_history) > 1 else 0
         z = hrv_z_score(today_wellness["hrv_rmssd"], hrv_history)
 
     # Readiness: z-score dei giorni PRECEDENTI (oggi escluso) per il check
     # "2 giorni consecutivi" (§5.1). Bug fix audit B2: includere oggi qui faceva
     # scattare fatigue_warning dopo 1 solo giorno invece di 2.
+    # Allineamento calendario: l'elemento [-1] DEVE essere ieri (day-1). Si
+    # costruisce la catena di date consecutive che termina a ieri; se ieri
+    # manca la lista resta vuota (l'ultima riga wellness non è "ieri").
     recent_z_scores = []
-    for r in hist_rows[-5:]:
-        if r.get("hrv_rmssd") is not None and len(hrv_history) >= 7:
-            recent_z_scores.append(hrv_z_score(r["hrv_rmssd"], hrv_history))
+    if len(hrv_history) >= 7:
+        hrv_by_date = {
+            r["date"]: r["hrv_rmssd"]
+            for r in hist_rows if r.get("hrv_rmssd") is not None
+        }
+        chain: list[float] = []
+        d = day - timedelta(days=1)
+        while len(chain) < 5 and d.isoformat() in hrv_by_date:
+            chain.append(hrv_by_date[d.isoformat()])
+            d -= timedelta(days=1)
+        for v in reversed(chain):
+            z_past = hrv_z_score(v, hrv_history)
+            if z_past is not None:
+                recent_z_scores.append(z_past)
 
     wh = WellnessHistory(
         hrv_today=today_wellness.get("hrv_rmssd"),

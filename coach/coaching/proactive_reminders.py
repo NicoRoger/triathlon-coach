@@ -382,11 +382,16 @@ def run_proactive_reminders(
     sent = 0
 
     # Housekeeping: scadi le modulazioni 'proposed' troppo vecchie (mai accettate/
-    # rifiutate). Tiene pulito get_weekly_context ed evita reminder ripetuti su
-    # proposte obsolete (BUG-011 follow-up).
+    # rifiutate) o che propongono modifiche per date già passate. Tiene pulito
+    # get_weekly_context ed evita reminder ripetuti su proposte obsolete
+    # (BUG-011 follow-up). expire_past_modulations prima girava solo come side
+    # effect di una NUOVA proposta: senza trigger critici nel frattempo, una
+    # modulazione per una data già passata restava "aperta" fino a
+    # STALE_MODULATION_DAYS (4gg) invece di sparire appena la data passa.
     if not dry_run:
         try:
-            from coach.coaching.modulation import expire_stale_modulations
+            from coach.coaching.modulation import expire_stale_modulations, expire_past_modulations
+            expire_past_modulations()
             expire_stale_modulations()
         except Exception:
             logger.exception("expire_stale_modulations failed")

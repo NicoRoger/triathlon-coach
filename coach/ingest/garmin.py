@@ -245,7 +245,10 @@ def _extract_training_readiness(payload) -> Optional[int]:
     # Preferisci il device primario
     for item in items:
         if isinstance(item, dict) and item.get("primaryActivityTracker"):
-            s = item.get("score") or item.get("readinessScore")
+            # `is not None` e non `or`: score=0 è un valore valido, non "mancante"
+            s = item.get("score")
+            if s is None:
+                s = item.get("readinessScore")
             if s is not None:
                 try:
                     return int(s)
@@ -254,7 +257,9 @@ def _extract_training_readiness(payload) -> Optional[int]:
     # Fallback: primo score trovato
     for item in items:
         if isinstance(item, dict):
-            s = item.get("score") or item.get("readinessScore")
+            s = item.get("score")
+            if s is None:
+                s = item.get("readinessScore")
             if s is not None:
                 try:
                     return int(s)
@@ -272,8 +277,11 @@ def _extract_avg_sleep_stress(sleep_payload: Optional[dict]) -> Optional[float]:
     if not sleep_payload or not isinstance(sleep_payload, dict):
         return None
     dto = sleep_payload.get("dailySleepDTO") or {}
-    # Garmin usa camelCase: avgSleepStress (non averageSleepStress)
-    stress = dto.get("avgSleepStress") or dto.get("averageSleepStress")
+    # Garmin usa camelCase: avgSleepStress (non averageSleepStress).
+    # `is not None` e non `or`: stress=0 è un valore valido, non "mancante".
+    stress = dto.get("avgSleepStress")
+    if stress is None:
+        stress = dto.get("averageSleepStress")
     if stress is not None:
         try:
             return float(stress)
@@ -309,10 +317,15 @@ def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
         time_in_bed = sleep_total + awake
         sleep_eff = round(sleep_total / time_in_bed, 4) if time_in_bed > 0 else None
 
+    # `is not None` e non `or` sui valori numerici: 0 è valido, non "mancante"
+    hrv_rmssd = sleep.get("avgOvernightHrv")
+    if hrv_rmssd is None:
+        hrv_rmssd = (hrv.get("hrvSummary") or {}).get("lastNightAvg")
+
     return DailyWellness(
         date=day,
         # HRV
-        hrv_rmssd=sleep.get("avgOvernightHrv") or (hrv.get("hrvSummary") or {}).get("lastNightAvg"),
+        hrv_rmssd=hrv_rmssd,
         hrv_status=(hrv.get("hrvSummary") or {}).get("status") or sleep.get("hrvStatus"),
         # Sleep — nuovo fix
         sleep_score=overall_score,
@@ -339,6 +352,12 @@ def _normalize_wellness(raw: dict, day: date) -> DailyWellness:
     )
 
 
+# Contatori fallimenti dell'ultimo sync (per record_health in main()).
+# Le firme di sync_activities/sync_wellness restano invariate (usate anche
+# da scripts/reprocess_recent.py).
+_last_sync_failures = {"activities": 0, "wellness": 0}
+
+
 def sync_activities(days_back: int = 7) -> int:
     """Sync attività ultimi N giorni. Idempotente.
 
@@ -348,6 +367,7 @@ def sync_activities(days_back: int = 7) -> int:
     Returns:
         Numero attività sincronizzate (insert + update).
     """
+    _last_sync_failures["activities"] = 0
     g = _login()
     end = today_rome()
     start = end - timedelta(days=days_back)
@@ -417,12 +437,14 @@ def sync_activities(days_back: int = 7) -> int:
             ).execute()
             count += 1
         except Exception as e:  # noqa: BLE001
+            _last_sync_failures["activities"] += 1
             logger.exception("Failed to ingest activity %s: %s", raw.get("activityId"), e)
 
     return count
 
 
 def sync_wellness(days_back: int = 7) -> int:
+    _last_sync_failures["wellness"] = 0
     g = _login()
     sb = get_supabase()
     count = 0
@@ -501,6 +523,7 @@ def sync_wellness(days_back: int = 7) -> int:
             ).execute()
             count += 1
         except Exception as e:  # noqa: BLE001
+            _last_sync_failures["wellness"] += 1
             logger.exception("Failed to ingest wellness for %s: %s", day, e)
 
     return count
@@ -512,7 +535,16 @@ def main() -> None:
         n_act = sync_activities(days_back=int(os.environ.get("INGEST_DAYS_BACK", "7")))
         n_well = sync_wellness(days_back=int(os.environ.get("INGEST_DAYS_BACK", "7")))
         logger.info("Synced %d activities, %d wellness days", n_act, n_well)
-        record_health("garmin_sync", success=True, metadata={"activities": n_act, "wellness": n_well})
+        n_failures = _last_sync_failures["activities"] + _last_sync_failures["wellness"]
+        total_synced = n_act + n_well
+        # Se ci sono stati tentativi ma TUTTI falliti → NON è un sync sano.
+        success = not (n_failures > 0 and total_synced == 0)
+        record_health(
+            "garmin_sync",
+            success=success,
+            error=None if success else f"tutti gli item falliti ({n_failures} failures)",
+            metadata={"activities": n_act, "wellness": n_well, "failures": n_failures},
+        )
     except Exception as e:  # noqa: BLE001
         logger.exception("Garmin sync failed")
         record_health("garmin_sync", success=False, error=str(e))

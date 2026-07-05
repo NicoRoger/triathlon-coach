@@ -12,7 +12,7 @@ Riferimenti metodologici:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Iterable, Optional
 
 # Costanti standard PMC
@@ -174,30 +174,44 @@ def estimate_tss_from_hr(
 # ============================================================================
 # Helper per aggregazione da activities
 # ============================================================================
-def aggregate_daily_tss(activities: list[dict]) -> list[DailyTSS]:
+def aggregate_daily_tss(
+    activities: list[dict],
+    lthr_by_sport: Optional[dict[str, int]] = None,
+) -> list[DailyTSS]:
     """Da lista di activity dict (con `started_at` e `tss`) → DailyTSS sommati per giorno.
 
-    Fallback chain se `tss` è null:
-    1. `training_load` Garmin (scala simile al TSS)
-    2. hrTSS stimato da `duration_s` + `avg_hr` con LTHR da env ATHLETE_LTHR (default 160)
+    Fallback se `tss` è null: hrTSS stimato da `duration_s` + `avg_hr`.
+    LTHR usato per l'hrTSS, in ordine di priorità:
+    1. `lthr_by_sport[sport]` (LTHR attivo misurato, da physiology_zones)
+    2. env ATHLETE_LTHR
+    3. default 160
+
+    Nota: la colonna `training_load` NON esiste in `activities` — nessun
+    fallback su di essa (era un dead path, rimosso).
+
+    Il bucketing giornaliero usa la data di calendario Europe/Rome
+    (started_at è UTC: un'attività serale può cadere nel giorno UTC sbagliato).
     """
     import os
     from collections import defaultdict
+
+    from coach.utils.dt import to_rome_date
 
     bucket: dict[date, float] = defaultdict(float)
     for a in activities:
         tss = a.get("tss")
 
         if tss is None:
-            tss = a.get("training_load")  # fallback 1: Garmin proprietary load
-
-        if tss is None:
             dur = a.get("duration_s")
             avg_hr = a.get("avg_hr")
             if dur and avg_hr:
-                lthr = int(os.environ.get("ATHLETE_LTHR", "160"))
+                lthr = None
+                if lthr_by_sport:
+                    lthr = lthr_by_sport.get(a.get("sport"))
+                if lthr is None:
+                    lthr = int(os.environ.get("ATHLETE_LTHR", "160"))
                 try:
-                    tss = estimate_tss_from_hr(int(dur), int(avg_hr), lthr)
+                    tss = estimate_tss_from_hr(int(dur), int(avg_hr), int(lthr))
                 except (ValueError, ZeroDivisionError):
                     pass
 
@@ -205,11 +219,11 @@ def aggregate_daily_tss(activities: list[dict]) -> list[DailyTSS]:
             continue
 
         raw_dt = a["started_at"]
-        if hasattr(raw_dt, "date"):
-            d = raw_dt.date()
-        elif isinstance(raw_dt, str):
-            d = date.fromisoformat(raw_dt[:10])
-        else:
+        if isinstance(raw_dt, date) and not isinstance(raw_dt, datetime):
             d = raw_dt
+        else:
+            d = to_rome_date(raw_dt)
+        if d is None:
+            continue
         bucket[d] += float(tss)
     return [DailyTSS(day=d, tss=v) for d, v in sorted(bucket.items())]

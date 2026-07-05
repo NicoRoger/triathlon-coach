@@ -46,6 +46,12 @@ class SubjectiveKind(str, Enum):
     ILLNESS = "illness"
     INJURY = "injury"
     FREE_NOTE = "free_note"
+    # Kind aggiunti in DB (migrations 2026-05-13-subjective-log-kinds.sql,
+    # 2026-06-01-resilience-audit.sql K3)
+    PROACTIVE_RESPONSE = "proactive_response"
+    BRIEF_RESPONSE = "brief_response"
+    VIDEO_ANALYSIS = "video_analysis"
+    PATTERN_CORRECTION = "pattern_correction"
 
 
 class ReadinessLabel(str, Enum):
@@ -141,6 +147,11 @@ class SubjectiveLog(BaseDBModel):
     injury_details: Optional[str] = None
     injury_location: Optional[str] = None
 
+    # Fase 1.5 — severity (migration 2026-05-14-subjective-log-severity.sql)
+    severity: Optional[str] = None  # mild | moderate | severe
+    expected_duration_days: Optional[int] = Field(None, gt=0)
+    body_location: Optional[str] = None
+
     raw_text: Optional[str] = None
     parsed_data: Optional[dict[str, Any]] = None
 
@@ -202,6 +213,10 @@ class Mesocycle(BaseDBModel):
     end_date: date
     target_race_id: Optional[UUID] = None
     weekly_pattern: Optional[dict[str, Any]] = None
+    # Migration 2026-05-14-season-year.sql
+    season_year: Optional[int] = None
+    # Migration 2026-06-07-workout-prescription-quality.sql (D-27)
+    progression_plan: Optional[dict[str, Any]] = None
     notes: Optional[str] = None
 
 
@@ -215,8 +230,12 @@ class PlannedSession(BaseDBModel):
     target_zones: Optional[dict[str, float]] = None
     description: Optional[str] = None
     structured: Optional[dict[str, Any]] = None
+    # planned | completed | skipped | modified | cancelled
+    # ('cancelled' aggiunto da 2026-06-01-planned-sessions-cancelled-status.sql)
     status: str = "planned"
     completed_activity_id: Optional[UUID] = None
+    # Migration 2026-05-06-add-calendar-event-id.sql — lookup Google Calendar
+    calendar_event_id: Optional[str] = None
 
 
 class Race(BaseDBModel):
@@ -226,6 +245,8 @@ class Race(BaseDBModel):
     distance: Optional[str] = None
     location: Optional[str] = None
     priority: Optional[str] = None
+    # Migration 2026-05-14-season-year.sql
+    season_year: Optional[int] = None
     target_time_s: Optional[int] = None
     target_position: Optional[str] = None
     actual_time_s: Optional[int] = None

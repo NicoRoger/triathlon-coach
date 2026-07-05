@@ -20,10 +20,14 @@ on:
         type: choice
         options: ["false", "true"]
 
-# Previene duplicate se sia il trigger da ingest che il fallback schedule partono
+# Previene duplicate se sia il trigger da ingest che il fallback schedule partono.
+# cancel-in-progress DEVE restare false: cancellare un run in corso tra l'invio
+# Telegram e l'insert in bot_messages lascia il brief non registrato → il run
+# successivo non lo vede e lo duplica. Il run in coda aspetta e viene poi
+# bloccato dall'idempotency once-per-day.
 concurrency:
   group: morning-briefing
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   brief:

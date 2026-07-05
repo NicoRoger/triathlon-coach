@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ def expire_past_modulations() -> int:
     Ritorna il numero di modulazioni scadute.
     """
     sb = get_supabase()
-    today = date.today().isoformat()
+    # B2: data business Europe/Rome, non UTC (dopo le 22:00 Rome estive il
+    # giorno UTC è ancora "ieri" e le modulazioni scadrebbero in ritardo/anticipo).
+    today = today_rome().isoformat()
 
     res = sb.table("plan_modulations").select("id,proposed_changes").eq("status", "proposed").execute()
     rows = res.data or []
@@ -428,7 +431,10 @@ def generate_modulation_proposal(
             system=system,
             messages=[{"role": "user", "content": context}],
             prefer_model="haiku",
-            max_tokens=600,
+            # 600 tagliava a metà il JSON di una proposta 3-giorni: il risultato
+            # troncato falliva il parse e finiva mostrato come testo grezzo
+            # all'atleta (fallback [{"description": text}] rimosso sotto).
+            max_tokens=1200,
         )
 
         # Parse risposta come JSON se possibile
@@ -437,9 +443,22 @@ def generate_modulation_proposal(
         # Rimuove eventuali backticks markdown (es. ```json ... ```)
         text_clean = re.sub(r'^```(?:json)?\n?(.*?)\n?```$', r'\1', text.strip(), flags=re.DOTALL)
         try:
-            return json.loads(text_clean)
+            parsed = json.loads(text_clean)
         except json.JSONDecodeError:
-            return [{"description": text_clean}]
+            logger.warning("Modulation proposal: JSON non parsabile, scarto (era: %r)", text_clean[:200])
+            return []
+
+        # Ogni change deve avere almeno date+sport (_apply_single_change li
+        # richiede per applicare). Senza validazione, un output malformato
+        # diventava una proposta con testo grezzo/troncato mostrata all'atleta
+        # come se fosse una modifica reale, e il dedup (basato su date+sport)
+        # non la intercettava mai.
+        if not isinstance(parsed, list) or not all(
+            isinstance(c, dict) and c.get("date") and c.get("sport") for c in parsed
+        ):
+            logger.warning("Modulation proposal: struttura invalida (manca date/sport), scarto: %r", parsed)
+            return []
+        return parsed
 
     except BudgetExceededError:
         logger.warning("Budget exceeded, skipping modulation proposal")

@@ -235,10 +235,12 @@ def compute_injury_risk() -> RiskScore:
     factors: list[str] = []
     raw: dict = {}
 
-    # Volume jump: this week vs last week (minuti totali)
+    # Volume jump: rolling 7gg (oggi-6 → oggi) vs 7gg precedenti (minuti totali).
+    # Confrontare la settimana di calendario PARZIALE con la scorsa completa
+    # non dava mai segnale prima di ven/sab.
     today = today_rome()
-    this_week_start = today - timedelta(days=today.weekday())
-    last_week_start = this_week_start - timedelta(days=7)
+    this_window_start = today - timedelta(days=6)
+    prev_window_start = today - timedelta(days=13)
     # Bug fix audit B4: usa to_rome_date invece di slicing `started_at[:10]`.
     # Lo slicing rompe (TypeError) se started_at è un datetime e usa la data UTC
     # invece di quella Rome per il bucketing settimanale.
@@ -247,22 +249,22 @@ def compute_injury_risk() -> RiskScore:
 
     this_week_min = sum(
         (a.get("duration_s") or 0) / 60 for a in activities
-        if (_d := _adate(a)) is not None and _d >= this_week_start
+        if (_d := _adate(a)) is not None and _d >= this_window_start
     )
     last_week_min = sum(
         (a.get("duration_s") or 0) / 60 for a in activities
-        if (_d := _adate(a)) is not None and last_week_start <= _d < this_week_start
+        if (_d := _adate(a)) is not None and prev_window_start <= _d < this_window_start
     )
     raw["volume_this_week_min"] = round(this_week_min, 0)
     raw["volume_last_week_min"] = round(last_week_min, 0)
 
     volume_score = 0.0
-    if last_week_min > 60:  # solo se settimana precedente significativa
+    if last_week_min > 60:  # solo se finestra precedente significativa
         jump_pct = (this_week_min - last_week_min) / last_week_min * 100
         raw["volume_jump_pct"] = round(jump_pct, 1)
         if jump_pct > 25:
             volume_score = 1.0
-            factors.append(f"Volume jump +{jump_pct:.0f}% vs settimana precedente")
+            factors.append(f"Volume jump +{jump_pct:.0f}% vs 7gg precedenti")
         elif jump_pct > 10:
             volume_score = (jump_pct - 10) / 15
             factors.append(f"Volume jump +{jump_pct:.0f}% (sopra regola Gabbett 10%)")
@@ -430,15 +432,11 @@ def risks_to_brief_lines(risks: dict[str, RiskScore], threshold: str = "high") -
 # ============================================================================
 
 def _is_recent(entry: dict, days: int) -> bool:
-    """Checkk se logged_at è negli ultimi N giorni."""
-    ts = entry.get("logged_at")
-    if not ts:
+    """Check se logged_at (UTC) è negli ultimi N giorni di calendario Rome."""
+    d = to_rome_date(entry.get("logged_at"))
+    if d is None:
         return False
-    try:
-        d = date.fromisoformat(ts[:10])
-        return d >= (today_rome() - timedelta(days=days))
-    except Exception:
-        return False
+    return d >= (today_rome() - timedelta(days=days))
 
 
 def main() -> None:

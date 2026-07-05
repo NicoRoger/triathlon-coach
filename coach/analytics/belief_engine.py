@@ -222,6 +222,12 @@ def reinforce_belief(belief_key: str, related_outcome_id: Optional[str] = None,
         logger.info("Belief %s flagged (confutata) — skip reinforce automatico", belief_key)
         return _row_to_belief(b)
 
+    # Una belief retired NON va resuscitata da un reinforce automatico:
+    # è stata ritirata per evidenza contraria accumulata / decay.
+    if b.get("status") == "retired":
+        logger.info("Belief %s retired — skip reinforce automatico", belief_key)
+        return _row_to_belief(b)
+
     conf_before = float(b["confidence"])
     n_before = int(b["evidence_n"])
     status_before = b["status"]
@@ -239,14 +245,16 @@ def reinforce_belief(belief_key: str, related_outcome_id: Optional[str] = None,
     if related_outcome_id and related_outcome_id not in supporting:
         supporting.append(related_outcome_id)
 
-    sb.table("beliefs").update({
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updates = {
         "confidence": conf_after,
         "evidence_n": n_after,
         "status": status_after,
         "supporting_outcomes": supporting,
-        "last_reinforced_at": datetime.now(timezone.utc).isoformat(),
-        "last_updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", b["id"]).execute()
+        "last_reinforced_at": now_iso,
+        "last_updated_at": now_iso,
+    }
+    sb.table("beliefs").update(updates).eq("id", b["id"]).execute()
 
     change_type = "promoted" if status_after != status_before and \
         _rank(status_after) > _rank(status_before) else "reinforced"
@@ -256,7 +264,8 @@ def reinforce_belief(belief_key: str, related_outcome_id: Optional[str] = None,
     logger.info("Belief %s reinforced: n %d→%d conf %.2f→%.2f status %s→%s",
                 belief_key, n_before, n_after, conf_before, conf_after,
                 status_before, status_after)
-    return _row_to_belief(b)
+    # Ritorna lo stato POST-update, non la row letta pre-update.
+    return _row_to_belief({**b, **updates})
 
 
 def contradict_belief(belief_key: str, related_outcome_id: Optional[str] = None,
@@ -290,14 +299,16 @@ def contradict_belief(belief_key: str, related_outcome_id: Optional[str] = None,
     if related_outcome_id and related_outcome_id not in contradicting:
         contradicting.append(related_outcome_id)
 
-    sb.table("beliefs").update({
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updates = {
         "confidence": conf_after,
         "evidence_n": n_after,
         "status": status_after,
         "contradicting_outcomes": contradicting,
-        "last_contradicted_at": datetime.now(timezone.utc).isoformat(),
-        "last_updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", b["id"]).execute()
+        "last_contradicted_at": now_iso,
+        "last_updated_at": now_iso,
+    }
+    sb.table("beliefs").update(updates).eq("id", b["id"]).execute()
 
     change_type = "demoted" if _rank(status_after) < _rank(status_before) else "contradicted"
     _log_history(sb, b["id"], change_type, conf_before, conf_after,
@@ -306,7 +317,8 @@ def contradict_belief(belief_key: str, related_outcome_id: Optional[str] = None,
     logger.info("Belief %s contradicted: n %d→%d conf %.2f→%.2f status %s→%s",
                 belief_key, n_before, n_after, conf_before, conf_after,
                 status_before, status_after)
-    return _row_to_belief(b)
+    # Ritorna lo stato POST-update, non la row letta pre-update.
+    return _row_to_belief({**b, **updates})
 
 
 def list_beliefs(min_status: str = "weak_belief",
@@ -350,9 +362,13 @@ def decay_old_beliefs(today: Optional[datetime] = None) -> int:
                                      first_observed_at=b.first_observed_at, today=today)
         if eff < 0.15 and b.evidence_n >= 5:
             new_status = "retired"
+        # last_reinforced_at va riallineato a oggi: la confidence persistita
+        # ha GIÀ il decay applicato. Senza reset, il prossimo decay riparte
+        # dal vecchio timestamp e compone il decay (~4-6x troppo veloce).
         sb.table("beliefs").update({
             "confidence": eff,
             "status": new_status,
+            "last_reinforced_at": today.isoformat(),
             "last_updated_at": today.isoformat(),
         }).eq("id", b.id).execute()
         _log_history(sb, b.id, "decayed", b.confidence, eff,

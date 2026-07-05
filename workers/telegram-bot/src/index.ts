@@ -20,6 +20,7 @@
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_ALLOWED_CHAT_ID: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_KEY: string;
   PROCESSED_UPDATES: KVNamespace;
@@ -109,6 +110,16 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method !== "POST") return new Response("OK", { status: 200 });
 
+    // Webhook auth: l'allowlist chat_id non è un segreto (compare in log e
+    // screenshot) — chi conosce URL+chat_id può forgiare callback (es.
+    // accept_mod_<uuid>) e far applicare modulazioni senza consenso reale.
+    // Enforced solo se il secret è configurato (wrangler secret put
+    // TELEGRAM_WEBHOOK_SECRET + setWebhook con secret_token).
+    if (env.TELEGRAM_WEBHOOK_SECRET &&
+        req.headers.get("x-telegram-bot-api-secret-token") !== env.TELEGRAM_WEBHOOK_SECRET) {
+      return new Response("unauthorized", { status: 401 });
+    }
+
     // Bug fix audit K4: body non-JSON/vuoto non deve generare un 500 → Telegram
     // ritenterebbe lo stesso update all'infinito (retry storm). Rispondiamo 200.
     let update: TelegramUpdate;
@@ -141,7 +152,7 @@ export default {
       try {
         await handleCallbackQuery(env, update.callback_query);
       } catch (e: any) {
-        await sendMessage(env, cbChatId, `Errore callback: ${e.message || e}`);
+        await sendMessage(env, cbChatId, `Errore callback: ${esc(e.message || e)}`);
       }
       return new Response("OK");
     }
@@ -169,7 +180,7 @@ export default {
       try {
         await handleVideoUpload(env, chatId, update.message);
       } catch (e: any) {
-        await sendMessage(env, chatId, `Errore video: ${e.message || e}`);
+        await sendMessage(env, chatId, `Errore video: ${esc(e.message || e)}`);
       }
       return new Response("OK");
     }
@@ -180,7 +191,7 @@ export default {
     try {
       await handleMessage(env, update.message);
     } catch (e: any) {
-      await sendMessage(env, chatId, `Errore: ${e.message || e}`);
+      await sendMessage(env, chatId, `Errore: ${esc(e.message || e)}`);
     }
     return new Response("OK");
   },
@@ -264,6 +275,14 @@ async function handleContextualReply(
       await sendMessage(env, chatId, "Per le proposte di modulazione usa i bottoni ✅/❌/💬 sotto il messaggio.");
       return;
 
+    case "correction_request": {
+      // L'utente riscrive il log dopo "✏️ Correggi": riparsalo da zero.
+      const parsed = parseLog(text);
+      await insertSubjective(env, { kind: parsed.kind, ...parsed.fields, raw_text: text });
+      await sendMessage(env, chatId, `✅ Correzione salvata${parsed.summary ? ` (${parsed.summary})` : ""}.`);
+      return;
+    }
+
     case "pattern_observation": {
       // L'utente corregge/conferma un pattern
       await insertSubjective(env, {
@@ -331,9 +350,11 @@ async function handleStandalone(env: Env, message: TelegramMessage): Promise<voi
   }
 
   if (t.startsWith("/rpe ")) {
-    const n = parseInt(t.split(" ")[1], 10);
+    const arg = t.split(" ")[1] ?? "";
+    // Solo interi: parseInt("7.5")=7 troncava in silenzio.
+    const n = /^\d+$/.test(arg) ? parseInt(arg, 10) : NaN;
     if (isNaN(n) || n < 1 || n > 10) {
-      return sendMessage(env, chatId, "Uso: /rpe &lt;1-10&gt;");
+      return sendMessage(env, chatId, "Uso: /rpe &lt;1-10&gt; (numero intero)");
     }
     await insertSubjective(env, { kind: "post_session", rpe: n, raw_text: t });
     return sendMessage(env, chatId, `✅ RPE ${n} registrato.`);
@@ -446,18 +467,18 @@ async function handleManualActivity(env: Env, chatId: number, t: string): Promis
   const allowedSports = ["run", "bike", "swim", "brick", "strength"];
   if (!allowedSports.includes(sport)) {
     return sendMessage(env, chatId,
-      `❌ Sport non valido: <code>${sport}</code>.\n\n` + MANUAL_ACTIVITY_HELP);
+      `❌ Sport non valido: <code>${esc(sport)}</code>.\n\n` + MANUAL_ACTIVITY_HELP);
   }
 
-  const durationMin = parseInt(parts[1], 10);
+  const durationMin = /^\d+$/.test(parts[1]) ? parseInt(parts[1], 10) : NaN;
   if (isNaN(durationMin) || durationMin < 1 || durationMin > 18 * 60) {
-    return sendMessage(env, chatId, "❌ Durata deve essere tra 1 e 1080 minuti.");
+    return sendMessage(env, chatId, "❌ Durata deve essere un intero tra 1 e 1080 minuti.");
   }
   const durationS = durationMin * 60;
 
-  const rpe = parseInt(parts[2], 10);
+  const rpe = /^\d+$/.test(parts[2]) ? parseInt(parts[2], 10) : NaN;
   if (isNaN(rpe) || rpe < 1 || rpe > 10) {
-    return sendMessage(env, chatId, "❌ RPE deve essere tra 1 e 10.");
+    return sendMessage(env, chatId, "❌ RPE deve essere un intero tra 1 e 10.");
   }
 
   let distanceM: number | null = null;
@@ -492,7 +513,7 @@ async function handleManualActivity(env: Env, chatId: number, t: string): Promis
   if (!actResp.ok) {
     const errText = await actResp.text();
     return sendMessage(env, chatId,
-      `❌ Errore inserimento attività:\n<code>${errText.slice(0, 200)}</code>`);
+      `❌ Errore inserimento attività:\n<code>${esc(errText.slice(0, 200))}</code>`);
   }
 
   // Bug fix audit K7: recupera l'id dell'attività appena inserita e collega
@@ -522,6 +543,10 @@ async function handleManualActivity(env: Env, chatId: number, t: string): Promis
 async function handleUndo(env: Env, chatId: number): Promise<void> {
   const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   const resp = await supabaseFetch(env, `/rest/v1/subjective_log?logged_at=gte.${thirtyMinAgo}&order=logged_at.desc&limit=1&select=id,kind,rpe,injury_flag,illness_flag,raw_text,logged_at`);
+  if (!resp.ok) {
+    await sendMessage(env, chatId, "⚠️ DB non raggiungibile, riprova tra poco.");
+    return;
+  }
   const rows = await resp.json() as any[];
 
   if (!rows.length) {
@@ -534,7 +559,7 @@ async function handleUndo(env: Env, chatId: number): Promise<void> {
   const flags = [log.injury_flag && "🩹 infortunio", log.illness_flag && "🤒 malattia"].filter(Boolean).join(", ");
   const preview = log.raw_text?.slice(0, 100) || log.kind;
 
-  const msg = `<b>Ultimo log (${logDate})</b>\nTipo: ${log.kind}${log.rpe ? ` · RPE ${log.rpe}` : ""}${flags ? ` · ${flags}` : ""}\nTesto: <i>${preview}</i>\n\nAnnullo?`;
+  const msg = `<b>Ultimo log (${logDate})</b>\nTipo: ${esc(log.kind)}${log.rpe ? ` · RPE ${log.rpe}` : ""}${flags ? ` · ${flags}` : ""}\nTesto: <i>${esc(preview)}</i>\n\nAnnullo?`;
   const keyboard = {
     inline_keyboard: [[
       { text: "✅ Sì, annulla", callback_data: `undo_confirm_${log.id}` },
@@ -567,6 +592,10 @@ async function handleHistory(env: Env, chatId: number, args: string): Promise<vo
   }
 
   const resp = await supabaseFetch(env, `/rest/v1/subjective_log?order=logged_at.desc&limit=10${filter}&select=id,kind,rpe,soreness,injury_flag,illness_flag,raw_text,logged_at`);
+  if (!resp.ok) {
+    await sendMessage(env, chatId, "⚠️ DB non raggiungibile, riprova tra poco.");
+    return;
+  }
   const rows = await resp.json() as any[];
 
   if (!rows.length) {
@@ -582,7 +611,7 @@ async function handleHistory(env: Env, chatId: number, args: string): Promise<vo
     const rpeStr = r.rpe ? ` RPE${r.rpe}` : "";
     const sor = r.soreness !== null && r.soreness !== undefined ? ` sor${r.soreness}` : "";
     const raw = r.raw_text?.slice(0, 60) || r.kind;
-    lines.push(`${dt} <code>${r.kind}</code>${rpeStr}${sor}${flags}\n<i>${raw}</i>`);
+    lines.push(`${dt} <code>${esc(r.kind)}</code>${rpeStr}${sor}${flags}\n<i>${esc(raw)}</i>`);
   }
 
   await sendMessage(env, chatId, lines.join("\n"));
@@ -630,7 +659,16 @@ async function createPendingAndAsk(
     parsed_data: parsedData,
     status: "pending",
   };
-  await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=minimal" });
+  const resp = await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=minimal" });
+  if (!resp.ok) {
+    // Senza riga pending i bottoni sono orfani e il log (potenzialmente un
+    // infortunio) vivrebbe solo nella riga mai scritta → perso. Fallback:
+    // salva subito come free_note così il segnale non sparisce.
+    console.error(`pending_confirmations POST failed: ${resp.status} ${await resp.text()}`);
+    await insertSubjective(env, { kind: "free_note", raw_text: parsedData.raw_text || "" });
+    await sendMessage(env, chatId,
+      "⚠️ Non sono riuscito a creare la conferma: ho salvato il messaggio come nota libera (senza flag). Riprova con /log se vuoi attivare il monitoraggio.");
+  }
 }
 
 // ============================================================================
@@ -665,7 +703,12 @@ async function askClassification(
     parsed_data: { raw_text: rawText },
     status: "pending",
   };
-  await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=minimal" });
+  const resp = await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", record, { Prefer: "return=minimal" });
+  if (!resp.ok) {
+    console.error(`pending_confirmations POST failed: ${resp.status} ${await resp.text()}`);
+    await insertSubjective(env, { kind: "free_note", raw_text: rawText });
+    await sendMessage(env, chatId, "⚠️ Conferma non disponibile: salvato come nota libera.");
+  }
 }
 
 // ============================================================================
@@ -703,7 +746,7 @@ async function handleVideoUpload(env: Env, chatId: number, message: TelegramMess
   else if (/\b(bici|bike|ciclism[oa]|pedalat[ae]|rullo)\b/.test(captionLower)) sport = "bike";
 
   // Save metadata to subjective_log
-  await insertSubjective(env, {
+  const videoLogId = await insertSubjectiveGetId(env, {
     kind: "video_analysis",
     raw_text: caption || `Video ${sport} caricato`,
     parsed_data: {
@@ -717,11 +760,13 @@ async function handleVideoUpload(env: Env, chatId: number, message: TelegramMess
 
   // Determine sport if not clear
   if (sport === "unknown") {
+    // Nel callback_data mettiamo l'id della riga subjective_log (non il fileId
+    // troncato, inutilizzabile come chiave): il click aggiorna parsed_data.sport.
     const keyboard = {
       inline_keyboard: [[
-        { text: "🏊 Nuoto", callback_data: `video_sport_swim_${fileId.slice(0, 30)}` },
-        { text: "🏃 Corsa", callback_data: `video_sport_run_${fileId.slice(0, 30)}` },
-        { text: "🚴 Bici", callback_data: `video_sport_bike_${fileId.slice(0, 30)}` },
+        { text: "🏊 Nuoto", callback_data: `video_sport_swim_${videoLogId}` },
+        { text: "🏃 Corsa", callback_data: `video_sport_run_${videoLogId}` },
+        { text: "🚴 Bici", callback_data: `video_sport_bike_${videoLogId}` },
       ]],
     };
     await sendAndLogMessage(env, chatId,
@@ -767,7 +812,7 @@ async function askRouting(
   const confMsgId = await sendMessageGetId(env, chatId, text, keyboard);
   if (!confMsgId) return;
 
-  await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", {
+  const resp = await supabaseFetch(env, "/rest/v1/pending_confirmations", "POST", {
     id: pendingId,
     chat_id: chatId,
     original_message_id: originalMsgId,
@@ -776,6 +821,9 @@ async function askRouting(
     parsed_data: { raw_text: rawText },
     status: "pending",
   }, { Prefer: "return=minimal" });
+  // La nota è già salvata dal caller (isPlanningRelevant → insertSubjective):
+  // qui basta loggare, i bottoni orfani rispondono "già processata".
+  if (!resp.ok) console.error(`pending_confirmations POST failed: ${resp.status} ${await resp.text()}`);
 }
 
 // ============================================================================
@@ -801,11 +849,24 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     else { status = "discussing"; msg = "💬 D'accordo. Apri Claude Code quando vuoi per discutere."; }
 
     // Bug fix audit K5: verifica l'esito della PATCH prima di confermare all'utente.
-    const modResp = await supabaseFetch(env, `/rest/v1/plan_modulations?id=eq.${modId}`, "PATCH",
-      { status, resolved_at: new Date().toISOString() }, { Prefer: "return=minimal" });
+    // Guard di stato: solo proposed→X e non scaduta. Il dedup cbq dura 300s, poi i
+    // bottoni del vecchio messaggio tornano vivi: senza guard un ❌ tardivo
+    // sovrascriveva un ✅ già applicato dal Python. return=representation perché
+    // PostgREST risponde 204 anche con 0 righe matchate (falso successo).
+    const nowIso = new Date().toISOString();
+    const modUrl = `/rest/v1/plan_modulations?id=eq.${encodeURIComponent(modId)}` +
+      `&status=eq.proposed&or=(expires_at.is.null,expires_at.gte.${nowIso})`;
+    const modResp = await supabaseFetch(env, modUrl, "PATCH",
+      { status, resolved_at: nowIso }, { Prefer: "return=representation" });
     if (!modResp.ok) {
       console.error(`plan_modulations PATCH failed: ${modResp.status} ${await modResp.text()}`);
       await sendMessage(env, chatId, "⚠️ Errore nel salvataggio della scelta. Riprova tra poco.");
+      return;
+    }
+    const modRows = (await modResp.json()) as any[];
+    if (modRows.length === 0) {
+      await sendMessage(env, chatId, "⚠️ Proposta non più valida: già processata o scaduta.");
+      if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
       return;
     }
     await sendMessage(env, chatId, msg);
@@ -821,8 +882,13 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
       await sendMessage(env, chatId, "Conferma già processata o scaduta.");
       return;
     }
+    // Prima risolvi (con guard status=pending), poi inserisci: se la PATCH
+    // fallisce a metà, un retry non re-inserisce il log (idempotenza).
+    if (!(await resolvePendingConfirmation(env, pendingId, "confirmed"))) {
+      await sendMessage(env, chatId, "Conferma già processata o scaduta.");
+      return;
+    }
     await insertSubjective(env, pending.parsed_data);
-    await resolvePendingConfirmation(env, pendingId, "confirmed");
     await sendMessage(env, chatId, "✅ Salvato con flag attivo. Monitoro la situazione.");
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
@@ -832,10 +898,10 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     const pendingId = data.replace("reject_action_", "");
     const pending = await getPendingConfirmation(env, pendingId);
     if (!pending || pending.status !== "pending") return;
+    if (!(await resolvePendingConfirmation(env, pendingId, "rejected"))) return;
     // Salva senza flag come free_note
     const safeData = { kind: "free_note", raw_text: pending.parsed_data.raw_text };
     await insertSubjective(env, safeData);
-    await resolvePendingConfirmation(env, pendingId, "rejected");
     await sendMessage(env, chatId, "📝 Salvato come nota libera (nessun flag attivato).");
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
@@ -844,7 +910,12 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
   if (data.startsWith("correct_action_")) {
     const pendingId = data.replace("correct_action_", "");
     await resolvePendingConfirmation(env, pendingId, "corrected");
-    await sendMessage(env, chatId, "✏️ Cosa intendevi? Rispondi a questo messaggio con la correzione.");
+    // sendAndLogMessage (non sendMessage): la richiesta deve stare in
+    // bot_messages, altrimenti lo swipe-reply dell'utente non viene riconosciuto
+    // e la correzione cade nel parser standalone perdendo il contesto.
+    await sendAndLogMessage(env, chatId,
+      "✏️ Cosa intendevi? Rispondi a questo messaggio con la correzione.",
+      "correction_request");
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
   }
@@ -880,8 +951,8 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
       label = "RPE post-sessione";
     }
 
+    if (!(await resolvePendingConfirmation(env, pendingId, "confirmed"))) return;
     await insertSubjective(env, { kind, raw_text: rawText, ...extraFields });
-    await resolvePendingConfirmation(env, pendingId, "confirmed");
     await sendMessage(env, chatId, `✅ Salvato come <b>${label}</b>.`);
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
@@ -891,6 +962,19 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
   if (data.startsWith("video_sport_")) {
     const parts = data.split("_");
     const sport = parts[2]; // swim | run | bike
+    const logId = parts.slice(3).join("_"); // uuid della riga subjective_log
+    // Persisti lo sport scelto: prima il click era solo un messaggio di eco e
+    // la riga restava sport='unknown' (l'analisi tecnica non sapeva la disciplina).
+    if (logId && logId !== "null") {
+      const getResp = await supabaseFetch(env,
+        `/rest/v1/subjective_log?id=eq.${encodeURIComponent(logId)}&select=parsed_data&limit=1`);
+      const rows = getResp.ok ? ((await getResp.json()) as any[]) : [];
+      if (rows.length) {
+        await supabaseFetch(env, `/rest/v1/subjective_log?id=eq.${encodeURIComponent(logId)}`,
+          "PATCH", { parsed_data: { ...(rows[0].parsed_data || {}), sport } },
+          { Prefer: "return=minimal" });
+      }
+    }
     await sendMessage(env, chatId,
       `📹 Sport: ${sport}. Per l'analisi tecnica dettagliata apri Claude Code:\n` +
       `<i>'analizza ultimo video tecnica ${sport}'</i>`);
@@ -909,7 +993,7 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     // Bug fix audit K2: 'routed_*' violava il CHECK su pending_confirmations.status
     // (la PATCH falliva e la riga restava 'pending' per sempre). Usiamo 'confirmed'
     // (valore valido); il tipo di routing è già veicolato dall'azione eseguita.
-    await resolvePendingConfirmation(env, pendingId, "confirmed");
+    if (!(await resolvePendingConfirmation(env, pendingId, "confirmed"))) return;
 
     if (routeType === "weekly") {
       await sendMessage(env, chatId, "📋 Nota taggata per la prossima weekly review. Il coach la vedrà domenica.");
@@ -925,8 +1009,17 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
   // --- Undo ---
   if (data.startsWith("undo_confirm_")) {
     const logId = data.replace("undo_confirm_", "");
-    await supabaseFetch(env, `/rest/v1/subjective_log?id=eq.${logId}`, "DELETE");
-    await sendMessage(env, chatId, "✅ Log annullato.");
+    // Ri-applica la finestra 30min al click (il bottone resta cliccabile per
+    // giorni dopo la scadenza del dedup cbq) e verifica che la DELETE abbia
+    // colpito davvero 1 riga.
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const delResp = await supabaseFetch(env,
+      `/rest/v1/subjective_log?id=eq.${encodeURIComponent(logId)}&logged_at=gte.${thirtyMinAgo}`,
+      "DELETE", undefined, { Prefer: "return=representation" });
+    const deleted = delResp.ok ? ((await delResp.json()) as any[]).length : 0;
+    await sendMessage(env, chatId, deleted > 0
+      ? "✅ Log annullato."
+      : "⚠️ Log non trovato o più vecchio di 30 minuti: non annullato.");
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
   }
@@ -951,12 +1044,15 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
   }
 
   if (data === "proactive_disable_today") {
-    // Setto flag KV che dura fino a fine giornata
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 0);
-    const ttl = Math.floor((endOfDay.getTime() - Date.now()) / 1000);
-    await env.PROCESSED_UPDATES.put(`proactive_disabled:${chatId}`, "1", { expirationTtl: Math.max(ttl, 60) });
-    await sendMessage(env, chatId, "🚫 Domande proattive disabilitate per oggi.");
+    // Il flag deve vivere in bot_messages, NON nella KV del Worker: le domande
+    // proattive partono da GitHub Actions (proactive_questions.py) che legge
+    // solo il DB — un flag KV era un no-op silenzioso.
+    const flagResp = await supabaseFetch(env, "/rest/v1/bot_messages", "POST",
+      { telegram_message_id: messageId ?? 0, chat_id: chatId, purpose: "proactive_disabled_today" },
+      { Prefer: "return=minimal" });
+    await sendMessage(env, chatId, flagResp.ok
+      ? "🚫 Domande proattive disabilitate per oggi."
+      : "⚠️ Errore nel salvataggio: le domande potrebbero comunque arrivare.");
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
   }
@@ -1035,8 +1131,12 @@ function parseLog(body: string): { kind: string; fields: any; summary: string } 
     return { kind: "illness", fields, summary: summary.join(", ") };
   }
 
-  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/i;
-  if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
+  // Rimuovi le frasi di negazione PRIMA del match: "no dolori muscolari, ma
+  // dolore alla spalla" deve comunque flaggare (la negazione globale sopprimeva
+  // infortuni reali in coda alla frase — zona spalla dx a constraint medico).
+  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/gi;
+  const lowerNoNeg = lower.replace(noPainRegex, "");
+  if (/\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lowerNoNeg)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
     const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|fascite|plantar[ei]|tibi[ae])\b/i);
@@ -1098,8 +1198,12 @@ function parseDebrief(body: string): { fields: any; summary: string } {
     summary.push(`malattia (${fields.severity})`);
   }
 
-  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/i;
-  if (!noPainRegex.test(lower) && /\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lower)) {
+  // Rimuovi le frasi di negazione PRIMA del match: "no dolori muscolari, ma
+  // dolore alla spalla" deve comunque flaggare (la negazione globale sopprimeva
+  // infortuni reali in coda alla frase — zona spalla dx a constraint medico).
+  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/gi;
+  const lowerNoNeg = lower.replace(noPainRegex, "");
+  if (/\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lowerNoNeg)) {
     fields.injury_flag = true;
     fields.injury_details = body.slice(0, 200);
     const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io]|fascite|plantar[ei]|tibi[ae])\b/i);
@@ -1157,6 +1261,12 @@ function parseDebrief(body: string): { fields: any; summary: string } {
 // Supabase helpers
 // ============================================================================
 
+/** Escape per parse_mode HTML: testo utente/DB con <, >, & rompe sendMessage
+ *  (400 "can't parse entities") e il messaggio non arriva mai. */
+function esc(s: any): string {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 async function supabaseFetch(
   env: Env,
   path: string,
@@ -1179,6 +1289,10 @@ async function supabaseFetch(
 
 async function getBotMessage(env: Env, telegramMessageId: number): Promise<BotMessage | null> {
   const resp = await supabaseFetch(env, `/rest/v1/bot_messages?telegram_message_id=eq.${telegramMessageId}&limit=1`);
+  if (!resp.ok) {
+    console.error(`getBotMessage failed: ${resp.status} ${await resp.text()}`);
+    return null;
+  }
   const rows = await resp.json() as BotMessage[];
   if (!rows.length) return null;
   const msg = rows[0];
@@ -1205,21 +1319,39 @@ async function insertSubjective(env: Env, payload: any): Promise<void> {
   if (!resp.ok) throw new Error(`Supabase insert failed: ${resp.status} ${await resp.text()}`);
 }
 
+/** Come insertSubjective ma ritorna l'id della riga (serve ai callback che
+ *  devono aggiornarla dopo, es. selezione sport video). */
+async function insertSubjectiveGetId(env: Env, payload: any): Promise<string | null> {
+  const body = { logged_at: new Date().toISOString(), ...payload };
+  const resp = await supabaseFetch(env, "/rest/v1/subjective_log", "POST", body, { Prefer: "return=representation" });
+  if (!resp.ok) throw new Error(`Supabase insert failed: ${resp.status} ${await resp.text()}`);
+  const rows = (await resp.json()) as any[];
+  return rows?.[0]?.id ?? null;
+}
+
 async function getPendingConfirmation(env: Env, id: string): Promise<PendingConfirmation | null> {
-  const resp = await supabaseFetch(env, `/rest/v1/pending_confirmations?id=eq.${id}&limit=1`);
+  const resp = await supabaseFetch(env, `/rest/v1/pending_confirmations?id=eq.${encodeURIComponent(id)}&limit=1`);
+  if (!resp.ok) {
+    console.error(`getPendingConfirmation failed: ${resp.status} ${await resp.text()}`);
+    return null;
+  }
   const rows = await resp.json() as PendingConfirmation[];
   return rows[0] ?? null;
 }
 
-async function resolvePendingConfirmation(env: Env, id: string, status: string): Promise<void> {
-  // Bug fix audit K5: controlla resp.ok — una PATCH fallita (constraint, RLS,
-  // rete) lasciava la riga 'pending' mentre l'UI mostrava successo.
-  const resp = await supabaseFetch(env, `/rest/v1/pending_confirmations?id=eq.${id}`, "PATCH",
-    { status, resolved_at: new Date().toISOString() }, { Prefer: "return=minimal" });
+/** Risolve una pending SOLO se è ancora 'pending' (guard atomico lato DB).
+ *  Ritorna false se già processata: il dedup cbq dura 300s, dopo i bottoni
+ *  vecchi tornano vivi e senza guard un secondo click re-inseriva il log. */
+async function resolvePendingConfirmation(env: Env, id: string, status: string): Promise<boolean> {
+  const resp = await supabaseFetch(env,
+    `/rest/v1/pending_confirmations?id=eq.${encodeURIComponent(id)}&status=eq.pending`, "PATCH",
+    { status, resolved_at: new Date().toISOString() }, { Prefer: "return=representation" });
   if (!resp.ok) {
     console.error(`resolvePendingConfirmation PATCH failed: ${resp.status} ${await resp.text()}`);
     throw new Error(`pending_confirmations PATCH failed: ${resp.status}`);
   }
+  const rows = (await resp.json()) as any[];
+  return rows.length > 0;
 }
 
 // ============================================================================
@@ -1262,7 +1394,22 @@ async function sendMessage(env: Env, chatId: number, text: string, replyMarkup?:
       }),
     });
     if (!resp.ok) {
-      console.error(`sendMessage failed: ${resp.status} ${await resp.text()}`);
+      const errText = await resp.text();
+      console.error(`sendMessage failed: ${resp.status} ${errText}`);
+      // Safety net: se l'HTML è malformato (entity non chiuse, chunk spezzato a
+      // metà tag) reinvia in plain text invece di perdere il messaggio.
+      if (errText.includes("can't parse entities")) {
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: chunks[i],
+            disable_web_page_preview: true,
+            ...(replyMarkup && isLast ? { reply_markup: replyMarkup } : {}),
+          }),
+        });
+      }
     }
   }
 }
@@ -1318,6 +1465,7 @@ async function editMessageReplyMarkup(env: Env, chatId: number, messageId: numbe
 
 async function getStatus(env: Env): Promise<string> {
   const resp = await supabaseFetch(env, `/rest/v1/health?select=component,last_success_at,failure_count`);
+  if (!resp.ok) return "⚠️ DB non raggiungibile, riprova tra poco.";
   const rows = (await resp.json()) as any[];
   const lines = ["<b>📡 Status</b>"];
   for (const r of rows) {

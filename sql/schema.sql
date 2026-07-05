@@ -200,6 +200,13 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
     -- Garmin training readiness Step 5.1
     garmin_training_readiness SMALLINT,
 
+    -- Garmin training load (PMC proprietario Garmin) — vedi migration
+    -- 2026-07-02-daily-metrics-garmin-load.sql
+    garmin_acute_load NUMERIC,
+    garmin_chronic_load NUMERIC,
+    garmin_load_balance NUMERIC,
+    garmin_training_status TEXT,
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

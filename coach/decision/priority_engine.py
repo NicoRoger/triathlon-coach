@@ -196,6 +196,44 @@ def resolve_decision(ctx: DecisionContext,
             },
         )
 
+    # 2b. Recovery warning (CLAUDE.md §5.2, non-hard): fatigue_warning
+    # (HRV z<-1 per 2 giorni consecutivi) → sostituisci sessione intensa con Z2
+    if "fatigue_warning" in (ctx.recovery_flags or []):
+        return DecisionOutcome(
+            decision="Sostituisci sessione intensa con Z2 60-75min",
+            winning_priority=Priority.RECOVERY,
+            winning_priority_name=PRIORITY_NAMES[Priority.RECOVERY],
+            overridden_priorities=_below(Priority.RECOVERY),
+            reason=(
+                f"fatigue_warning attivo (HRV z<-1.0 per 2+ giorni consecutivi): "
+                f"HRV_z={ctx.hrv_z_score}, readiness={ctx.readiness_score}. "
+                "Regola CLAUDE.md §5.2."
+            ),
+            tradeoffs={
+                "performance_gain_sacrificed": "1 sessione qualità posticipata",
+                "recovery_debt_reduction": "moderate",
+                "injury_probability_reduction": "moderate",
+            },
+        )
+
+    # 2c. trend_negative + TSB < -20 (CLAUDE.md §5.2) → anticipa scarico
+    if "trend_negative" in (ctx.recovery_flags or []) and ctx.tsb is not None and ctx.tsb < -20:
+        return DecisionOutcome(
+            decision="Anticipa scarico 2-3 giorni",
+            winning_priority=Priority.RECOVERY,
+            winning_priority_name=PRIORITY_NAMES[Priority.RECOVERY],
+            overridden_priorities=_below(Priority.RECOVERY),
+            reason=(
+                f"trend_negative (HRV rolling 7d >5% sotto baseline 28d) con "
+                f"TSB={ctx.tsb} < -20: fatica cumulativa. Regola CLAUDE.md §5.2."
+            ),
+            tradeoffs={
+                "performance_gain_sacrificed": "2-3 giorni di carico pianificato",
+                "recovery_debt_reduction": "high",
+                "injury_probability_reduction": "moderate",
+            },
+        )
+
     # 3. Injury/illness escalation
     if ctx.active_injury_severity in ("severe",) or ctx.active_illness_severity in ("severe",):
         return DecisionOutcome(
@@ -243,6 +281,25 @@ def resolve_decision(ctx: DecisionContext,
                 "performance_gain_sacrificed": "0 (tapering è performance-positive)",
                 "fatigue_reduction": "high",
                 "race_readiness": "max",
+            },
+        )
+
+    # 4b. Race B a T-3 o meno: scarico breve, NIENTE taper completo — una gara
+    # di preparazione non deve distruggere la settimana di carico.
+    if ctx.days_to_next_race_b is not None and 0 <= ctx.days_to_next_race_b <= 3:
+        d = ctx.days_to_next_race_b
+        return DecisionOutcome(
+            decision=f"Scarico breve pre-gara B (T-{d}) — niente taper completo",
+            winning_priority=Priority.RACE_PROXIMITY,
+            winning_priority_name=PRIORITY_NAMES[Priority.RACE_PROXIMITY],
+            overridden_priorities=_below(Priority.RACE_PROXIMITY),
+            reason=(
+                f"Race B in {d}gg: riduzione volume solo negli ultimi 2-3 giorni, "
+                "settimana di carico preservata (gara di preparazione)."
+            ),
+            tradeoffs={
+                "performance_gain_sacrificed": "minima (2-3gg volume ridotto)",
+                "race_b_execution": "buona senza compromettere il blocco",
             },
         )
 

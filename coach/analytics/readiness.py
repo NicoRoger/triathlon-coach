@@ -20,7 +20,7 @@ from typing import Optional
 HRV_WARNING_Z = -1.0
 HRV_CRITICAL_Z = -2.0
 HRV_WARNING_CONSECUTIVE_DAYS = 2
-TSB_DEEP_NEGATIVE = -25.0
+TSB_DEEP_NEGATIVE = -20.0  # CLAUDE.md §5.2: trend_negative + TSB < -20 → anticipa scarico
 SLEEP_LOW_SCORE = 60
 
 
@@ -106,12 +106,14 @@ def compute_flags(
             if z <= HRV_CRITICAL_Z:
                 flags.append("fatigue_critical")
             elif z <= HRV_WARNING_Z:
-                # Consecutive check
-                consecutive = sum(
-                    1 for past_z in wellness.hrv_recent_z_scores[-HRV_WARNING_CONSECUTIVE_DAYS:]
-                    if past_z is not None and past_z <= HRV_WARNING_Z
+                # §5.1: warning solo per 2 giorni CONSECUTIVI sotto soglia.
+                # hrv_recent_z_scores è allineato al calendario (l'elemento [-1]
+                # è IERI, garantito dal chiamante): oggi <-1.0 E ieri <-1.0.
+                yesterday_z = (
+                    wellness.hrv_recent_z_scores[-1]
+                    if wellness.hrv_recent_z_scores else None
                 )
-                if consecutive >= HRV_WARNING_CONSECUTIVE_DAYS - 1:  # -1 perché oggi non è in history
+                if yesterday_z is not None and yesterday_z <= HRV_WARNING_Z:
                     flags.append("fatigue_warning")
 
         # Trend negativo: media 7d sotto baseline 28d > 5%
@@ -295,15 +297,50 @@ def _build_rationale(
 # Fatigue type classification (ADAPT-01)
 # ============================================================================
 
+def _split_hr(s: dict) -> Optional[float]:
+    """HR medio di uno split: snake_case, poi lapDTO Garmin camelCase."""
+    for key in ("avg_hr", "hr", "averageHR"):
+        v = s.get(key)
+        if v is not None:
+            return v
+    return None
+
+
+def _split_pace_or_power(s: dict, key: str) -> Optional[float]:
+    """Valore pace/potenza di uno split con fallback lapDTO Garmin camelCase.
+
+    - avg_power_w   → averagePower
+    - avg_pace_s_per_km   → derivato da averageSpeed (m/s): 1000/v
+    - avg_pace_s_per_100m → derivato da averageSpeed (m/s): 100/v
+    """
+    v = s.get(key)
+    if v is not None:
+        return v
+    if key == "avg_power_w":
+        return s.get("averagePower")
+    speed = s.get("averageSpeed")
+    if speed:
+        try:
+            speed = float(speed)
+        except (TypeError, ValueError):
+            return None
+        if speed > 0:
+            if key == "avg_pace_s_per_km":
+                return 1000.0 / speed
+            if key == "avg_pace_s_per_100m":
+                return 100.0 / speed
+    return None
+
+
 def _compute_hr_drift(activity: dict, splits: list) -> Optional[float]:
     """Calcola HR drift seconda metà vs prima metà della sessione.
 
-    Estrae avg_hr per split (con fallback a 'hr' key), scarta None.
-    Richiede almeno 4 valori validi.
+    Estrae avg_hr per split (fallback 'hr', poi 'averageHR' lapDTO Garmin),
+    scarta None. Richiede almeno 4 valori validi.
     Ritorna differenza fmean(seconda_metà) - fmean(prima_metà).
     Positivo = HR sale nella seconda parte (segnale cardiovascolare).
     """
-    hrs = [s.get("avg_hr") or s.get("hr") for s in splits]
+    hrs = [_split_hr(s) for s in splits]
     hrs = [h for h in hrs if h is not None]
     if len(hrs) < 4:
         return None
@@ -341,7 +378,7 @@ def _compute_pace_drop(sport: str, splits: list) -> Optional[float]:
         key = "avg_pace_s_per_km"
         higher_is_worse = True
 
-    values = [s.get(key) for s in splits]
+    values = [_split_pace_or_power(s, key) for s in splits]
     values = [v for v in values if v is not None]
     if len(values) < 2:
         return None

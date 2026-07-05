@@ -141,6 +141,7 @@ class FitnessTestProcessor:
                     "get_session_review_context e salverà le zone con "
                     "commit_physiology_zones."
                 ),
+                dedup_key=f"fittest_fail_{activity_id}",
             )
             return {"status": "needs_coach_review", "test_type": test_type,
                     "activity_id": str(activity_id)}
@@ -157,6 +158,7 @@ class FitnessTestProcessor:
                 test_type, result, {}, success=False,
                 error_msg=f"Risultato estratto ({result}) fuori range plausibile {bounds}. "
                           f"Probabile errore di rilevamento split. Verifica manualmente su Claude.ai.",
+                dedup_key=f"fittest_fail_{activity_id}",
             )
             return {"status": "implausible_result", "test_type": test_type, "result": result}
 
@@ -168,7 +170,7 @@ class FitnessTestProcessor:
         _d = to_rome_date(activity.get("started_at"))
         activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
 
-        self._upsert_physiology_zones(
+        applied = self._upsert_physiology_zones(
             sport=sport,
             result=result,
             zones=zones,
@@ -177,6 +179,19 @@ class FitnessTestProcessor:
             source_activity_id=str(activity_id),
             zone_system=zone_system,
         )
+
+        # C3: se il write è stato saltato (lock manuale), NON aggiornare CLAUDE.md
+        # e NON annunciare "zone aggiornate" con valori mai scritti.
+        if not applied:
+            self._notify_telegram(
+                test_type, result, {}, success=False,
+                error_msg=(
+                    "⚠️ Test rilevato ma NON applicato: zona manuale attiva (lock). "
+                    "Usa commit manuale per forzare."
+                ),
+                dedup_key=f"fittest_lock_{activity_id}",
+            )
+            return {"status": "skipped_manual_lock", "test_type": test_type, "result": result}
 
         claude_md_field = structured.get("claude_md_field")
         claude_md_ok = False
@@ -254,6 +269,10 @@ class FitnessTestProcessor:
         if not splits or not isinstance(splits, list) or len(splits) < 2:
             return None
 
+        # C6: il protocollo prevede 400m warmup + 200m progressivo PRIMA dei
+        # segmenti all-out → il PRIMO split nel range di distanza è il warmup,
+        # non il test. Tra i candidati di ogni range si prende il PIÙ VELOCE
+        # (tempo minimo), che è per definizione il segmento all-out.
         t400 = None
         t200 = None
         for s in splits:
@@ -261,9 +280,11 @@ class FitnessTestProcessor:
             time_s = s.get("duration_s") or s.get("movingDuration") or s.get("elapsedDuration") or 0
             dist = float(dist)
             time_s = float(time_s)
-            if 350 <= dist <= 450 and t400 is None:
+            if time_s <= 0:
+                continue
+            if 350 <= dist <= 450 and (t400 is None or time_s < t400):
                 t400 = time_s
-            elif 180 <= dist <= 250 and t200 is None:
+            elif 180 <= dist <= 250 and (t200 is None or time_s < t200):
                 t200 = time_s
 
         # Bug fix audit E3: guard t400 > t200. Se gli split sono mal rilevati
@@ -367,35 +388,56 @@ class FitnessTestProcessor:
     def _upsert_physiology_zones(
         self, sport: str, result: float, zones: dict,
         test_type: str, test_date: str, source_activity_id: str,
-        zone_system: str,
-    ) -> None:
+        zone_system: str, method: Optional[str] = None,
+    ) -> bool:
+        """Scrive la zona su DB. Ritorna True se scritta, False se saltata
+        (lock manuale attivo o test_type sconosciuto) — il chiamante NON deve
+        aggiornare CLAUDE.md né annunciare "zone aggiornate" se ritorna False (C3).
+        """
         field_map = FIELD_MAP
         db_field, discipline = field_map.get(test_type, (None, sport))
         if not db_field:
-            return
+            return False
+
+        method = method or test_type
 
         # Lock correzione manuale: se esiste una zona attiva con method 'manual*'
         # (es. correzione caldo della soglia), NON sovrascriverla con un ricalcolo
         # automatico. L'atleta l'ha messa a mano e deve restare finché non la cambia.
+        # Un commit deliberato con method 'manual_*' bypassa il lock (è esso stesso
+        # manuale, e diventa il nuovo lock).
+        if not method.startswith("manual"):
+            try:
+                locked = self.sb.table("physiology_zones").select("method").eq(
+                    "discipline", discipline
+                ).is_("valid_to", "null").like("method", "manual%").limit(1).execute()
+                if locked.data:
+                    logger.warning(
+                        "Zona %s bloccata manualmente (%s) — skip ricalcolo automatico %s",
+                        discipline, locked.data[0]["method"], test_type,
+                    )
+                    return False
+            except Exception:
+                logger.warning("Check lock zona manuale fallito, procedo", exc_info=True)
+
+        # M3: chiudi la riga attiva precedente della stessa disciplina (valid_to
+        # = valid_from nuovo), altrimenti restano N righe aperte e
+        # proactive_reminders._check_test_due manda reminder "test da rifare" falsi.
         try:
-            locked = self.sb.table("physiology_zones").select("method").eq(
-                "discipline", discipline
-            ).is_("valid_to", "null").like("method", "manual%").limit(1).execute()
-            if locked.data:
-                logger.warning(
-                    "Zona %s bloccata manualmente (%s) — skip ricalcolo automatico %s",
-                    discipline, locked.data[0]["method"], test_type,
-                )
-                return
+            self.sb.table("physiology_zones").update(
+                {"valid_to": test_date}
+            ).eq("discipline", discipline).is_("valid_to", "null").lt(
+                "valid_from", test_date
+            ).execute()
         except Exception:
-            logger.warning("Check lock zona manuale fallito, procedo", exc_info=True)
+            logger.warning("Chiusura valid_to riga precedente fallita, procedo", exc_info=True)
 
         record = {
             "discipline": discipline,
             "valid_from": test_date,
             db_field: result,
             "test_activity_id": source_activity_id,
-            "method": test_type,
+            "method": method,
             "notes": json.dumps({"zones": zones, "zone_system": zone_system}),
         }
 
@@ -406,6 +448,7 @@ class FitnessTestProcessor:
             record, on_conflict="discipline,valid_from,method"
         ).execute()
         logger.info("Physiology zones upserted: %s %s=%s", discipline, db_field, result)
+        return True
 
     def _update_claude_md(self, field: str, value: float, test_type: str, test_date: str) -> bool:
         try:
@@ -459,6 +502,11 @@ class FitnessTestProcessor:
         zones = self._compute_zones(zone_system, float(result))
         sport = _test_type_to_sport(test_type)
 
+        # C3: il commit manuale è deliberato → method 'manual_<test_type>' bypassa
+        # il lock anti-sovrascrittura (essendo esso stesso manual) e diventa il
+        # nuovo lock. Senza questo, un lock manuale precedente bloccava anche il
+        # commit manuale, rendendo impossibile aggiornare la soglia.
+        method = test_type if test_type.startswith("manual") else f"manual_{test_type}"
         self._upsert_physiology_zones(
             sport=sport,
             result=float(result),
@@ -467,6 +515,7 @@ class FitnessTestProcessor:
             test_date=test_date,
             source_activity_id=str(activity_id) if activity_id else "manual",
             zone_system=zone_system,
+            method=method,
         )
 
         claude_md_field = CLAUDE_MD_FIELD.get(test_type)
@@ -486,7 +535,27 @@ class FitnessTestProcessor:
             "claude_md_updated": claude_md_ok,
         }
 
-    def _notify_telegram(self, test_type: str, result: float, zones: dict, success: bool, error_msg: str = "") -> None:
+    def _claim_notification(self, dedup_key: str) -> bool:
+        """M4: claim-before-send su sent_reminders (unique trigger_type+sent_date).
+
+        Ritorna True se il claim riesce (si può inviare), False se già inviato
+        (conflitto unique) — evita fino a ~16 reinvii con ingest ogni 3h.
+        """
+        try:
+            self.sb.table("sent_reminders").insert({
+                "trigger_type": dedup_key,
+                "sent_date": today_rome().isoformat(),
+                "context": {"source": "fitness_test_processor"},
+            }).execute()
+            return True
+        except Exception:
+            logger.info("Notifica fitness test già inviata oggi (%s), skip", dedup_key)
+            return False
+
+    def _notify_telegram(self, test_type: str, result: float, zones: dict, success: bool,
+                         error_msg: str = "", dedup_key: Optional[str] = None) -> None:
+        if dedup_key and not self._claim_notification(dedup_key):
+            return
         try:
             from coach.utils.telegram_logger import send_and_log_message
         except ImportError:
@@ -658,11 +727,14 @@ def check_recent() -> list[dict]:
         activity_date = _d.isoformat() if _d else str(activity.get("started_at", ""))[:10]
         sport = activity.get("sport")
 
+        # C5: escludi le planned già processate (status='completed'), altrimenti
+        # QUALSIASI attività stesso sport nello stesso giorno (es. footing serale)
+        # rimatcherebbe il test e sovrascriverebbe la soglia estratta al mattino.
         planned = sb.table("planned_sessions").select("*").eq(
             "planned_date", activity_date
         ).eq("sport", sport).eq(
             "session_type", "fitness_test"
-        ).limit(1).execute().data
+        ).neq("status", "completed").limit(1).execute().data
 
         if planned:
             logger.info("Matched planned fitness test: %s %s", sport, activity_date)
@@ -671,6 +743,16 @@ def check_recent() -> list[dict]:
             try:
                 result = processor.process_fitness_test(activity, planned[0])
                 results.append(result)
+                # C5: marca la planned session dopo il primo processing riuscito,
+                # così le attività successive del giorno non la rimatchano.
+                if result.get("status") == "processed" and planned[0].get("id"):
+                    try:
+                        sb.table("planned_sessions").update({
+                            "status": "completed",
+                            "completed_activity_id": activity.get("id"),
+                        }).eq("id", planned[0]["id"]).execute()
+                    except Exception:
+                        logger.warning("Impossibile marcare planned test come completed", exc_info=True)
             except Exception as e:  # noqa: BLE001
                 logger.exception("Errore processing fitness test per %s", activity.get("external_id"))
                 results.append({"status": "error", "activity": activity.get("external_id"), "error": str(e)})
@@ -680,6 +762,11 @@ def check_recent() -> list[dict]:
         keywords = ["ftp", "css", "threshold", "soglia", "test", "ramp"]
         if any(kw in name for kw in keywords):
             logger.info("Keyword match (no planned_session): %s — flagging for manual review", name)
+            # M4: dedup claim-before-send (l'ingest gira ogni 3h → senza claim
+            # la stessa attività genererebbe reinvii a raffica).
+            if not processor._claim_notification(f"fittest_keyword_{activity.get('external_id')}"):
+                results.append({"status": "keyword_match_manual_review", "activity": activity.get("external_id")})
+                continue
             try:
                 from coach.utils.telegram_logger import send_and_log_message
                 send_and_log_message(
