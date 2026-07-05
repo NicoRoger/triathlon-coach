@@ -343,10 +343,19 @@ def _apply_single_change(sb, change: dict) -> bool:
         "status": "planned",
     }
 
-    sb.table("planned_sessions").upsert(
-        # Audit O7: chiave unique allargata a (planned_date, sport, session_type)
-        payload, on_conflict="planned_date,sport,session_type"
-    ).execute()
+    # C4: una modulazione che CAMBIA session_type (es. threshold→recovery, il
+    # caso d'uso primario di §5.2) non deve fare upsert sulla chiave unique
+    # (planned_date,sport,session_type): quella chiave è (date,sport,"threshold"),
+    # il nuovo payload ha session_type="recovery" → nessun conflitto trovato →
+    # INSERT di una riga nuova, lasciando la sessione intensa originale intatta
+    # (doppio carico invece di sostituzione). Se esiste già una riga per
+    # (planned_date,sport) la aggiorniamo per id, a prescindere dal session_type.
+    if base.get("id"):
+        sb.table("planned_sessions").update(payload).eq("id", base["id"]).execute()
+    else:
+        sb.table("planned_sessions").upsert(
+            payload, on_conflict="planned_date,sport,session_type"
+        ).execute()
     return True
 
 

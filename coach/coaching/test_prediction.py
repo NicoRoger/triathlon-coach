@@ -106,7 +106,12 @@ def _get_bias_correction(sb, prediction_type: str) -> Optional[float]:
         if res.data and res.data[0].get("n", 0) >= 4:
             mean_pct = res.data[0].get("mean_delta_pct")
             if mean_pct is not None:
-                return -float(mean_pct) / 100  # se actual è sopra predicted, futura predizione *(1 + bias/100)
+                # delta_pct = (actual-predicted)/predicted*100 (outcome_verification.py).
+                # mean_pct>0 → il sistema SOTTOSTIMA (actual storicamente sopra predicted)
+                # → la correzione deve ALZARE la predizione: pred *= (1 + mean_pct/100).
+                # Il segno invertito (-mean_pct) amplificava l'errore invece di
+                # correggerlo, facendo divergere il loop di calibrazione ad ogni ciclo.
+                return float(mean_pct) / 100
     except Exception:
         pass
     return None
