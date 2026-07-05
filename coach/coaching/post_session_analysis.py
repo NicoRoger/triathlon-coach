@@ -368,7 +368,17 @@ def analyze_session(activity_id: str) -> Optional[dict]:
         "model_used": result.get("model"),
         "cost_usd": result.get("cost_usd"),
     }
-    sb.table("session_analyses").insert(record).execute()
+    # M5: race rara tra job concorrenti (es. backfill manuale + ingest) sullo
+    # stesso activity_id — il check "already existing" sopra non è atomico
+    # col insert. Con lo UNIQUE su activity_id, il secondo insert fallisce
+    # invece di duplicare l'analisi: lo trattiamo come skip, non errore.
+    try:
+        sb.table("session_analyses").insert(record).execute()
+    except Exception as e:
+        if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
+            logger.info("Activity %s analizzata concorrentemente, skip", activity_id)
+            return None
+        raise
 
     # Manda Telegram
     _send_analysis_telegram(activity, analysis_text)
@@ -425,10 +435,17 @@ def analyze_recent(days: int = 2) -> int:
     count = 0
     for act in activities.data:
         ext_id = act.get("external_id")
-        if ext_id:
+        if not ext_id:
+            continue
+        try:
             result = analyze_session(ext_id)
-            if result:
-                count += 1
+        except Exception:
+            # Un'attività malformata non deve abortire il batch: le restanti
+            # vanno comunque analizzate (stesso pattern E5 usato altrove).
+            logger.exception("analyze_session fallita per %s, continuo con le altre", ext_id)
+            continue
+        if result:
+            count += 1
 
     return count
 

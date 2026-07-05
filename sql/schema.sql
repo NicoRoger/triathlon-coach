@@ -288,7 +288,11 @@ CREATE INDEX IF NOT EXISTS idx_api_usage_purpose   ON api_usage(purpose);
 
 CREATE TABLE IF NOT EXISTS session_analyses (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    activity_id     TEXT NOT NULL,
+    -- UNIQUE (non solo indice): analyze_session() fa check-then-insert non
+    -- transazionale — senza il vincolo, due job concorrenti (backfill manuale
+    -- + ingest) possono duplicare l'analisi della stessa attività. Vedi
+    -- migration 2026-07-05-session-analyses-unique-activity.sql
+    activity_id     TEXT NOT NULL UNIQUE,
     analysis_text   TEXT NOT NULL,
     suggested_actions JSONB,
     model_used      TEXT,

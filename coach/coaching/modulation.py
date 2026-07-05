@@ -62,16 +62,26 @@ def should_trigger_modulation(analysis_text: str, metrics: Optional[dict]) -> bo
     """Determina se l'analisi sessione richiede una modulazione mid-week."""
     triggers = []
 
-    # Pattern critici nel testo
+    # Pattern critici nel testo. M2: un match grezzo su substring triggera
+    # anche quando il testo NEGA il pattern ("nessun dolore segnalato"),
+    # sprecando una chiamata Anthropic a pagamento (budget hard €5/mese) e
+    # generando proposte di modulazione non necessarie. Scarta il match se
+    # preceduto entro pochi caratteri da una negazione.
     critical_keywords = [
         "hrv crash", "hrv crollata", "sovraccarico", "overreaching",
         "dolore", "infortunio", "malattia", "febbre",
         "sotto le aspettative", "problematica",
     ]
+    negations = ("nessun", "nessuna", "senza", "no ", "non ", "niente")
     text_lower = analysis_text.lower()
     for kw in critical_keywords:
-        if kw in text_lower:
-            triggers.append(kw)
+        idx = text_lower.find(kw)
+        if idx == -1:
+            continue
+        preceding = text_lower[max(0, idx - 20):idx]
+        if any(neg in preceding for neg in negations):
+            continue
+        triggers.append(kw)
 
     # Pattern critici nelle metriche
     if metrics:
