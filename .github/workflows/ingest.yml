@@ -140,3 +140,23 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Trigger energy update (ingest tardo 05-13 UTC)
+        if: success()
+        continue-on-error: true
+        # Stesso meccanismo del trigger brief, spostato ~2h dopo: Body Battery
+        # e readiness Garmin ("energia al risveglio") devono arrivare DOPO il
+        # risveglio naturale, non alle 5 — altrimenti la notifica del brief
+        # interrompe il sonno e falsa proprio i dati che il messaggio riporta.
+        # Floor gate (Rome>=7) + idempotency once-per-day in briefing.py
+        # garantiscono un solo invio, al primo ingest dopo le 07:00 Rome.
+        run: |
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" -ge "5" ] && [ "$HOUR" -le "13" ]; then
+            echo "Late morning ingest: triggering energy update"
+            gh workflow run energy-update.yml --ref "$GITHUB_REF_NAME"
+          else
+            echo "Not late-morning run (hour=$HOUR), skipping energy trigger"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

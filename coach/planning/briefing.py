@@ -118,12 +118,15 @@ def _build_freshness_warning(age_hours: Optional[float]) -> str:
 
 
 def _build_wellness_section(wellness: dict, metrics: dict) -> str:
+    """Sonno/HRV nel brief delle 5:00. Body Battery e readiness Garmin NON
+    stanno qui: alle 5 il sonno è ancora in corso, la notifica stessa lo
+    interrompe e Body Battery/readiness escono artificialmente bassi. Vanno
+    in _build_energy_section, mandata più tardi (vedi build_energy_update)."""
     lines = []
     sleep_str = _interpret_sleep(wellness.get("sleep_score"))
     hrv_str = _interpret_hrv(metrics.get("hrv_z_score"))
-    bb_str = _interpret_body_battery(wellness.get("body_battery_max"))
 
-    if not any([sleep_str, hrv_str, bb_str]):
+    if not any([sleep_str, hrv_str]):
         return ""
 
     lines.append("<b>📊 Come stai oggi</b>")
@@ -131,6 +134,16 @@ def _build_wellness_section(wellness: dict, metrics: dict) -> str:
         lines.append(f"Sonno stanotte: {sleep_str}")
     if hrv_str:
         lines.append(f"HRV: {hrv_str}")
+
+    return "\n".join(lines)
+
+
+def _build_energy_section(wellness: dict, metrics: dict) -> str:
+    """Body Battery + readiness Garmin — separati dal brief delle 5:00 perché
+    la notifica di quell'ora interrompe il sonno e falsa entrambi i valori
+    (letti bassi non per stanchezza reale ma per il risveglio forzato)."""
+    lines = []
+    bb_str = _interpret_body_battery(wellness.get("body_battery_max"))
     if bb_str:
         lines.append(f"Energia al risveglio: {bb_str}")
 
@@ -148,7 +161,9 @@ def _build_wellness_section(wellness: dict, metrics: dict) -> str:
                 f"⚠️ <i>Readiness: noi {our_r} vs Garmin {garmin_r} (Δ{diff}) — {note}.</i>"
             )
 
-    return "\n".join(lines)
+    if not lines:
+        return ""
+    return "<b>🔋 Energia</b>\n" + "\n".join(lines)
 
 
 def _build_load_section(metrics: dict) -> str:
@@ -840,13 +855,11 @@ def send_to_telegram(message: str, purpose: str = "morning_brief", parent_workfl
         raise RuntimeError("send_to_telegram failed (see logs)")
 
 
-def _brief_already_sent_today(sb) -> bool:
-    """Idempotenza: True se un morning_brief è già stato inviato OGGI (giorno Rome).
-
-    Una-volta-per-giorno (non finestra mobile): robusto a trigger multipli e
-    ritardati (ingest mattutino + cron schedule di GitHub che arriva a mezzogiorno).
-    Una finestra di 6h lasciava passare un secondo brief pomeridiano.
-    """
+def _already_sent_today(sb, purpose: str) -> bool:
+    """Idempotenza: True se un messaggio con questo purpose è già stato
+    inviato OGGI (giorno Rome). Una-volta-al-giorno, non finestra mobile:
+    robusto a trigger multipli/ritardati (ingest ogni 3h + eventuale fallback
+    cron nativo che arriva in ritardo)."""
     rome = ZoneInfo("Europe/Rome")
     midnight_rome = datetime.now(rome).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff = midnight_rome.astimezone(timezone.utc).isoformat()
@@ -854,7 +867,7 @@ def _brief_already_sent_today(sb) -> bool:
         res = (
             sb.table("bot_messages")
             .select("id,sent_at")
-            .eq("purpose", "morning_brief")
+            .eq("purpose", purpose)
             .gte("sent_at", cutoff)
             .limit(1)
             .execute()
@@ -863,6 +876,25 @@ def _brief_already_sent_today(sb) -> bool:
     except Exception:
         logger.warning("Idempotency check failed; proceeding with send", exc_info=True)
         return False
+
+
+def _brief_already_sent_today(sb) -> bool:
+    return _already_sent_today(sb, "morning_brief")
+
+
+def build_energy_update() -> str:
+    """Body Battery + readiness Garmin per il messaggio energia separato,
+    mandato più tardi del brief delle 5:00 (vedi _build_energy_section)."""
+    sb = get_supabase()
+    today_iso = datetime.now(ZoneInfo("Europe/Rome")).date().isoformat()
+
+    metrics_res = sb.table("daily_metrics").select("*").eq("date", today_iso).execute()
+    metrics = metrics_res.data[0] if metrics_res.data else {}
+
+    wellness_res = sb.table("daily_wellness").select("*").eq("date", today_iso).execute()
+    wellness = wellness_res.data[0] if wellness_res.data else {}
+
+    return _build_energy_section(wellness, metrics)
 
 
 def main() -> None:
@@ -896,5 +928,45 @@ def main() -> None:
         raise
 
 
+def main_energy() -> None:
+    """Messaggio energia separato (Body Battery + readiness Garmin), mandato
+    dopo il risveglio naturale — non alle 5:00 come il brief principale,
+    altrimenti il sonno interrotto dalla notifica falsa proprio i dati che
+    deve riportare."""
+    import os
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    force_send = os.environ.get("FORCE_SEND", "").lower() in ("true", "1", "yes")
+
+    # Floor gate: target ~07:30 Rome. I cron coprono estate/inverno; finestra
+    # larga (ingest ogni 3h) cattura il primo run dopo le 07:00 Rome.
+    if not force_send and datetime.now(ZoneInfo("Europe/Rome")).hour < 7:
+        logger.info("Energy gate: prima delle 07 Rome, troppo presto — skip")
+        return
+
+    sb = get_supabase()
+    if not force_send and _already_sent_today(sb, "energy_update"):
+        logger.info("Energy update already sent today (Rome) — skipping duplicate run")
+        return
+
+    try:
+        msg = build_energy_update()
+        if not msg:
+            logger.info("Nessun dato energia disponibile oggi — skip invio")
+            record_health("energy_update", success=True)
+            return
+        send_to_telegram(msg, purpose="energy_update", parent_workflow="energy-update.yml")
+        record_health("energy_update", success=True)
+        logger.info("Energy update sent")
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Energy update failed")
+        record_health("energy_update", success=False, error=str(e))
+        raise
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--energy" in sys.argv:
+        main_energy()
+    else:
+        main()
