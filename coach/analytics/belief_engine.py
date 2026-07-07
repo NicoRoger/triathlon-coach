@@ -162,8 +162,20 @@ def create_belief(
     source: Optional[str] = None,
     half_life_days: int = DEFAULT_HALF_LIFE_DAYS,
     metadata: Optional[dict] = None,
+    evidence_n: int = 1,
 ) -> str:
-    """Crea o ritorna ID di belief esistente con stesso key."""
+    """Crea o ritorna ID di belief esistente con stesso key.
+
+    evidence_n: numero di osservazioni REALI a supporto (default 1 per una
+    belief genuinamente nuova/singola). I chiamanti che estraggono pattern da
+    N sessioni/settimane devono passare quell'N qui — prima era hardcoded a 1
+    a prescindere da quante osservazioni il chiamante avesse realmente,
+    facendo scattare il guardrail "n<3 e confidence>0.5" (belief_guardrails.py)
+    su QUALSIASI belief con confidence decente, anche quando l'evidenza reale
+    era n=6: extract_beliefs_from_observations.py aveva l'N vero disponibile
+    (dal markdown "n=6 sessioni") ma lo scartava in metadata invece di usarlo
+    per l'admissibility check.
+    """
     # Import qui per evitare circular
     from coach.analytics.belief_guardrails import check_belief_admissible
 
@@ -175,15 +187,15 @@ def create_belief(
 
     admissible, flag_reason = check_belief_admissible(
         belief_text=belief_text, initial_confidence=initial_confidence,
-        evidence_n=1, prescription=prescription,
+        evidence_n=evidence_n, prescription=prescription,
     )
 
-    status = _compute_status(1, initial_confidence)
+    status = _compute_status(evidence_n, initial_confidence)
     row = {
         "belief_key": belief_key,
         "belief_text": belief_text,
         "confidence": initial_confidence,
-        "evidence_n": 1,
+        "evidence_n": evidence_n,
         "status": status,
         "category": category,
         "prescription": prescription,
@@ -198,10 +210,10 @@ def create_belief(
     row = {k: v for k, v in row.items() if v is not None}
     res = sb.table("beliefs").insert(row).execute()
     bid = res.data[0]["id"]
-    _log_history(sb, bid, "created", None, initial_confidence, None, 1,
+    _log_history(sb, bid, "created", None, initial_confidence, None, evidence_n,
                  None, status, reason=source)
-    logger.info("Belief created: %s (status=%s, conf=%s, admissible=%s)",
-                belief_key, status, initial_confidence, admissible)
+    logger.info("Belief created: %s (status=%s, conf=%s, n=%s, admissible=%s)",
+                belief_key, status, initial_confidence, evidence_n, admissible)
     return bid
 
 
@@ -377,6 +389,46 @@ def decay_old_beliefs(today: Optional[datetime] = None) -> int:
         n_updated += 1
     logger.info("Decay cron: %d beliefs updated", n_updated)
     return n_updated
+
+
+def reconcile_flagged_beliefs() -> int:
+    """Ricontrolla le belief flagged con l'evidence_n/confidence CORRENTI.
+
+    create_belief hardcodava evidence_n=1 per l'admissibility check a
+    prescindere da quante osservazioni il chiamante avesse davvero (bug fix:
+    ora accetta evidence_n) — di conseguenza molte belief con evidenza reale
+    solida (n=3, n=6...) erano state flagged alla creazione e, dato che
+    reinforce_belief salta le belief flagged, restavano bloccate per sempre.
+
+    Rivaluta ogni belief flagged non-retired con check_belief_admissible
+    usando i valori ATTUALI (che riflettono l'evidenza vera accumulata nel
+    tempo) e la sblocca se ora risulta admissible. Sicuro da rieseguire ad
+    ogni cron settimanale: per le belief create dopo il fix è un no-op.
+
+    Returns: numero di belief sbloccate.
+    """
+    from coach.analytics.belief_guardrails import check_belief_admissible
+
+    sb = get_supabase()
+    res = sb.table("beliefs").select("*").eq("flagged", True).neq("status", "retired").execute()
+    n_unflagged = 0
+    for b in res.data or []:
+        admissible, _ = check_belief_admissible(
+            belief_text=b["belief_text"],
+            initial_confidence=float(b["confidence"]),
+            evidence_n=int(b["evidence_n"]),
+            prescription=b.get("prescription"),
+        )
+        if admissible:
+            sb.table("beliefs").update(
+                {"flagged": False, "flag_reason": None}
+            ).eq("id", b["id"]).execute()
+            _log_history(sb, b["id"], "unflagged", b["confidence"], b["confidence"],
+                         b["evidence_n"], b["evidence_n"], b["status"], b["status"],
+                         reason="reconcile: evidence_n reale ora sopra soglia")
+            n_unflagged += 1
+    logger.info("Reconcile flagged beliefs: %d sbloccate", n_unflagged)
+    return n_unflagged
 
 
 # ============================================================================

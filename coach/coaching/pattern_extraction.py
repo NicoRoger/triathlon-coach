@@ -274,6 +274,7 @@ def update_beliefs_from_session_patterns(days: int = 14) -> dict:
                         initial_confidence=0.4,
                         source="pattern_extraction_job",
                         metadata={"n": n, "session_type": session_type, "period_days": days},
+                        evidence_n=n,
                     )
                     counters["created"] += 1
                 else:
@@ -298,6 +299,7 @@ def update_beliefs_from_session_patterns(days: int = 14) -> dict:
                         initial_confidence=0.4,
                         source="pattern_extraction_job",
                         metadata={"n": n, "session_type": session_type, "period_days": days},
+                        evidence_n=n,
                     )
                     counters["created"] += 1
                 else:

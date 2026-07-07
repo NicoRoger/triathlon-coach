@@ -156,6 +156,15 @@ def sync_beliefs_from_observations(content: Optional[str] = None) -> dict:
     Returns:
         dict counts {created, reinforced, contradicted, skipped}
     """
+    # Self-heal: sblocca le belief flagged per il bug ora fixato in create_belief
+    # (evidence_n hardcodato a 1 all'admissibility check). No-op per le belief
+    # create dopo il fix — sicuro da rieseguire ad ogni sync settimanale.
+    try:
+        from coach.analytics.belief_engine import reconcile_flagged_beliefs
+        reconcile_flagged_beliefs()
+    except Exception:
+        logger.warning("reconcile_flagged_beliefs fallita, procedo comunque", exc_info=True)
+
     if content is None:
         if not OBSERVATIONS_FILE.exists():
             logger.warning("Observations file not found: %s", OBSERVATIONS_FILE)
@@ -180,6 +189,13 @@ def sync_beliefs_from_observations(content: Optional[str] = None) -> dict:
             counts["reinforced"] += 1
         else:
             try:
+                # evidence_n=c["evidence_n_observed"]: prima create_belief hardcodava
+                # sempre evidence_n=1 per l'admissibility check, a prescindere da
+                # quante sessioni l'osservazione nel markdown riportasse davvero
+                # (es. "n=6 sessioni, confidence 0.85"). Il guardrail "n<3 e
+                # confidence>0.5" scattava quindi su QUALSIASI belief con confidence
+                # decente, anche quando l'evidenza reale era ben sopra 3 — root
+                # cause del fatto che tutte le active_beliefs risultassero flagged.
                 create_belief(
                     belief_key=key,
                     belief_text=c["belief_text"],
@@ -192,6 +208,7 @@ def sync_beliefs_from_observations(content: Optional[str] = None) -> dict:
                         "section": c["section"],
                         "n_observed_in_obs": c.get("evidence_n_observed"),
                     },
+                    evidence_n=c.get("evidence_n_observed") or 1,
                 )
                 counts["created"] += 1
             except Exception:
