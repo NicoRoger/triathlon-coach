@@ -195,7 +195,7 @@ def update_beliefs_from_session_patterns(days: int = 14) -> dict:
 
     Returns dict {'updated': int, 'created': int, 'skipped': int, 'errors': int}.
     """
-    from coach.analytics.belief_engine import reinforce_belief, contradict_belief, create_belief, list_beliefs
+    from coach.analytics.belief_engine import reinforce_belief, create_belief, list_beliefs
 
     sb = get_supabase()
     since = (today_rome() - timedelta(days=days)).isoformat()
@@ -280,14 +280,18 @@ def update_beliefs_from_session_patterns(days: int = 14) -> dict:
                     counters["updated"] += 1
                     _advance_progression_for_belief(sb, belief_key, session_type)
             else:
-                # Pattern negativo: struggles_with
+                # Pattern negativo: struggles_with. L'evidenza (prevalenza
+                # cardiovascolare) SUPPORTA questa belief — va rinforzata, non
+                # contraddetta. contradict_belief la indeboliva ad ogni settimana
+                # di evidenza a favore, ritirandola dopo poche settimane invece
+                # di consolidarla.
                 belief_key = f"struggles_with_{session_type}"
                 belief_text = (
                     f"Nicolò fatica con le sessioni {session_type} "
                     f"(n={n}, prevalenza cardiovascolare {cardiovascular_count}/{n})"
                 )
-                contradicted = contradict_belief(belief_key, reason=evidence_note)
-                if contradicted is None:
+                struggles_reinforced = reinforce_belief(belief_key, reason=evidence_note)
+                if struggles_reinforced is None:
                     create_belief(
                         belief_key,
                         belief_text=belief_text,

@@ -575,7 +575,7 @@ def test_h2_pick_test_date_bounded():
 
     # dt reale serve; supabase non usato da _pick_test_date direttamente (sb passato)
     ts = _load("coach.coaching.test_scheduler", "coach/coaching/test_scheduler.py")
-    result = ts._pick_test_date(_SB(), date(2026, 6, 1))
+    result = ts._pick_test_date(_SB(), date(2026, 6, 1), "run")
     assert result is not None  # ritorna senza appendere (cap raggiunto)
 
 

@@ -12,7 +12,10 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  # C2: il fitness_test_processor aggiorna CLAUDE.md sul runner; serve write
+  # per committare l'aggiornamento (altrimenti le soglie annunciate su Telegram
+  # non finiscono mai nel repo).
+  contents: write
 
 concurrency:
   group: ingest
@@ -35,6 +38,10 @@ jobs:
       PYTHONPATH: '.'
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # C1: a livello job così TUTTI gli step (inclusa la post-session analysis,
+      # che invia analisi e proposte di modulazione) possono notificare Telegram.
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
       - uses: actions/checkout@v4
@@ -78,9 +85,23 @@ jobs:
         if: success()
         continue-on-error: true
         run: python -m coach.coaching.fitness_test_processor --check-recent
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Commit CLAUDE.md se aggiornato dal fitness test processor (C2)
+        # Il processore riscrive le soglie in CLAUDE.md sul runner: senza commit
+        # l'aggiornamento andava sempre perso a fine job.
+        if: always()
+        continue-on-error: true
+        run: |
+          if git diff --quiet CLAUDE.md; then
+            echo "CLAUDE.md invariato, niente da committare"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add CLAUDE.md
+            git commit -m "chore: auto-update zone fisiologiche da fitness test [skip ci]"
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            git push
+          fi
 
       - name: Pre-test prediction (Phase 2.6)
         # 24-48h prima del test pianificato, registra una prediction nel DB
@@ -88,9 +109,6 @@ jobs:
         if: success()
         continue-on-error: true
         run: python -m coach.coaching.test_prediction
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Apply accepted modulations (audit K1)
         # Il bot Telegram setta status='accepted' al tap; qui le applichiamo
@@ -103,9 +121,6 @@ jobs:
       - name: ETL health check
         if: always()
         run: python scripts/etl_health_check.py
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Trigger morning brief (ingest mattutino 03-09 UTC)
         if: success()

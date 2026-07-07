@@ -200,6 +200,13 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
     -- Garmin training readiness Step 5.1
     garmin_training_readiness SMALLINT,
 
+    -- Garmin training load (PMC proprietario Garmin) — vedi migration
+    -- 2026-07-02-daily-metrics-garmin-load.sql
+    garmin_acute_load NUMERIC,
+    garmin_chronic_load NUMERIC,
+    garmin_load_balance NUMERIC,
+    garmin_training_status TEXT,
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -281,7 +288,11 @@ CREATE INDEX IF NOT EXISTS idx_api_usage_purpose   ON api_usage(purpose);
 
 CREATE TABLE IF NOT EXISTS session_analyses (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    activity_id     TEXT NOT NULL,
+    -- UNIQUE (non solo indice): analyze_session() fa check-then-insert non
+    -- transazionale — senza il vincolo, due job concorrenti (backfill manuale
+    -- + ingest) possono duplicare l'analisi della stessa attività. Vedi
+    -- migration 2026-07-05-session-analyses-unique-activity.sql
+    activity_id     TEXT NOT NULL UNIQUE,
     analysis_text   TEXT NOT NULL,
     suggested_actions JSONB,
     model_used      TEXT,

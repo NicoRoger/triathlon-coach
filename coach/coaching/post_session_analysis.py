@@ -91,12 +91,33 @@ def _get_physiology_zones(sb, discipline: str) -> Optional[dict]:
 # Zona attesa per tipo di sessione pianificata (#4): l'analisi confronta col
 # session_type, non con un recovery generico.
 SESSION_TYPE_ZONE = {
-    "recovery": "Z1", "recupero": "Z1",
+    "recovery": "Z1", "recupero": "Z1", "technique": "Z1", "tecnica": "Z1",
     "easy": "Z2", "endurance": "Z2", "long": "Z2", "lungo": "Z2", "lsd": "Z2", "fondo": "Z2",
-    "tempo": "Z3",
+    "brick": "Z2",
+    "tempo": "Z3", "race_pace": "Z3",
     "threshold": "Z4", "soglia": "Z4",
     "intervals": "Z5", "vo2max": "Z5", "vo2": "Z5", "ripetute": "Z5",
 }
+
+
+def _weather_temp_c(weather: Optional[dict]) -> Optional[float]:
+    """Estrae la temperatura in °C dal payload raw di get_activity_weather.
+
+    Garmin restituisce 'temp' come intero; l'unità (F o C) non è documentata
+    e può variare per zona/versione API. Euristica robusta a entrambi i casi:
+    per un allenamento outdoor un valore >=50 non può essere Celsius, quindi
+    è Fahrenheit e va convertito.
+    """
+    if not weather or not isinstance(weather, dict):
+        return None
+    raw = weather.get("temp")
+    if raw is None:
+        return None
+    try:
+        raw = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return round((raw - 32) * 5 / 9, 1) if raw >= 50 else raw
 
 
 def _our_hr_zone(avg_hr: float, lthr: float) -> str:
@@ -120,11 +141,13 @@ def _compute_zone_compliance(planned: dict, activity: dict) -> Optional[dict]:
     hr_zones_s:   {"z1": 300, "z2": 3600, "z4": 120}  — secondi per zona
 
     Per il nuoto la compliance HR è sempre inaffidabile (senza fascia toracica).
-    Restituisce None per le sessioni di nuoto — il chiamante aggiunge invece
-    il contesto pace vs CSS.
+    Per run/bike/brick, hr_zones_s sono i bucket del DEVICE Garmin — soglie
+    diverse dalla nostra classificazione LTHR (#4) — quindi lo score qui
+    contraddirebbe intensity_context, che confronta invece sulla NOSTRA zona.
+    Restituisce sempre None; il chiamante usa swim_pace_context/intensity_context.
     """
     sport = activity.get("sport", "")
-    if sport == "swim":
+    if sport in ("swim", "run", "bike", "brick"):
         return None
 
     target = planned.get("target_zones")
@@ -263,6 +286,21 @@ def analyze_session(activity_id: str) -> Optional[dict]:
                 f"NON sui bucket Garmin (hr_zones_s, rimossi perché zone del device)."
             )
 
+    # #4: correzione caldo — un HR alto con temperatura elevata è deriva
+    # cardiaca termica, non calo di fitness. Euristica: ~1bpm ogni 2°C oltre
+    # i 25°C a parità di sforzo (approssimata, non una soglia fisiologica
+    # misurata — va usata come contesto, non come dato esatto).
+    heat_note: Optional[str] = None
+    if sport in ("run", "bike", "brick"):
+        temp_c = _weather_temp_c(activity.get("weather"))
+        if temp_c is not None and temp_c > 25:
+            expected_bump = round((temp_c - 25) / 2)
+            heat_note = (
+                f"Temperatura registrata: {temp_c}°C. Con caldo, l'HR sale ~1bpm ogni 2°C oltre i 25° "
+                f"a parità di sforzo (deriva cardiaca termica, qui ~+{expected_bump}bpm attesi). "
+                f"Scala l'HR osservato di questa quota prima di giudicare zona o calo di fitness."
+            )
+
     context_parts = [
         f"## Attività analizzata\n{json.dumps(prompt_activity, indent=2, default=str)}",
     ]
@@ -277,6 +315,8 @@ def analyze_session(activity_id: str) -> Optional[dict]:
         )
     if intensity_context:
         context_parts.append(f"## Intensità: nostra zona vs piano\n{intensity_context}")
+    if heat_note:
+        context_parts.append(f"## Correzione caldo\n{heat_note}")
     if swim_pace_context:
         context_parts.append(f"## Nuoto: Pace vs CSS\n{swim_pace_context}")
     if historical:
@@ -328,7 +368,17 @@ def analyze_session(activity_id: str) -> Optional[dict]:
         "model_used": result.get("model"),
         "cost_usd": result.get("cost_usd"),
     }
-    sb.table("session_analyses").insert(record).execute()
+    # M5: race rara tra job concorrenti (es. backfill manuale + ingest) sullo
+    # stesso activity_id — il check "already existing" sopra non è atomico
+    # col insert. Con lo UNIQUE su activity_id, il secondo insert fallisce
+    # invece di duplicare l'analisi: lo trattiamo come skip, non errore.
+    try:
+        sb.table("session_analyses").insert(record).execute()
+    except Exception as e:
+        if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
+            logger.info("Activity %s analizzata concorrentemente, skip", activity_id)
+            return None
+        raise
 
     # Manda Telegram
     _send_analysis_telegram(activity, analysis_text)
@@ -385,10 +435,17 @@ def analyze_recent(days: int = 2) -> int:
     count = 0
     for act in activities.data:
         ext_id = act.get("external_id")
-        if ext_id:
+        if not ext_id:
+            continue
+        try:
             result = analyze_session(ext_id)
-            if result:
-                count += 1
+        except Exception:
+            # Un'attività malformata non deve abortire il batch: le restanti
+            # vanno comunque analizzate (stesso pattern E5 usato altrove).
+            logger.exception("analyze_session fallita per %s, continuo con le altre", ext_id)
+            continue
+        if result:
+            count += 1
 
     return count
 

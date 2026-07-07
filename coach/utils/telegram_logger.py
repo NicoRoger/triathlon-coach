@@ -60,9 +60,11 @@ def send_and_log_message(
 
         mid = _post_chunk(url, base_payload, chunk, purpose)
         if mid is None:
-            # Invio fallito anche col fallback testo semplice: interrompo,
-            # restituisco eventuale parziale già inviato.
-            return first_msg_id
+            # Invio fallito anche col fallback testo semplice: interrompo.
+            # NON ritorno subito: l'eventuale parziale già inviato (first_msg_id)
+            # va comunque loggato, altrimenti l'idempotency non lo vede e il
+            # cron successivo duplica il messaggio.
+            break
         if i == 0:
             first_msg_id = mid
         if reply_markup and i == len(chunks) - 1:
@@ -151,7 +153,9 @@ def _split_message(text: str, limit: int) -> list[str]:
                 current = ""
             chunks.append(line[:limit])
             line = line[limit:]
-        if len(current) + len(line) + 1 > limit:
+        # guard `current`: con current vuoto e riga lunga esattamente = limit
+        # veniva appeso un chunk vuoto.
+        if current and len(current) + len(line) + 1 > limit:
             chunks.append(current)
             current = line
         else:
@@ -181,8 +185,21 @@ def _log_bot_message(
     if expires_at is not None:
         record["expires_at"] = expires_at.isoformat()
 
-    try:
-        sb = get_supabase()
-        sb.table("bot_messages").upsert(record, on_conflict="telegram_message_id").execute()
-    except Exception:
-        logger.exception("Failed to log bot_message (id=%s, purpose=%s)", telegram_message_id, purpose)
+    # 1 retry: un fallimento transitorio qui significa "brief inviato ma non
+    # registrato" → l'idempotency non lo vede e il cron successivo lo duplica.
+    for attempt in range(2):
+        try:
+            sb = get_supabase()
+            sb.table("bot_messages").upsert(record, on_conflict="telegram_message_id").execute()
+            return
+        except Exception:
+            if attempt == 0:
+                logger.warning(
+                    "Failed to log bot_message (id=%s, purpose=%s) — retrying once",
+                    telegram_message_id, purpose, exc_info=True,
+                )
+            else:
+                logger.exception(
+                    "Failed to log bot_message after retry (id=%s, purpose=%s)",
+                    telegram_message_id, purpose,
+                )

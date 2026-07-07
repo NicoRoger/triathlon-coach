@@ -373,10 +373,12 @@ def _fetch_latest_severity(kind: str) -> Optional[dict]:
     try:
         sb = get_supabase()
         since = (today_rome() - timedelta(days=14)).isoformat()
+        # Non solo kind esatto: un debrief (kind='evening_debrief' etc.) con
+        # injury_flag/illness_flag=true portava severity che veniva ignorata.
         res = (
             sb.table("subjective_log")
             .select("severity,body_location,expected_duration_days,logged_at,injury_location")
-            .eq("kind", kind)
+            .or_(f"kind.eq.{kind},{kind}_flag.eq.true")
             .gte("logged_at", since)
             .order("logged_at", desc=True)
             .limit(1)
@@ -549,14 +551,47 @@ def _get_upcoming_race(today: date) -> Optional[dict]:
         return None
 
 
+def _race_section_applicable(race: Optional[dict]) -> bool:
+    """True se la sezione race-week va mostrata per questa gara.
+
+    Protocollo race-week completo (T-7 → T-0) SOLO per gare priority A.
+    Per le gare B (di preparazione) la sezione compare solo da T-2, con
+    indicazioni leggere: un taper completo a T-7 distruggerebbe la settimana
+    di carico.
+    """
+    if not race:
+        return False
+    if race.get("priority") == "B" and race.get("days_to_race", 99) > 2:
+        return False
+    return True
+
+
+def _build_race_b_section(race: dict, days: int) -> str:
+    """Sezione leggera per gara B (T-2 → T-0): scarico breve, niente taper."""
+    weekday_it = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+    when = "OGGI" if days == 0 else f"tra {days}gg" if days > 1 else "domani"
+    lines = [
+        f"<b>🏁 {race['name']} — gara B {when}</b>",
+        f"Gara: {weekday_it[race['date'].weekday()]} {race['date'].day}/{race['date'].month}",
+        "",
+        "Gara di preparazione: scarico breve pre-gara B, niente taper.",
+        "La settimana resta di carico normale — usala come allenamento race-pace.",
+    ]
+    return "\n".join(lines)
+
+
 def _build_race_week_section(race: dict, today: date) -> str:
     """Sezione race week (T-7 a T-0).
-    
+
     Sostituisce/affianca la sezione 'Verso Lavarone' nei 7 giorni gara.
+    Protocollo completo solo per gare A; per le B sezione leggera (da T-2).
     """
     days = race["days_to_race"]
     weekday_it = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
-    
+
+    if race.get("priority") == "B":
+        return _build_race_b_section(race, days)
+
     if days == 0:
         return _build_race_day_section(race)
     
@@ -751,9 +786,12 @@ def build_brief() -> str:
     # Zone misurate da physiology_zones (una sola query, passata a _build_session_section)
     zones_by_discipline = _fetch_current_zones(sb)
 
-    # Controlla se siamo in race week (T-7 a T-0 di una gara A/B)
+    # Controlla se siamo in race week: protocollo completo T-7 → T-0 per gare A;
+    # per gare B sezione leggera solo da T-2 (niente taper per gare di preparazione)
     upcoming_race = _get_upcoming_race(today)
-    
+    if not _race_section_applicable(upcoming_race):
+        upcoming_race = None
+
     # Blocco 5.3: personalized insert from coaching_observations
     pattern_line = ""
     try:
@@ -831,8 +869,8 @@ def main() -> None:
     import os
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    # Idempotenza: skip se un brief è stato già inviato nelle ultime 6h
-    # (workflow_dispatch può forzare via FORCE_SEND=true)
+    # Idempotenza once-per-day: skip se un brief è già stato inviato OGGI
+    # (giorno Rome). workflow_dispatch può forzare via FORCE_SEND=true.
     force_send = os.environ.get("FORCE_SEND", "").lower() in ("true", "1", "yes")
 
     # Floor gate: target 05:00 Rome. I cron coprono estate/inverno (03/04 UTC);
@@ -844,7 +882,7 @@ def main() -> None:
     if not force_send:
         sb = get_supabase()
         if _brief_already_sent_today(sb):
-            logger.info("Morning brief already sent in last 6h — skipping duplicate run")
+            logger.info("Morning brief already sent today (Rome) — skipping duplicate run")
             return
 
     try:

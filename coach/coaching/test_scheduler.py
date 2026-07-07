@@ -24,23 +24,35 @@ logger = logging.getLogger(__name__)
 
 # Cadenza test per disciplina (in giorni)
 TEST_INTERVAL_DAYS = {
-    "bike": 42,    # FTP ogni 6 settimane
+    "bike": 42,    # threshold HR ogni 6 settimane
     "run": 42,     # threshold ogni 6 settimane
     "swim": 56,    # CSS ogni 8 settimane
+}
+
+# Giorni della struttura settimanale fissa (CLAUDE.md §2) per disciplina —
+# un test va piazzato in un giorno già dedicato a quello sport, non in un
+# martedì/sabato generico che potrebbe cadere su un giorno di un altro sport
+# (es. un test corsa piazzato di martedì, giorno nuoto).
+# weekday(): lunedi=0 ... domenica=6
+DISCIPLINE_WEEKDAYS = {
+    "run": {0, 4, 6},   # lunedì, venerdì, domenica
+    "swim": {1, 3},     # martedì, giovedì
+    "bike": {2, 5},     # mercoledì, sabato
 }
 
 # Mapping disciplina -> session_type + Garmin name
 TEST_TEMPLATES = {
     "bike": {
         "session_type": "fitness_test",
-        "test_name": "FTP Test 20min",
+        "test_name": "Threshold Bike HR 20min",
         "duration_s": 60 * 60,  # 60min totali (warmup + test + cooldown)
         "target_tss": 90,
         "description": (
-            "🧪 FTP Test 20min. Nome Garmin esatto: 'FTP Test 20min'.\n"
+            "🧪 Threshold Bike HR 20min. Nome Garmin esatto: 'Threshold Bike HR 20min'.\n"
             "Struttura: 15min warmup progressivo + 5×30s allunghi + 5min easy + "
-            "20min ALL-OUT sostenibile + 10min cooldown.\n"
-            "Risultato: media potenza 20min × 0.95 = FTP."
+            "20min ALL-OUT sostenibile a sforzo costante + 10min cooldown.\n"
+            "Risultato: media HR dei 20min = LTHR bici. "
+            "NOTA: atleta senza wattmetro — test a frequenza cardiaca, non a potenza."
         ),
     },
     "run": {
@@ -122,12 +134,12 @@ def _is_race_week(sb, today: date) -> bool:
     return bool(res.data)
 
 
-def _pick_test_date(sb, today: date) -> date:
-    """Sceglie il giorno del test: martedì o sabato della prossima settimana
-    libera, evitando già pianificate."""
+def _pick_test_date(sb, today: date, discipline: str) -> date:
+    """Sceglie il giorno del test: un giorno della struttura settimanale fissa
+    dedicato a `discipline` (A1), nella prossima settimana libera."""
+    weekdays = DISCIPLINE_WEEKDAYS.get(discipline, {1, 5})
     candidate = today + timedelta(days=7)
-    # Allinea a martedì (weekday 1) o sabato (weekday 5)
-    while candidate.weekday() not in (1, 5):
+    while candidate.weekday() not in weekdays:
         candidate += timedelta(days=1)
     # Verifica che il giorno scelto sia libero
     res = (
@@ -137,11 +149,11 @@ def _pick_test_date(sb, today: date) -> date:
         .execute()
     )
     # Bug fix audit H2: cap iterazioni per evitare loop infinito se ogni
-    # martedì/sabato è occupato (piano molto denso). Orizzonte 26 settimane.
+    # giorno dedicato è occupato (piano molto denso). Orizzonte 26 settimane.
     max_iter = 52
     while res.data and max_iter > 0:
         candidate += timedelta(days=1)
-        while candidate.weekday() not in (1, 5):
+        while candidate.weekday() not in weekdays:
             candidate += timedelta(days=1)
         res = (
             sb.table("planned_sessions")
@@ -159,10 +171,16 @@ def _pick_test_date(sb, today: date) -> date:
 
 
 def schedule_overdue_tests(today: Optional[date] = None) -> list[dict]:
-    """Pianifica test fisiologici scaduti. Ritorna lista di test pianificati.
+    """Propone test fisiologici scaduti. Ritorna lista di proposte create.
 
-    Side effect: inserisce planned_sessions con session_type='fitness_test'.
+    A1: NON scrive più direttamente in planned_sessions (violava la regola
+    inviolabile §5.4 — nessuna modifica al piano senza conferma esplicita
+    dell'atleta). Ogni test scaduto diventa una proposta in plan_modulations
+    coi soliti bottoni Telegram ✅/❌: solo dopo l'accettazione
+    apply_accepted_modulations() (già in ingest.yml) la scrive sul piano.
     """
+    from coach.coaching.modulation import propose_modulation
+
     sb = get_supabase()
     today = today or today_rome()
     scheduled: list[dict] = []
@@ -183,28 +201,40 @@ def schedule_overdue_tests(today: Optional[date] = None) -> list[dict]:
             logger.info("[%s] test già pianificato entro 14gg → skip", discipline)
             continue
 
-        # Pianifica
-        target_date = _pick_test_date(sb, today)
+        # Proponi (richiede conferma atleta via Telegram prima di finire sul piano)
+        target_date = _pick_test_date(sb, today, discipline)
         tpl = TEST_TEMPLATES[discipline]
-        row = {
-            "planned_date": target_date.isoformat(),
-            "sport": discipline,
-            "session_type": tpl["session_type"],
-            "duration_s": tpl["duration_s"],
-            "target_tss": tpl["target_tss"],
-            "description": tpl["description"],
-            "status": "planned",
-        }
-        try:
-            sb.table("planned_sessions").insert(row).execute()
+        mod_id = propose_modulation(
+            trigger_event="fitness_test_due",
+            trigger_data={
+                "analysis_excerpt": (
+                    f"Test {discipline} scaduto (>{interval}gg dall'ultimo). "
+                    f"Propongo {tpl['test_name']} per {target_date.isoformat()}."
+                ),
+            },
+            proposed_changes=[{
+                "date": target_date.isoformat(),
+                "sport": discipline,
+                "new": {
+                    "session_type": tpl["session_type"],
+                    "duration_s": tpl["duration_s"],
+                    "target_tss": tpl["target_tss"],
+                    "description": tpl["description"],
+                },
+            }],
+            source="test_scheduler",
+        )
+        if mod_id:
             scheduled.append({
                 "discipline": discipline,
                 "test_name": tpl["test_name"],
                 "planned_date": target_date.isoformat(),
+                "modulation_id": mod_id,
             })
-            logger.info("Scheduled fitness test [%s] for %s", discipline, target_date.isoformat())
-        except Exception:
-            logger.exception("Failed to schedule test for %s", discipline)
+            logger.info("Proposed fitness test [%s] for %s (modulation %s)",
+                        discipline, target_date.isoformat(), mod_id)
+        else:
+            logger.info("[%s] proposta test non creata (duplicata o errore)", discipline)
 
     return scheduled
 

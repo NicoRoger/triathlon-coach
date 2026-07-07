@@ -28,29 +28,29 @@ def record_health(
     try:
         sb = get_supabase()
         if success:
-            sb.table("health").upsert(
-                {
-                    "component": component,
-                    "last_success_at": now,
-                    "failure_count": 0,
-                    "last_error": None,
-                    "metadata": metadata,
-                },
-                on_conflict="component",
-            ).execute()
+            payload: dict = {
+                "component": component,
+                "last_success_at": now,
+                "failure_count": 0,
+                "last_error": None,
+            }
+            # metadata solo se fornito: includerlo sempre sovrascriveva con
+            # None il metadata esistente ad ogni upsert di successo.
+            if metadata is not None:
+                payload["metadata"] = metadata
+            sb.table("health").upsert(payload, on_conflict="component").execute()
         else:
             current = sb.table("health").select("failure_count").eq("component", component).execute()
             prev = (current.data[0]["failure_count"] if current.data else 0) or 0
-            sb.table("health").upsert(
-                {
-                    "component": component,
-                    "last_failure_at": now,
-                    "failure_count": prev + 1,
-                    "last_error": error,
-                    "metadata": metadata,
-                },
-                on_conflict="component",
-            ).execute()
+            payload = {
+                "component": component,
+                "last_failure_at": now,
+                "failure_count": prev + 1,
+                "last_error": error,
+            }
+            if metadata is not None:
+                payload["metadata"] = metadata
+            sb.table("health").upsert(payload, on_conflict="component").execute()
     except Exception:  # noqa: BLE001
         logger.warning("record_health: scrittura health fallita per %s", component, exc_info=True)
 

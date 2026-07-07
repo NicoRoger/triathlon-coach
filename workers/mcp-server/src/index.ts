@@ -14,6 +14,10 @@ interface Env {
   MCP_BEARER_TOKEN: string;
   GH_PAT_TRIGGER: string;
   GH_REPO?: string;
+  // Se impostato (wrangler secret put OAUTH_CONNECT_SECRET), /oauth/authorize
+  // chiede questo secret prima di emettere il code. Senza, il flusso OAuth
+  // consegna il bearer a CHIUNQUE conosca l'URL del worker.
+  OAUTH_CONNECT_SECRET?: string;
 }
 
 interface JsonRpcRequest {
@@ -466,7 +470,7 @@ export default {
         registration_endpoint: `${url.origin}/oauth/register`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code"],
-        code_challenge_methods_supported: [],
+        code_challenge_methods_supported: ["S256"],
       });
     }
 
@@ -489,16 +493,21 @@ export default {
       const state = url.searchParams.get("state") || "";
       const codeChallenge = url.searchParams.get("code_challenge") || "";
 
+      // Con OAUTH_CONNECT_SECRET configurato l'autorizzazione richiede il
+      // secret (l'auto-submit senza autenticazione consegnava il bearer a
+      // chiunque conoscesse l'URL). Senza secret: comportamento precedente.
+      const requireSecret = Boolean(env.OAUTH_CONNECT_SECRET);
       return htmlPage("Triathlon Coach — Autorizzazione", `
         <h1>🏊🚴🏃 Triathlon Coach AI</h1>
-        <p>Autorizzazione in corso...</p>
+        <p>${requireSecret ? "Inserisci il secret di connessione:" : "Autorizzazione in corso..."}</p>
         <form id="f" method="GET" action="/oauth/callback">
           <input type="hidden" name="redirect_uri" value="${escapeHtml(redirectUri)}">
           <input type="hidden" name="state" value="${escapeHtml(state)}">
           <input type="hidden" name="code_challenge" value="${escapeHtml(codeChallenge)}">
+          ${requireSecret ? '<input type="password" name="connect_secret" autofocus placeholder="Connect secret">' : ""}
           <button type="submit">✅ Autorizza accesso</button>
         </form>
-        <script>document.getElementById('f').submit();</script>
+        ${requireSecret ? "" : "<script>document.getElementById('f').submit();</script>"}
       `);
     }
 
@@ -506,17 +515,28 @@ export default {
     if (url.pathname === "/oauth/callback") {
       const redirectUri = url.searchParams.get("redirect_uri") || "";
       const state = url.searchParams.get("state") || "";
+      const codeChallenge = url.searchParams.get("code_challenge") || "";
 
-      // SECURITY: generate a short-lived HMAC-signed code so the token endpoint
-      // can verify it was issued by this server (no KV storage required).
+      if (env.OAUTH_CONNECT_SECRET &&
+          url.searchParams.get("connect_secret") !== env.OAUTH_CONNECT_SECRET) {
+        return htmlPage("Accesso negato", `
+          <h1>❌ Secret di connessione errato</h1>
+          <p>Torna indietro e riprova.</p>
+        `);
+      }
+
+      // SECURITY: short-lived HMAC-signed code, con il code_challenge PKCE
+      // legato alla firma: il token endpoint può così verificare il verifier
+      // (prima il challenge veniva catturato e mai controllato).
       const ts = Date.now().toString();
       const hmacKey = await crypto.subtle.importKey(
         "raw", new TextEncoder().encode(env.MCP_BEARER_TOKEN),
         { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
       );
-      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(ts));
+      const signedPayload = `${ts}.${codeChallenge}`;
+      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(signedPayload));
       const sigHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
-      const code = `${ts}.${sigHex}`;
+      const code = `${ts}.${codeChallenge}.${sigHex}`;
 
       // Se redirect_uri è vuota o invalida, mostra pagina di successo
       if (!redirectUri) {
@@ -566,30 +586,35 @@ export default {
       let body: Record<string, string> = {};
       try { body = Object.fromEntries(await req.formData()); } catch { /* empty body */ }
       const code = (body["code"] as string) || "";
-      const dotIdx = code.indexOf(".");
-      if (dotIdx < 1) {
-        return new Response(JSON.stringify({ error: "invalid_grant" }), {
-          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
-        });
-      }
-      const ts = code.slice(0, dotIdx);
-      const receivedSig = code.slice(dotIdx + 1);
+      const invalidGrant = (desc?: string) => new Response(
+        JSON.stringify({ error: "invalid_grant", ...(desc ? { error_description: desc } : {}) }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() } });
+
+      // Formato code: ts.challenge.sig (challenge può essere vuoto se il client
+      // non usa PKCE). base64url non contiene '.', quindi lo split è sicuro.
+      const parts = code.split(".");
+      if (parts.length !== 3) return invalidGrant();
+      const [ts, challenge, receivedSig] = parts;
       const tsNum = Number(ts);
       if (!Number.isFinite(tsNum) || tsNum <= 0 || Date.now() - tsNum > 5 * 60 * 1000) {
-        return new Response(JSON.stringify({ error: "invalid_grant", error_description: "code expired or invalid" }), {
-          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
-        });
+        return invalidGrant("code expired or invalid");
       }
       const hmacKey = await crypto.subtle.importKey(
         "raw", new TextEncoder().encode(env.MCP_BEARER_TOKEN),
         { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
       );
-      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(ts));
+      const sig = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(`${ts}.${challenge}`));
       const expectedSig = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
-      if (receivedSig !== expectedSig) {
-        return new Response(JSON.stringify({ error: "invalid_grant" }), {
-          status: 400, headers: { "Content-Type": "application/json", ...corsHeaders() },
-        });
+      if (receivedSig !== expectedSig) return invalidGrant();
+
+      // PKCE S256: se il client ha fornito un challenge all'authorize, il
+      // verifier deve corrispondere (prima veniva ignorato del tutto).
+      if (challenge) {
+        const verifier = (body["code_verifier"] as string) || "";
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+        const computed = btoa(String.fromCharCode(...new Uint8Array(digest)))
+          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        if (computed !== challenge) return invalidGrant("PKCE verification failed");
       }
       return jsonResponse({ access_token: env.MCP_BEARER_TOKEN, token_type: "bearer", expires_in: 3600, scope: "mcp" });
     }
@@ -790,16 +815,22 @@ function toRomeDateISO(ts: string | null | undefined): string | null {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+// Le finestre since/until filtrano planned_date/logged_at, campi in data
+// business Rome — partire da `new Date()` (UTC) e sottrarre giorni UTC può
+// sfasare di 1 giorno vicino a mezzanotte Rome (UTC+1/+2). Si parte invece
+// da todayRomeISO() e si fa aritmetica sulla data calendario pura.
 function daysAgoISO(n: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().split("T")[0];
+  const [y, m, d] = todayRomeISO().split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - n);
+  return dt.toISOString().split("T")[0];
 }
 
 function daysFromISO(n: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().split("T")[0];
+  const [y, m, d] = todayRomeISO().split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().split("T")[0];
 }
 
 function clampInt(value: number, min: number, max: number): number {
@@ -848,6 +879,17 @@ function dataFreshness(recordGroups: any[][]): Record<string, any> {
 
 const VALID_SPORTS = new Set(["swim", "bike", "run", "brick", "strength", "all"]);
 const VALID_KINDS  = new Set(["all", "post_session", "illness", "injury", "evening_debrief", "free_note"]);
+
+// Colonne daily_metrics utili al coaching. Esclude: id/created_at/updated_at
+// (bookkeeping, mai usati nel ragionamento del coach) e ctl_swim/ctl_bike/
+// ctl_run (dichiarate in schema.sql ma MAI scritte da nessun job — sempre
+// null, puro spreco di token ripetuto su ogni riga di ogni query). Usata
+// ovunque al posto di select=* per non gonfiare il contesto di Claude.ai
+// senza perdere nessun dato che il coach usa davvero.
+const DAILY_METRICS_COLS =
+  "date,ctl,atl,tsb,daily_tss,hrv_z_score,hrv_baseline_28d,hrv_baseline_28d_sd," +
+  "readiness_score,readiness_label,readiness_factors,flags,garmin_training_readiness," +
+  "garmin_acute_load,garmin_chronic_load,garmin_load_balance,garmin_training_status";
 
 function deriveProgressionStep(mesocycle: any, today: string): any {
   // "A che punto siamo": settimana N di M, derivata dalle date — funziona SEMPRE,
@@ -927,7 +969,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races, constraints, beliefs, fatigueBySport] =
     await Promise.all([
       getHealth(env),
-      sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc&select=date,ctl,atl,tsb,daily_tss,hrv_z_score,readiness_score,readiness_label,flags,garmin_training_readiness`),
+      sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc&select=${DAILY_METRICS_COLS}`),
       sb(env, `daily_wellness?date=gte.${metricsSince}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score,avg_sleep_stress`),
       sb(env, `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss`),
       sb(env, `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc&select=logged_at,kind,rpe,sleep_quality,motivation,soreness,illness_flag,injury_flag,injury_details,raw_text`),
@@ -937,10 +979,16 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       // limit=5: le proposte aperte si accumulano (se non risolte). Per la review
       // bastano le piu' recenti; il JSONB proposed_changes e' grosso.
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at&limit=5`),
-      sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
+      // created_at/updated_at esclusi: bookkeeping, mai usati dal coach.
+      sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1&select=id,name,phase,start_date,end_date,target_race_id,weekly_pattern,notes,season_year,progression_plan`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
       sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`).catch(() => []),
-      sb(env, `beliefs?status=neq.retired&flagged=eq.false&confidence=gte.0.55&order=confidence.desc&select=belief_key,belief_text,status,confidence,source,evidence_n`).catch(() => []),
+      // flagged=eq.false nascondeva le belief confutate a mano INTERAMENTE dal
+      // coach — inclusa la confutazione stessa, che è l'informazione più utile
+      // (un fatto noto che corregge una belief auto-appresa). Ora le beliefs
+      // flagged restano visibili (con flag/flag_reason) anche sotto soglia
+      // confidence, mentre quelle non flagged seguono ancora la soglia 0.55.
+      sb(env, `beliefs?status=neq.retired&or=(flagged.eq.true,confidence.gte.0.55)&order=confidence.desc&select=belief_key,belief_text,status,confidence,source,evidence_n,flagged,flag_reason`).catch(() => []),
       getLastFatigueBySport(env, since),
     ]);
 
@@ -981,7 +1029,9 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
     planned_tss_week: Math.round(plannedTssWeek),
     daily_metrics: metrics,
     daily_wellness: wellness,
-    completed_activities: activities,
+    // date_rome esplicito: started_at è UTC, senza questo campo chi legge deve
+    // ricalcolare la data Rome a mano (rischio sfasamento su sessioni serali).
+    completed_activities: (activities as any[]).map((a: any) => ({ ...a, date_rome: toRomeDateISO(a.started_at) })),
     subjective_log: subjective,
     planned_past: plannedPast,
     // Sessioni passate senza attività corrispondente (saltate o non sincronizzate).
@@ -1028,11 +1078,16 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
   const planUntil = targetDate < daysFromISO(42) ? targetDate : daysFromISO(42);
 
   const [metrics, wellness, activities, subjective, planWindow] = await Promise.all([
-    sb(env, `daily_metrics?date=gte.${since28}&order=date.asc`),
+    sb(env, `daily_metrics?date=gte.${since28}&order=date.asc&select=${DAILY_METRICS_COLS}`),
     sb(env, `daily_wellness?date=gte.${since28}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score`),
     sb(env, `activities?started_at=gte.${since28}T00:00:00Z&order=started_at.desc&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,tss`),
-    sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc`),
-    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${planUntil}&order=planned_date.asc`),
+    // Stesso select lean usato altrove per subjective_log (id/activity_id/
+    // illness_details/parsed_data esclusi: bookkeeping o ridondanti con raw_text).
+    sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc&select=logged_at,kind,rpe,sleep_quality,motivation,soreness,illness_flag,injury_flag,injury_details,raw_text`),
+    // structured/mesocycle_id/created_at/updated_at esclusi: vista fino a
+    // 42gg, non serve il breakdown zone per-sessione (già in prosa in
+    // description) — stesso ragionamento di get_upcoming_plan.
+    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${planUntil}&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,target_zones,description,status,completed_activity_id`),
   ]);
 
   return {
@@ -1053,15 +1108,23 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
 async function getSessionReviewContext(activityId: string | undefined, historyDays: number, env: Env) {
   historyDays = clampInt(historyDays, 1, 90);
 
+  // raw_payload escluso: è il blob JSON grezzo Garmin salvato SOLO per
+  // riprocessing (mai letto da nessun codice, il lato Python lo esclude già
+  // esplicitamente in _clean_for_prompt) — su questo tool, tra i più chiamati
+  // durante una review, gonfiava il contesto di Claude senza alcun valore.
+  const ACTIVITY_COLS = "id,external_id,source,sport,started_at,duration_s,distance_m," +
+    "elevation_gain_m,avg_hr,max_hr,hr_zones_s,avg_power_w,np_w,avg_pace_s_per_km," +
+    "avg_pace_s_per_100m,tss,if_value,rpe,splits,weather,notes";
+
   let activityRows: any[];
   if (activityId) {
     const encoded = encodeURIComponent(activityId);
-    activityRows = await sb(env, `activities?external_id=eq.${encoded}&limit=1`);
+    activityRows = await sb(env, `activities?external_id=eq.${encoded}&limit=1&select=${ACTIVITY_COLS}`);
     if (activityRows.length === 0 && isUuid(activityId)) {
-      activityRows = await sb(env, `activities?id=eq.${encoded}&limit=1`);
+      activityRows = await sb(env, `activities?id=eq.${encoded}&limit=1&select=${ACTIVITY_COLS}`);
     }
   } else {
-    activityRows = await sb(env, `activities?order=started_at.desc&limit=1`);
+    activityRows = await sb(env, `activities?order=started_at.desc&limit=1&select=${ACTIVITY_COLS}`);
   }
 
   const activity = activityRows?.[0] || null;
@@ -1072,19 +1135,45 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
   const activityDate = toRomeDateISO(activity.started_at) || String(activity.started_at || "").slice(0, 10);
   const sport = VALID_SPORTS.has(activity.sport) ? activity.sport : "all";
 
+  // hr_zones_s (bucket device Garmin) va sempre tolto, non solo segnalato
+  // come da ignorare: una nota può essere disattesa, un campo assente no.
+  // Per il nuoto anche avg_hr/max_hr (fascia non indossata in acqua, dato
+  // rumore) — stesso trattamento già applicato lato Python in
+  // post_session_analysis.py, ora coerente anche sul tool interattivo.
+  delete activity.hr_zones_s;
+  if (sport === "swim") {
+    delete activity.avg_hr;
+    delete activity.max_hr;
+  }
+
   const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
     sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}`),
-    sb(env, `daily_metrics?date=eq.${activityDate}&limit=1`),
+    sb(env, `daily_metrics?date=eq.${activityDate}&limit=1&select=${DAILY_METRICS_COLS}`),
     sb(env, `subjective_log?logged_at=gte.${daysAgoISO(3)}T00:00:00Z&order=logged_at.desc`),
     getActivityHistory(sport, historyDays, env),
     sb(env, `session_analyses?activity_id=eq.${encodeURIComponent(activity.external_id || activity.id)}&limit=1`),
   ]);
 
+  // Guida esplicita per il nuoto: senza fascia in acqua, avg_hr/hr_zones_s sono
+  // rumore. Diamo la stessa nota che post_session_analysis.py inietta nel
+  // prompt Gemini, così anche il coach interattivo (Claude.ai via questo tool)
+  // giudica su pace vs CSS e non sull'HR grezzo dell'activity restituito sotto.
+  let intensityNote: string | null = null;
+  if (sport === "swim") {
+    intensityNote = "NUOTO: ignora avg_hr/hr_zones_s (fascia non indossata in acqua, dato rumore). " +
+      "Giudica l'intensità confrontando activity.avg_pace_s_per_km (÷10 = s/100m) con il CSS da get_physiology_zones('swim'). " +
+      "Andare sotto CSS in un set breve/ripetute è spesso l'obiettivo previsto, non un errore.";
+  } else if (sport === "run" || sport === "bike" || sport === "brick") {
+    intensityNote = "Giudica l'intensità sulla NOSTRA zona (LTHR da get_physiology_zones), confrontata con la zona " +
+      "attesa dal session_type pianificato — non sui bucket hr_zones_s del device Garmin, che usano soglie diverse dalle nostre.";
+  }
+
   return {
     generated_at: new Date().toISOString(),
     data_freshness: dataFreshness([[activity], subjective]),
     coach_protocol: coachProtocol(),
-    activity,
+    intensity_judging_note: intensityNote,
+    activity: { ...activity, date_rome: activityDate },
     planned_session: planned?.[0] || null,
     daily_metrics: metrics?.[0] || null,
     recent_subjective_log: subjective,
@@ -1097,7 +1186,12 @@ async function getUpcomingPlan(days: number, env: Env) {
   days = clampInt(days, 1, 60);
   const today = todayRomeISO();
   const until = daysFromISO(days);
-  const sessions = await sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&status=neq.cancelled&order=planned_date.asc`);
+  // structured (zones_derived auto-iniettato da commit_plan_change) escluso:
+  // è una vista d'insieme fino a 60gg, non serve il breakdown zone per-sessione
+  // qui — i target sono già in prosa in `description`, e per il dettaglio
+  // completo di UN giorno c'è get_planned_session/get_session_review_context.
+  // mesocycle_id/created_at/updated_at: bookkeeping mai usato dal coach.
+  const sessions = await sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&status=neq.cancelled&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,target_zones,description,status,completed_activity_id`);
   return {
     generated_at: new Date().toISOString(),
     data_freshness: dataFreshness([sessions]),
@@ -1136,7 +1230,7 @@ async function getLastFatigueBySport(env: Env, since: string): Promise<Record<st
 
 async function getRecentMetrics(days: number, env: Env) {
   const since = daysAgoISO(days);
-  const metrics = await sb(env, `daily_metrics?date=gte.${since}&order=date.desc`);
+  const metrics = await sb(env, `daily_metrics?date=gte.${since}&order=date.desc&select=${DAILY_METRICS_COLS}`);
   return {
     generated_at: new Date().toISOString(),
     data_freshness: dataFreshness([metrics]),
@@ -1146,7 +1240,10 @@ async function getRecentMetrics(days: number, env: Env) {
 
 async function getPlannedSession(date: string, env: Env) {
   if (!isDateString(date)) throw new Error(`Invalid date format: ${date}. Expected YYYY-MM-DD.`);
-  return sb(env, `planned_sessions?planned_date=eq.${date}&status=neq.cancelled`);
+  // mesocycle_id/created_at/updated_at esclusi: FK/bookkeeping mai usati dal
+  // coach. structured mantenuto (a differenza di get_upcoming_plan): qui è
+  // un dettaglio su UN giorno specifico, dove le zone derivate servono.
+  return sb(env, `planned_sessions?planned_date=eq.${date}&status=neq.cancelled&select=id,planned_date,sport,session_type,duration_s,target_tss,target_zones,description,structured,status,completed_activity_id,calendar_event_id`);
 }
 
 async function getActivityHistory(sport: string, days: number, env: Env) {
@@ -1154,7 +1251,11 @@ async function getActivityHistory(sport: string, days: number, env: Env) {
   const since = daysAgoISO(days);
   let q = `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=id,started_at,sport,duration_s,distance_m,avg_hr,avg_power_w,np_w,tss,rpe,notes`;
   if (sport !== "all") q += `&sport=eq.${sport}`;
-  return sb(env, q);
+  const rows = await sb(env, q);
+  // date_rome esplicito: senza, chi legge started_at (UTC) deve calcolare da
+  // solo la data Europe/Rome — un'attività serale può finire sfasata di un
+  // giorno se il calcolo (fatto a valle, non qui) sbaglia il fuso.
+  return (rows as any[]).map((a) => ({ ...a, date_rome: toRomeDateISO(a.started_at) }));
 }
 
 async function queryLog(days: number, kind: string, env: Env) {
@@ -1230,6 +1331,25 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
     ? { ...structuredBase, zones_derived: absoluteZones }
     : (Object.keys(structuredBase).length > 0 ? structuredBase : undefined);
   if (payload.structured === undefined) delete payload.structured;
+
+  // Guardrail: se structured.steps è presente, la somma delle durate deve
+  // coincidere con duration_s (±5%). Previene sessioni strutturalmente incoerenti
+  // prima che raggiungano il DB.
+  const steps = (args.structured as any)?.steps;
+  if (Array.isArray(steps) && steps.length > 0) {
+    const stepSum = steps.reduce((acc: number, s: any) => acc + (Number(s.duration_s) || 0), 0);
+    if (stepSum > 0) {
+      const tolerance = Math.round(args.duration_s * 0.05);
+      const delta = stepSum - args.duration_s;
+      if (Math.abs(delta) > tolerance) {
+        throw new Error(
+          `Struttura incoerente: somma step=${stepSum}s, duration_s=${args.duration_s}s ` +
+          `(delta ${delta > 0 ? "+" : ""}${delta}s, tolleranza ±${tolerance}s). ` +
+          `Correggi gli step o il duration_s prima di committare.`
+        );
+      }
+    }
+  }
 
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}&session_type=eq.${encodeURIComponent(args.session_type)}`,
@@ -1474,16 +1594,18 @@ function computeAbsoluteZones(discipline: string, z: any): any | null {
   if (discipline === "swim" && z.css_pace_s_per_100m) {
     const css: number = z.css_pace_s_per_100m;
     const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/100m`;
+    // 3 zone attorno a CSS±5, identiche a _compute_css_3zone in Python: unica
+    // fonte di verità. Il precedente sistema a 5 zone (css+25/+10/0/-5) faceva
+    // etichettare "Z5 troppo veloce" un pace anche solo 2s sotto CSS, quando in
+    // acqua andare sotto CSS in un set breve è spesso l'obiettivo, non un errore.
     return {
       discipline: "swim",
       css_s_per_100m: css,
       css_pace: fmt(css),
       zones: {
-        z1: { label: "Recovery",      pace_slower_than: fmt(css + 25) },
-        z2: { label: "Endurance",     pace_range: `${fmt(css + 25)}–${fmt(css + 10)}` },
-        z3: { label: "Threshold-ish", pace_range: `${fmt(css + 10)}–${fmt(css)}` },
-        z4: { label: "CSS/Threshold", pace_range: `${fmt(css)}–${fmt(css - 5)}` },
-        z5: { label: "VO2max",        pace_faster_than: fmt(css - 5) },
+        CSS_minus5: { label: "Endurance",  pace_slower_than: fmt(css + 5) },
+        CSS:        { label: "Threshold",  pace: fmt(css) },
+        CSS_plus5:  { label: "VO2max",     pace_faster_than: fmt(Math.max(css - 5, 30)) },
       },
     };
   }
@@ -1629,6 +1751,17 @@ async function commitMesocycle(args: any, env: Env): Promise<any> {
   if (!isDateString(args.end_date)) {
     throw new Error(`Invalid end_date format: ${args.end_date}. Expected YYYY-MM-DD.`);
   }
+  // generate_mesocycle.md è esplicito: "mai committare un mesociclo senza
+  // progression_plan" — era solo una regola testuale nella skill, mai
+  // applicata qui, e infatti il mesociclo attivo è stato committato senza.
+  // Enforced lato server per non ripetere il buco.
+  if (args.progression_plan === undefined || args.progression_plan === null ||
+      (typeof args.progression_plan === "object" && Object.keys(args.progression_plan).length === 0)) {
+    throw new Error(
+      "progression_plan mancante. Fornisci la progressione per settimana " +
+      "(es. {run_threshold: {week1: '4x6min', week2: '5x6min', ...}}) prima di committare il mesociclo."
+    );
+  }
 
   const payload: any = {
     name: args.name,
@@ -1713,10 +1846,15 @@ async function updateConstraint(args: any, env: Env): Promise<any> {
     throw new Error("Nessun campo da aggiornare. Specifica resolved_at, description, severity, symptom_status o note.");
   }
 
-  // Append to history audit trail
+  // Append to history audit trail.
+  // changes deve essere una COPIA di patch, non un riferimento: patch.history
+  // viene popolato subito dopo con questo stesso historyEntry, quindi
+  // `changes: patch` creerebbe un ciclo (patch.history[i].changes === patch)
+  // che fa esplodere JSON.stringify con "Converting circular structure to JSON"
+  // ad ogni update su un vincolo con history non vuota.
   const historyEntry = {
     timestamp: new Date().toISOString(),
-    changes: patch,
+    changes: { ...patch },
     previous: Object.fromEntries(Object.keys(patch).map((k) => [k, (current as any)[k] ?? null])),
   };
   const prevHistory: any[] = Array.isArray(current.history) ? current.history : [];

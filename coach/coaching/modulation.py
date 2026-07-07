@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
+from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ def expire_past_modulations() -> int:
     Ritorna il numero di modulazioni scadute.
     """
     sb = get_supabase()
-    today = date.today().isoformat()
+    # B2: data business Europe/Rome, non UTC (dopo le 22:00 Rome estive il
+    # giorno UTC è ancora "ieri" e le modulazioni scadrebbero in ritardo/anticipo).
+    today = today_rome().isoformat()
 
     res = sb.table("plan_modulations").select("id,proposed_changes").eq("status", "proposed").execute()
     rows = res.data or []
@@ -59,16 +62,26 @@ def should_trigger_modulation(analysis_text: str, metrics: Optional[dict]) -> bo
     """Determina se l'analisi sessione richiede una modulazione mid-week."""
     triggers = []
 
-    # Pattern critici nel testo
+    # Pattern critici nel testo. M2: un match grezzo su substring triggera
+    # anche quando il testo NEGA il pattern ("nessun dolore segnalato"),
+    # sprecando una chiamata Anthropic a pagamento (budget hard €5/mese) e
+    # generando proposte di modulazione non necessarie. Scarta il match se
+    # preceduto entro pochi caratteri da una negazione.
     critical_keywords = [
         "hrv crash", "hrv crollata", "sovraccarico", "overreaching",
         "dolore", "infortunio", "malattia", "febbre",
         "sotto le aspettative", "problematica",
     ]
+    negations = ("nessun", "nessuna", "senza", "no ", "non ", "niente")
     text_lower = analysis_text.lower()
     for kw in critical_keywords:
-        if kw in text_lower:
-            triggers.append(kw)
+        idx = text_lower.find(kw)
+        if idx == -1:
+            continue
+        preceding = text_lower[max(0, idx - 20):idx]
+        if any(neg in preceding for neg in negations):
+            continue
+        triggers.append(kw)
 
     # Pattern critici nelle metriche
     if metrics:
@@ -340,10 +353,19 @@ def _apply_single_change(sb, change: dict) -> bool:
         "status": "planned",
     }
 
-    sb.table("planned_sessions").upsert(
-        # Audit O7: chiave unique allargata a (planned_date, sport, session_type)
-        payload, on_conflict="planned_date,sport,session_type"
-    ).execute()
+    # C4: una modulazione che CAMBIA session_type (es. threshold→recovery, il
+    # caso d'uso primario di §5.2) non deve fare upsert sulla chiave unique
+    # (planned_date,sport,session_type): quella chiave è (date,sport,"threshold"),
+    # il nuovo payload ha session_type="recovery" → nessun conflitto trovato →
+    # INSERT di una riga nuova, lasciando la sessione intensa originale intatta
+    # (doppio carico invece di sostituzione). Se esiste già una riga per
+    # (planned_date,sport) la aggiorniamo per id, a prescindere dal session_type.
+    if base.get("id"):
+        sb.table("planned_sessions").update(payload).eq("id", base["id"]).execute()
+    else:
+        sb.table("planned_sessions").upsert(
+            payload, on_conflict="planned_date,sport,session_type"
+        ).execute()
     return True
 
 
@@ -428,7 +450,10 @@ def generate_modulation_proposal(
             system=system,
             messages=[{"role": "user", "content": context}],
             prefer_model="haiku",
-            max_tokens=600,
+            # 600 tagliava a metà il JSON di una proposta 3-giorni: il risultato
+            # troncato falliva il parse e finiva mostrato come testo grezzo
+            # all'atleta (fallback [{"description": text}] rimosso sotto).
+            max_tokens=1200,
         )
 
         # Parse risposta come JSON se possibile
@@ -437,9 +462,22 @@ def generate_modulation_proposal(
         # Rimuove eventuali backticks markdown (es. ```json ... ```)
         text_clean = re.sub(r'^```(?:json)?\n?(.*?)\n?```$', r'\1', text.strip(), flags=re.DOTALL)
         try:
-            return json.loads(text_clean)
+            parsed = json.loads(text_clean)
         except json.JSONDecodeError:
-            return [{"description": text_clean}]
+            logger.warning("Modulation proposal: JSON non parsabile, scarto (era: %r)", text_clean[:200])
+            return []
+
+        # Ogni change deve avere almeno date+sport (_apply_single_change li
+        # richiede per applicare). Senza validazione, un output malformato
+        # diventava una proposta con testo grezzo/troncato mostrata all'atleta
+        # come se fosse una modifica reale, e il dedup (basato su date+sport)
+        # non la intercettava mai.
+        if not isinstance(parsed, list) or not all(
+            isinstance(c, dict) and c.get("date") and c.get("sport") for c in parsed
+        ):
+            logger.warning("Modulation proposal: struttura invalida (manca date/sport), scarto: %r", parsed)
+            return []
+        return parsed
 
     except BudgetExceededError:
         logger.warning("Budget exceeded, skipping modulation proposal")
