@@ -979,7 +979,8 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
       // limit=5: le proposte aperte si accumulano (se non risolte). Per la review
       // bastano le piu' recenti; il JSONB proposed_changes e' grosso.
       sb(env, `plan_modulations?status=eq.proposed&order=proposed_at.desc&select=id,trigger_event,proposed_changes,status,proposed_at&limit=5`),
-      sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1`),
+      // created_at/updated_at esclusi: bookkeeping, mai usati dal coach.
+      sb(env, `mesocycles?start_date=lte.${today}&end_date=gte.${today}&order=start_date.desc&limit=1&select=id,name,phase,start_date,end_date,target_race_id,weekly_pattern,notes,season_year,progression_plan`),
       sb(env, `races?race_date=gte.${today}&order=race_date.asc&select=id,name,race_date,priority,distance,location`),
       sb(env, `active_constraints?resolved_at=is.null&order=created_at.asc`).catch(() => []),
       // flagged=eq.false nascondeva le belief confutate a mano INTERAMENTE dal
@@ -1080,8 +1081,13 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
     sb(env, `daily_metrics?date=gte.${since28}&order=date.asc&select=${DAILY_METRICS_COLS}`),
     sb(env, `daily_wellness?date=gte.${since28}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score`),
     sb(env, `activities?started_at=gte.${since28}T00:00:00Z&order=started_at.desc&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,tss`),
-    sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc`),
-    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${planUntil}&order=planned_date.asc`),
+    // Stesso select lean usato altrove per subjective_log (id/activity_id/
+    // illness_details/parsed_data esclusi: bookkeeping o ridondanti con raw_text).
+    sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc&select=logged_at,kind,rpe,sleep_quality,motivation,soreness,illness_flag,injury_flag,injury_details,raw_text`),
+    // structured/mesocycle_id/created_at/updated_at esclusi: vista fino a
+    // 42gg, non serve il breakdown zone per-sessione (già in prosa in
+    // description) — stesso ragionamento di get_upcoming_plan.
+    sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${planUntil}&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,target_zones,description,status,completed_activity_id`),
   ]);
 
   return {
@@ -1102,15 +1108,23 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
 async function getSessionReviewContext(activityId: string | undefined, historyDays: number, env: Env) {
   historyDays = clampInt(historyDays, 1, 90);
 
+  // raw_payload escluso: è il blob JSON grezzo Garmin salvato SOLO per
+  // riprocessing (mai letto da nessun codice, il lato Python lo esclude già
+  // esplicitamente in _clean_for_prompt) — su questo tool, tra i più chiamati
+  // durante una review, gonfiava il contesto di Claude senza alcun valore.
+  const ACTIVITY_COLS = "id,external_id,source,sport,started_at,duration_s,distance_m," +
+    "elevation_gain_m,avg_hr,max_hr,hr_zones_s,avg_power_w,np_w,avg_pace_s_per_km," +
+    "avg_pace_s_per_100m,tss,if_value,rpe,splits,weather,notes";
+
   let activityRows: any[];
   if (activityId) {
     const encoded = encodeURIComponent(activityId);
-    activityRows = await sb(env, `activities?external_id=eq.${encoded}&limit=1`);
+    activityRows = await sb(env, `activities?external_id=eq.${encoded}&limit=1&select=${ACTIVITY_COLS}`);
     if (activityRows.length === 0 && isUuid(activityId)) {
-      activityRows = await sb(env, `activities?id=eq.${encoded}&limit=1`);
+      activityRows = await sb(env, `activities?id=eq.${encoded}&limit=1&select=${ACTIVITY_COLS}`);
     }
   } else {
-    activityRows = await sb(env, `activities?order=started_at.desc&limit=1`);
+    activityRows = await sb(env, `activities?order=started_at.desc&limit=1&select=${ACTIVITY_COLS}`);
   }
 
   const activity = activityRows?.[0] || null;
@@ -1120,6 +1134,17 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
   // planned_date corretto (fix #9 — corsa di venerdì che risultava giovedì).
   const activityDate = toRomeDateISO(activity.started_at) || String(activity.started_at || "").slice(0, 10);
   const sport = VALID_SPORTS.has(activity.sport) ? activity.sport : "all";
+
+  // hr_zones_s (bucket device Garmin) va sempre tolto, non solo segnalato
+  // come da ignorare: una nota può essere disattesa, un campo assente no.
+  // Per il nuoto anche avg_hr/max_hr (fascia non indossata in acqua, dato
+  // rumore) — stesso trattamento già applicato lato Python in
+  // post_session_analysis.py, ora coerente anche sul tool interattivo.
+  delete activity.hr_zones_s;
+  if (sport === "swim") {
+    delete activity.avg_hr;
+    delete activity.max_hr;
+  }
 
   const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
     sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}`),
@@ -1161,7 +1186,12 @@ async function getUpcomingPlan(days: number, env: Env) {
   days = clampInt(days, 1, 60);
   const today = todayRomeISO();
   const until = daysFromISO(days);
-  const sessions = await sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&status=neq.cancelled&order=planned_date.asc`);
+  // structured (zones_derived auto-iniettato da commit_plan_change) escluso:
+  // è una vista d'insieme fino a 60gg, non serve il breakdown zone per-sessione
+  // qui — i target sono già in prosa in `description`, e per il dettaglio
+  // completo di UN giorno c'è get_planned_session/get_session_review_context.
+  // mesocycle_id/created_at/updated_at: bookkeeping mai usato dal coach.
+  const sessions = await sb(env, `planned_sessions?planned_date=gte.${today}&planned_date=lte.${until}&status=neq.cancelled&order=planned_date.asc&select=id,planned_date,sport,session_type,duration_s,target_tss,target_zones,description,status,completed_activity_id`);
   return {
     generated_at: new Date().toISOString(),
     data_freshness: dataFreshness([sessions]),
@@ -1210,7 +1240,10 @@ async function getRecentMetrics(days: number, env: Env) {
 
 async function getPlannedSession(date: string, env: Env) {
   if (!isDateString(date)) throw new Error(`Invalid date format: ${date}. Expected YYYY-MM-DD.`);
-  return sb(env, `planned_sessions?planned_date=eq.${date}&status=neq.cancelled`);
+  // mesocycle_id/created_at/updated_at esclusi: FK/bookkeeping mai usati dal
+  // coach. structured mantenuto (a differenza di get_upcoming_plan): qui è
+  // un dettaglio su UN giorno specifico, dove le zone derivate servono.
+  return sb(env, `planned_sessions?planned_date=eq.${date}&status=neq.cancelled&select=id,planned_date,sport,session_type,duration_s,target_tss,target_zones,description,structured,status,completed_activity_id,calendar_event_id`);
 }
 
 async function getActivityHistory(sport: string, days: number, env: Env) {
