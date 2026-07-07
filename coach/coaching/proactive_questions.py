@@ -8,6 +8,7 @@ import logging
 import random
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
@@ -82,6 +83,22 @@ def select_and_send_question() -> Optional[str]:
     ).gte("sent_at", cutoff_24h).limit(1).execute()
     if recent.data:
         logger.info("Proactive question skipped: already sent in last 24h")
+        return None
+
+    # "🚫 Disabilita oggi" (bottone Telegram): il bot logga il tap in
+    # bot_messages con questo purpose invece di un KV mai letto da nessuno
+    # (fix di sessione precedente) — ma finora nessun codice Python lo
+    # controllava, quindi il bottone restava un no-op. Cutoff a mezzanotte
+    # Rome, stesso pattern di _brief_already_sent_today in briefing.py.
+    midnight_rome = datetime.now(ZoneInfo("Europe/Rome")).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    cutoff_today = midnight_rome.astimezone(timezone.utc).isoformat()
+    disabled = sb.table("bot_messages").select("id").eq(
+        "purpose", "proactive_disabled_today"
+    ).gte("sent_at", cutoff_today).limit(1).execute()
+    if disabled.data:
+        logger.info("Proactive question skipped: disabilitate oggi dall'atleta")
         return None
 
     metrics_res = sb.table("daily_metrics").select("flags,readiness_label").eq("date", today.isoformat()).limit(1).execute()
