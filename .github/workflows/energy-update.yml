@@ -1,0 +1,48 @@
+name: energy-update
+
+# Messaggio separato con Body Battery + readiness Garmin ("energia al
+# risveglio"), staccato dal brief delle 5:00. La notifica delle 5 interrompe
+# il sonno e falsa proprio questi due valori (letti bassi per il risveglio
+# forzato, non per stanchezza reale) — vedi briefing.py::_build_energy_section.
+
+on:
+  schedule:
+    # Target: ~07:30 Europe/Rome, dopo un risveglio naturale.
+    - cron: '30 5 * * *'   # 07:30 Rome (estate) / 06:30 (inverno → gate skip)
+    - cron: '30 6 * * *'   # 07:30 Rome (inverno) / 08:30 (estate → idempotency)
+    - cron: '20 9 * * *'   # safety net tardo
+  workflow_dispatch:
+    inputs:
+      force_send:
+        description: "Bypass gate/idempotency check (force re-send)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+# cancel-in-progress false per lo stesso motivo di morning-briefing: non
+# cancellare un run tra invio Telegram e insert bot_messages (duplicherebbe).
+concurrency:
+  group: energy-update
+  cancel-in-progress: false
+
+jobs:
+  energy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PYTHONPATH: '.'
+      FORCE_SEND: ${{ github.event.inputs.force_send || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - run: python -m coach.planning.briefing --energy
