@@ -880,6 +880,17 @@ function dataFreshness(recordGroups: any[][]): Record<string, any> {
 const VALID_SPORTS = new Set(["swim", "bike", "run", "brick", "strength", "all"]);
 const VALID_KINDS  = new Set(["all", "post_session", "illness", "injury", "evening_debrief", "free_note"]);
 
+// Colonne daily_metrics utili al coaching. Esclude: id/created_at/updated_at
+// (bookkeeping, mai usati nel ragionamento del coach) e ctl_swim/ctl_bike/
+// ctl_run (dichiarate in schema.sql ma MAI scritte da nessun job — sempre
+// null, puro spreco di token ripetuto su ogni riga di ogni query). Usata
+// ovunque al posto di select=* per non gonfiare il contesto di Claude.ai
+// senza perdere nessun dato che il coach usa davvero.
+const DAILY_METRICS_COLS =
+  "date,ctl,atl,tsb,daily_tss,hrv_z_score,hrv_baseline_28d,hrv_baseline_28d_sd," +
+  "readiness_score,readiness_label,readiness_factors,flags,garmin_training_readiness," +
+  "garmin_acute_load,garmin_chronic_load,garmin_load_balance,garmin_training_status";
+
 function deriveProgressionStep(mesocycle: any, today: string): any {
   // "A che punto siamo": settimana N di M, derivata dalle date — funziona SEMPRE,
   // anche senza progression_plan (prima tornava null e current_progression_step
@@ -958,7 +969,7 @@ async function getWeeklyContext(days: number, includeNextDays: number, env: Env)
   const [health, metrics, wellness, activities, subjective, plannedPast, plannedUpcoming, sessionAnalyses, modulations, mesocycles, races, constraints, beliefs, fatigueBySport] =
     await Promise.all([
       getHealth(env),
-      sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc&select=date,ctl,atl,tsb,daily_tss,hrv_z_score,readiness_score,readiness_label,flags,garmin_training_readiness`),
+      sb(env, `daily_metrics?date=gte.${metricsSince}&order=date.asc&select=${DAILY_METRICS_COLS}`),
       sb(env, `daily_wellness?date=gte.${metricsSince}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score,avg_sleep_stress`),
       sb(env, `activities?started_at=gte.${since}T00:00:00Z&order=started_at.desc&select=external_id,started_at,sport,duration_s,distance_m,avg_hr,max_hr,avg_power_w,np_w,avg_pace_s_per_km,tss`),
       sb(env, `subjective_log?logged_at=gte.${since}T00:00:00Z&order=logged_at.desc&select=logged_at,kind,rpe,sleep_quality,motivation,soreness,illness_flag,injury_flag,injury_details,raw_text`),
@@ -1066,7 +1077,7 @@ async function getRaceContext(raceDate: string | undefined, daysAhead: number, e
   const planUntil = targetDate < daysFromISO(42) ? targetDate : daysFromISO(42);
 
   const [metrics, wellness, activities, subjective, planWindow] = await Promise.all([
-    sb(env, `daily_metrics?date=gte.${since28}&order=date.asc`),
+    sb(env, `daily_metrics?date=gte.${since28}&order=date.asc&select=${DAILY_METRICS_COLS}`),
     sb(env, `daily_wellness?date=gte.${since28}&order=date.asc&select=date,hrv_rmssd,sleep_score,body_battery_min,body_battery_max,resting_hr,training_readiness_score`),
     sb(env, `activities?started_at=gte.${since28}T00:00:00Z&order=started_at.desc&select=id,external_id,started_at,sport,duration_s,distance_m,avg_hr,tss`),
     sb(env, `subjective_log?logged_at=gte.${since14}T00:00:00Z&order=logged_at.desc`),
@@ -1112,7 +1123,7 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
 
   const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
     sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}`),
-    sb(env, `daily_metrics?date=eq.${activityDate}&limit=1`),
+    sb(env, `daily_metrics?date=eq.${activityDate}&limit=1&select=${DAILY_METRICS_COLS}`),
     sb(env, `subjective_log?logged_at=gte.${daysAgoISO(3)}T00:00:00Z&order=logged_at.desc`),
     getActivityHistory(sport, historyDays, env),
     sb(env, `session_analyses?activity_id=eq.${encodeURIComponent(activity.external_id || activity.id)}&limit=1`),
@@ -1189,7 +1200,7 @@ async function getLastFatigueBySport(env: Env, since: string): Promise<Record<st
 
 async function getRecentMetrics(days: number, env: Env) {
   const since = daysAgoISO(days);
-  const metrics = await sb(env, `daily_metrics?date=gte.${since}&order=date.desc`);
+  const metrics = await sb(env, `daily_metrics?date=gte.${since}&order=date.desc&select=${DAILY_METRICS_COLS}`);
   return {
     generated_at: new Date().toISOString(),
     data_freshness: dataFreshness([metrics]),
