@@ -110,13 +110,17 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method !== "POST") return new Response("OK", { status: 200 });
 
-    // Webhook auth: l'allowlist chat_id non è un segreto (compare in log e
-    // screenshot) — chi conosce URL+chat_id può forgiare callback (es.
-    // accept_mod_<uuid>) e far applicare modulazioni senza consenso reale.
-    // Enforced solo se il secret è configurato (wrangler secret put
-    // TELEGRAM_WEBHOOK_SECRET + setWebhook con secret_token).
-    if (env.TELEGRAM_WEBHOOK_SECRET &&
-        req.headers.get("x-telegram-bot-api-secret-token") !== env.TELEGRAM_WEBHOOK_SECRET) {
+    // Webhook auth (WP4 fail-closed): l'allowlist chat_id non è un segreto
+    // (compare in log e screenshot) — chi conosce URL+chat_id può forgiare
+    // callback (es. accept_mod_<uuid>) e far applicare modulazioni senza
+    // consenso reale. Il secret è OBBLIGATORIO: senza config il bot rifiuta
+    // tutto. Setup: wrangler secret put TELEGRAM_WEBHOOK_SECRET + setWebhook
+    // con lo stesso valore in secret_token.
+    if (!env.TELEGRAM_WEBHOOK_SECRET) {
+      console.error("TELEGRAM_WEBHOOK_SECRET non configurato: webhook rifiutato (fail-closed)");
+      return new Response("webhook secret not configured", { status: 503 });
+    }
+    if (req.headers.get("x-telegram-bot-api-secret-token") !== env.TELEGRAM_WEBHOOK_SECRET) {
       return new Response("unauthorized", { status: 401 });
     }
 
