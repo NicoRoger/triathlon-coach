@@ -22,6 +22,7 @@ import requests
 from coach.utils.supabase_client import get_supabase
 from coach.utils.health import record_health
 from coach.utils.dt import today_rome
+from coach.utils.purposes import ENERGY_UPDATE, MORNING_BRIEF
 
 logger = logging.getLogger(__name__)
 
@@ -848,7 +849,7 @@ def build_brief() -> str:
     return "\n\n".join(s for s in sections if s.strip())
 
 
-def send_to_telegram(message: str, purpose: str = "morning_brief", parent_workflow: str = "morning-briefing.yml") -> None:
+def send_to_telegram(message: str, purpose: str = MORNING_BRIEF, parent_workflow: str = "morning-briefing.yml") -> None:
     from coach.utils.telegram_logger import send_and_log_message
     result = send_and_log_message(message, purpose=purpose, parent_workflow=parent_workflow)
     if result is None:
@@ -879,7 +880,7 @@ def _already_sent_today(sb, purpose: str) -> bool:
 
 
 def _brief_already_sent_today(sb) -> bool:
-    return _already_sent_today(sb, "morning_brief")
+    return _already_sent_today(sb, MORNING_BRIEF)
 
 
 def build_energy_update() -> str:
@@ -945,7 +946,7 @@ def main_energy() -> None:
         return
 
     sb = get_supabase()
-    if not force_send and _already_sent_today(sb, "energy_update"):
+    if not force_send and _already_sent_today(sb, ENERGY_UPDATE):
         logger.info("Energy update already sent today (Rome) — skipping duplicate run")
         return
 
@@ -955,7 +956,7 @@ def main_energy() -> None:
             logger.info("Nessun dato energia disponibile oggi — skip invio")
             record_health("energy_update", success=True)
             return
-        send_to_telegram(msg, purpose="energy_update", parent_workflow="energy-update.yml")
+        send_to_telegram(msg, purpose=ENERGY_UPDATE, parent_workflow="energy-update.yml")
         record_health("energy_update", success=True)
         logger.info("Energy update sent")
     except Exception as e:  # noqa: BLE001

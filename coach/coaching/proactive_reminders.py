@@ -485,8 +485,15 @@ def main() -> None:
     dry = args.dry_run or os.environ.get("DRY_RUN", "").lower() in ("true", "1", "yes")
     skip_dedup = args.skip_dedup or os.environ.get("SKIP_DEDUP", "").lower() in ("true", "1", "yes")
 
-    n = run_proactive_reminders(ignore_time_window=ignore, dry_run=dry, skip_dedup=skip_dedup)
+    from coach.utils.health import record_health
+    try:
+        n = run_proactive_reminders(ignore_time_window=ignore, dry_run=dry, skip_dedup=skip_dedup)
+    except Exception as e:  # noqa: BLE001
+        record_health("proactive_reminders", success=False, error=str(e))
+        raise
     logger.info("Proactive reminders run: %d %s", n, "would-be-sent" if dry else "sent")
+    if not dry:
+        record_health("proactive_reminders", success=True, metadata={"sent": n})
 
 
 if __name__ == "__main__":

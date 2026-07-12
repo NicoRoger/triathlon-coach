@@ -83,7 +83,13 @@ def main() -> None:
     try:
         from dotenv import load_dotenv; load_dotenv()
     except ImportError: pass
-    analysis = generate_weekly_analysis()
+    from coach.utils.health import record_health
+    try:
+        analysis = generate_weekly_analysis()
+    except Exception as e:  # noqa: BLE001
+        record_health("weekly_analysis", success=False, error=str(e))
+        raise
+    record_health("weekly_analysis", success=True)
     print(analysis)
 
 
