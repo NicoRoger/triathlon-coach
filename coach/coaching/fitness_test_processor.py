@@ -436,6 +436,24 @@ class FitnessTestProcessor:
             record, on_conflict="discipline,valid_from,method"
         ).execute()
         logger.info("Physiology zones upserted: %s %s=%s", discipline, db_field, result)
+
+        # WP3: le prescrizioni future contengono i range HR nel testo — al
+        # cambio zone vanno riallineate, altrimenti restano coi numeri del
+        # test precedente. Punto unico: qui, dove le zone cambiano davvero.
+        # Non-bloccante (le zone sono già su DB).
+        try:
+            from coach.coaching.zone_recalc import recalc_future_sessions
+            n = recalc_future_sessions(discipline)
+            if n > 0:
+                from coach.utils.purposes import ZONES_RECALC
+                from coach.utils.telegram_logger import send_and_log_message
+                send_and_log_message(
+                    f"🔁 Zone {discipline} aggiornate: {n} sessioni future riallineate ai nuovi range.\n"
+                    f"<i>Ricorda di aggiornare anche le zone HR sul Garmin (device/Connect).</i>",
+                    purpose=ZONES_RECALC,
+                )
+        except Exception:
+            logger.warning("zone_recalc fallito (zone comunque salvate)", exc_info=True)
         return True
 
     def _regenerate_anamnesis(self) -> bool:

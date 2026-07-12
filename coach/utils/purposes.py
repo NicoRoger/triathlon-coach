@@ -18,6 +18,7 @@ WEEKLY_REVIEW_REMINDER = "weekly_review_reminder"
 PROACTIVE_QUESTION = "proactive_question"
 PROACTIVE_DISABLED_TODAY = "proactive_disabled_today"
 MODULATION_PROPOSAL = "modulation_proposal"
+ZONES_RECALC = "zones_recalc"
 GENERIC = "generic"
 
 ALL_PURPOSES = frozenset(
