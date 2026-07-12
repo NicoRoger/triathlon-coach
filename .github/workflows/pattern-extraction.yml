@@ -64,8 +64,10 @@ jobs:
         # Applica evidence decay esponenziale alle beliefs non reinforced
         run: python -c "from coach.analytics.belief_engine import decay_old_beliefs; print(decay_old_beliefs())"
 
-      - name: Update CLAUDE.md status
-        run: python scripts/update_claude_md_status.py
+      - name: Rigenera anamnesi atleta (WP1 — sostituisce update CLAUDE.md)
+        # docs/athlete_anamnesis.md è una vista generata dal DB: rimpiazza il
+        # patch regex di §2/§4 su CLAUDE.md (update_claude_md_status.py rimosso).
+        run: python scripts/generate_anamnesis.py
 
       - name: Update progress tracker
         run: python scripts/update_progress_tracker.py
@@ -74,6 +76,6 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          git add docs/coaching_observations.md docs/progress_tracker.md docs/athlete_beliefs.md CLAUDE.md
-          git commit -m "docs: auto-update coaching observations + progress tracker + athlete beliefs" || echo "No changes to commit"
+          git add docs/coaching_observations.md docs/progress_tracker.md docs/athlete_beliefs.md docs/athlete_anamnesis.md
+          git commit -m "docs: auto-update observations + tracker + beliefs + anamnesi" || echo "No changes to commit"
           git push origin HEAD:${{ github.ref }} || echo "Push failed or not needed"

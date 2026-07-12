@@ -86,19 +86,21 @@ jobs:
         continue-on-error: true
         run: python -m coach.coaching.fitness_test_processor --check-recent
 
-      - name: Commit CLAUDE.md se aggiornato dal fitness test processor (C2)
-        # Il processore riscrive le soglie in CLAUDE.md sul runner: senza commit
-        # l'aggiornamento andava sempre perso a fine job.
+      - name: Commit anamnesi se rigenerata dal fitness test processor (WP1)
+        # Il processore rigenera docs/athlete_anamnesis.md (vista dal DB) —
+        # CLAUDE.md non viene più patchato dai job.
         if: always()
         continue-on-error: true
         run: |
-          if git diff --quiet CLAUDE.md; then
-            echo "CLAUDE.md invariato, niente da committare"
+          if git diff --quiet docs/athlete_anamnesis.md 2>/dev/null && \
+             git ls-files --error-unmatch docs/athlete_anamnesis.md >/dev/null 2>&1; then
+            echo "Anamnesi invariata, niente da committare"
           else
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add CLAUDE.md
-            git commit -m "chore: auto-update zone fisiologiche da fitness test [skip ci]"
+            git add docs/athlete_anamnesis.md
+            git diff --cached --quiet && { echo "Nulla in staging"; exit 0; }
+            git commit -m "chore: rigenera anamnesi atleta da fitness test [skip ci]"
             git pull --rebase origin "$GITHUB_REF_NAME" || true
             git push
           fi

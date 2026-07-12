@@ -211,27 +211,30 @@ class TestFallbackNotification(unittest.TestCase):
         self.assertFalse(call_kwargs[1].get("success", True) if call_kwargs[1] else call_kwargs[0][3])
 
 
-class TestClaudeMdUpdate(unittest.TestCase):
+class TestAnamnesisRegeneration(unittest.TestCase):
+    """WP1: il processore rigenera docs/athlete_anamnesis.md (vista dal DB)
+    invece di patchare CLAUDE.md con regex (rimosso)."""
 
-    def test_claude_md_field_replacement(self):
-        """Test 10: CLAUDE.md update — regex finds and replaces field"""
+    def test_regenerate_anamnesis_delegates_to_generator(self):
         proc = _make_processor()
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
-            f.write("  bici:\n    ftp_attuale_w: da testare (FTP test giugno 2026)\n    debolezze: test\n")
-            tmp_path = Path(f.name)
-        try:
-            import coach.coaching.fitness_test_processor as mod
-            original = mod.CLAUDE_MD_PATH
-            mod.CLAUDE_MD_PATH = tmp_path
-            ok = proc._update_claude_md("ftp_attuale_w", 247, "ftp_bike_20min", "2026-06-15")
-            mod.CLAUDE_MD_PATH = original
-            self.assertTrue(ok)
-            content = tmp_path.read_text(encoding="utf-8")
-            self.assertIn("247", content)
-            self.assertIn("2026-06-15", content)
-            self.assertNotIn("da testare", content)
-        finally:
-            tmp_path.unlink()
+        fake_gen = types.ModuleType("scripts.generate_anamnesis")
+        fake_gen.generate_anamnesis = lambda: True
+        fake_scripts = types.ModuleType("scripts")
+        with patch.dict(sys.modules, {"scripts": fake_scripts,
+                                      "scripts.generate_anamnesis": fake_gen}):
+            self.assertTrue(proc._regenerate_anamnesis())
+
+    def test_regenerate_anamnesis_failure_is_non_blocking(self):
+        """Un crash nel generatore NON deve propagare: le zone sono già su DB."""
+        proc = _make_processor()
+        fake_gen = types.ModuleType("scripts.generate_anamnesis")
+        def _boom():
+            raise RuntimeError("db down")
+        fake_gen.generate_anamnesis = _boom
+        fake_scripts = types.ModuleType("scripts")
+        with patch.dict(sys.modules, {"scripts": fake_scripts,
+                                      "scripts.generate_anamnesis": fake_gen}):
+            self.assertFalse(proc._regenerate_anamnesis())
 
 
 class TestKeywordMatching(unittest.TestCase):

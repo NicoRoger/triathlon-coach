@@ -51,31 +51,29 @@ stato_attuale:
   - lavoro: Digital Manufacturing Specialist, Carel Industries (8:30-17:30, ~1 trasferta/mese Croazia)
   - vincoli_lavoro: trasferte Croazia NON stressanti (dormo meglio lì), non impattano recovery
 
+# SOGLIE, ZONE, BASELINE E STATO INFORTUNI: vivono nel DB (unica verità) e
+# sono leggibili in docs/athlete_anamnesis.md (vista GENERATA, sempre aggiornata)
+# o via MCP get_physiology_zones. Questo file NON viene più auto-aggiornato
+# dai job: qui restano solo i vincoli strutturali e le note statiche.
 discipline:
   nuoto:
-    css_attuale_per_100m: 1:20/100m (80 s/100m, metodo: css_swim_400_200, data: 2026-06-04)
+    soglie_correnti: vedi docs/athlete_anamnesis.md (CSS misurato, zone css_3zone)
     debolezze: tecnica post-pausa, spalla destra
-    vincolo: zero Z4+ con spalla, distanza 72h tra sessioni nuoto
+    vincolo: spalla dx in recupero — intensità reintroducibile gradualmente (stato live in anamnesi), distanza 72h tra sessioni nuoto
   bici:
-    ftp_attuale_w: N/A — atleta SENZA wattmetro. Intensità bici a frequenza cardiaca (LTHR bici, test_type=threshold_bike_hr, zone lthr_5zone). NON proporre FTP a potenza finché non c'è un wattmetro.
-    no_wattmetro: true
+    soglie_correnti: vedi docs/athlete_anamnesis.md (LTHR bici, zone lthr_5zone)
+    no_wattmetro: true — intensità bici SOLO a frequenza cardiaca (test_type=threshold_bike_hr). NON proporre FTP a potenza finché non c'è un wattmetro.
     debolezze: muscular endurance post-pausa (primo cedimento muscolare, non cardiovascolare)
   corsa:
-    threshold_pace_per_km: 4:20/km (260 s/km, metodo: manual_heat_corrected, data: 2026-06-21)
-    lthr_corsa: 172 bpm (corretta per il caldo, NON 183 grezza) | hr_max: 194 bpm
+    soglie_correnti: vedi docs/athlete_anamnesis.md (threshold pace + LTHR corsa + hr_max)
     debolezze: muscular endurance, carico progressivo limitato da fascite plantare sx
     vincolo_fascite: max +10% volume/settimana, cap 14-15km/settimana attuale
 
 fisiologia:
   tipo_atleta: endurance puro — primo cedimento muscolare, non cardiovascolare
-  hr_riposo_tipica: 48-51 bpm (da daily_wellness)
-  hrv_baseline_rmssd: ~69ms (baseline 28d, in risalita)
-  note: CSS e threshold run misurati (giugno 2026). FTP bici da testare.
+  baseline_correnti: vedi docs/athlete_anamnesis.md (HR riposo, HRV baseline 28d)
 
-infortuni_attivi:
-
-  - spalla_dx: borsite + tendinopatia CLB (RM 04/2026) — limita nuoto Z1-Z2, no Z4+
-  - fascite_plantare_sx: attiva (Brooks Ghost 17) — asintomatica da 14gg, monitorare
+infortuni_attivi: vedi docs/athlete_anamnesis.md (stato live da active_constraints, con severità e symptom_status)
 
 obiettivi:
   gara_A:
@@ -138,20 +136,13 @@ di ritorno.
 
 ---
 
-## 4. Stato corrente (aggiornato dall'agente)
+## 4. Stato corrente
 
-> Questa sezione è scrivibile dall'agente con commit dopo ogni mesociclo o
-> revisione settimanale. Storico completo in `docs/training_journal.md`.
-
-```yaml
-data_aggiornamento: YYYY-MM-DD
-fase_corrente: [base|build|specifico|peak|taper|recovery]
-mesociclo_n: 1
-settimana_in_mesociclo: 1
-ctl_target: ~
-note_fase: |
-  ...
-```
+Lo stato di allenamento live (fase, mesociclo con settimana N di M, CTL/ATL/TSB,
+readiness, prossime gare) vive in `docs/athlete_anamnesis.md`, vista GENERATA
+dal DB da `scripts/generate_anamnesis.py` — rigenerata dopo ogni fitness test
+e ogni domenica. Questo file non contiene più stato dinamico.
+Storico decisioni in `docs/training_journal.md`.
 
 ---
 
@@ -192,13 +183,12 @@ massimo, sempre dopo 1-2 giorni Z2/recovery.
 2. L'atleta esegue e salva su Garmin con il nome esatto specificato
 3. Il processore (`coach/coaching/fitness_test_processor.py`) rileva il test nel ciclo ingest
 4. Estrae il risultato (splits > activity fallback), calcola le zone, aggiorna `physiology_zones` nel DB
-5. Aggiorna automaticamente questo file (campo §2: ftp_attuale_w, threshold_pace_per_km, css_attuale_per_100m)
+5. Rigenera `docs/athlete_anamnesis.md` dal DB (vista, commit automatico nel workflow)
 6. Notifica via Telegram con risultato e zone aggiornate
 
-I risultati sono accessibili via MCP tool `get_physiology_zones(discipline)`.
-Quando il processore aggiorna `physiology_zones`, il campo corrispondente in questo file
-viene aggiornato automaticamente via commit. Non ignorare i valori aggiornati — sono la
-baseline per ogni prescrizione di intensità.
+I risultati sono accessibili via MCP tool `get_physiology_zones(discipline)` e
+in `docs/athlete_anamnesis.md`. Il DB è l'unica fonte di verità: non ignorare
+i valori misurati — sono la baseline per ogni prescrizione di intensità.
 
 ### 5.4 Approvazione modifiche
 
@@ -296,6 +286,7 @@ richiede:
 
 ## 9. File di memoria long-term (consultali sempre)
 
+- `docs/athlete_anamnesis.md` — **anamnesi live GENERATA dal DB** (soglie/zone misurate, vincoli medici con stato, fase/mesociclo, baseline, belief consolidate, storico test). Non modificarla a mano: si rigenera da sola.
 - `docs/training_journal.md` — decisioni di pianificazione e razionali
 - `docs/race_history.md` — gare passate, sensazioni, esecuzione
 - `docs/injury_log.md` — infortuni, rieducazione, pattern ricorrenti
