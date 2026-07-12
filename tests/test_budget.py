@@ -47,6 +47,21 @@ class TestEstimateCost:
         cost_sonnet = estimate_cost("sonnet", 1000, 500)
         assert cost == cost_sonnet
 
+    def test_cache_tokens_counted(self):
+        """WP6: cache write 1.25× input price, cache read 0.1× — prima erano
+        ignorati e la spesa registrata sottostimava la fattura reale."""
+        base = estimate_cost("claude-sonnet-4-6", 1000, 500)
+        with_cache = estimate_cost(
+            "claude-sonnet-4-6", 1000, 500,
+            cache_creation_tokens=4000, cache_read_tokens=10000,
+        )
+        expected_extra = (4000 * 3.0 * 1.25 + 10000 * 3.0 * 0.1) / 1_000_000
+        assert abs((with_cache - base) - expected_extra) < 0.0001
+
+    def test_cache_tokens_free_on_gemini(self):
+        assert estimate_cost("gemini-2.5-flash", 1000, 500,
+                             cache_creation_tokens=9999, cache_read_tokens=9999) == 0.0
+
 
 class TestSelectModel:
     def test_low_spend_respects_preference(self):

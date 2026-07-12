@@ -1,0 +1,40 @@
+name: smoke-integration
+
+# WP5 — Smoke test contro il sistema REALE, sola lettura (zero scritture,
+# zero LLM). Becca i guasti che gli unit test a stub non vedono: schema
+# drift (colonne usate dal codice assenti in prod), health mancante,
+# worker MCP irraggiungibile.
+#
+# Trigger:
+#   - manuale (workflow_dispatch)
+#   - dopo ogni run di deploy-workers (verifica post-deploy)
+#   - lunedì mattina (check settimanale di deriva)
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [deploy-workers]
+    types: [completed]
+  schedule:
+    - cron: '45 5 * * 1'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Su trigger post-deploy: gira solo se il deploy è andato a buon fine
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      MCP_URL: ${{ secrets.MCP_URL }}
+      PYTHONPATH: '.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: Smoke integrazione (sola lettura)
+        run: python scripts/smoke_integration.py
