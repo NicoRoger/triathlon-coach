@@ -14,15 +14,12 @@ import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Optional
 
 from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
-
-CLAUDE_MD_PATH = Path(__file__).resolve().parent.parent.parent / "CLAUDE.md"
 
 SPORT_MAP = {"bike": "bike", "run": "run", "swim": "swim"}
 
@@ -63,15 +60,6 @@ DEFAULT_ZONE_SYSTEM = {
     "threshold_run_20min": "pace_5zone",
     "css_swim_400_200": "css_3zone",
     "lthr_run": "lthr_5zone",
-}
-
-# Mappa test_type → campo CLAUDE.md §2 da aggiornare (None = nessun campo, es. HR)
-CLAUDE_MD_FIELD = {
-    "ftp_bike_20min": "ftp_attuale_w",
-    "ftp_bike_ramp": "ftp_attuale_w",
-    "threshold_run_30min": "threshold_pace_per_km",
-    "threshold_run_20min": "threshold_pace_per_km",
-    "css_swim_400_200": "css_attuale_per_100m",
 }
 
 # Mappa test_type → (colonna DB, disciplina)
@@ -193,10 +181,10 @@ class FitnessTestProcessor:
             )
             return {"status": "skipped_manual_lock", "test_type": test_type, "result": result}
 
-        claude_md_field = structured.get("claude_md_field")
-        claude_md_ok = False
-        if claude_md_field:
-            claude_md_ok = self._update_claude_md(claude_md_field, result, test_type, activity_date)
+        # L'anamnesi è una vista rigenerata da zero dal DB (WP1): sostituisce
+        # il vecchio patch regex su CLAUDE.md (_update_claude_md, rimosso) che
+        # duplicava la verità e falliva in silenzio se il campo cambiava nome.
+        anamnesis_ok = self._regenerate_anamnesis()
 
         self._notify_telegram(test_type, result, zones, success=True)
 
@@ -205,7 +193,7 @@ class FitnessTestProcessor:
             "test_type": test_type,
             "result": result,
             "zones": zones,
-            "claude_md_updated": claude_md_ok,
+            "anamnesis_updated": anamnesis_ok,
         }
 
     # ── Extractors ─────────────────────────────────────────────────────────
@@ -448,32 +436,39 @@ class FitnessTestProcessor:
             record, on_conflict="discipline,valid_from,method"
         ).execute()
         logger.info("Physiology zones upserted: %s %s=%s", discipline, db_field, result)
+
+        # WP3: le prescrizioni future contengono i range HR nel testo — al
+        # cambio zone vanno riallineate, altrimenti restano coi numeri del
+        # test precedente. Punto unico: qui, dove le zone cambiano davvero.
+        # Non-bloccante (le zone sono già su DB).
+        try:
+            from coach.coaching.zone_recalc import recalc_future_sessions
+            n = recalc_future_sessions(discipline)
+            if n > 0:
+                from coach.utils.purposes import ZONES_RECALC
+                from coach.utils.telegram_logger import send_and_log_message
+                send_and_log_message(
+                    f"🔁 Zone {discipline} aggiornate: {n} sessioni future riallineate ai nuovi range.\n"
+                    f"<i>Ricorda di aggiornare anche le zone HR sul Garmin (device/Connect).</i>",
+                    purpose=ZONES_RECALC,
+                )
+        except Exception:
+            logger.warning("zone_recalc fallito (zone comunque salvate)", exc_info=True)
         return True
 
-    def _update_claude_md(self, field: str, value: float, test_type: str, test_date: str) -> bool:
+    def _regenerate_anamnesis(self) -> bool:
+        """Rigenera docs/athlete_anamnesis.md dal DB (WP1).
+
+        Sostituisce il patch regex su CLAUDE.md: il file è una vista, la
+        verità sta in physiology_zones/active_constraints/mesocycles.
+        Non-bloccante: un fallimento qui non deve far fallire il test appena
+        processato (le zone sono già scritte sul DB).
+        """
         try:
-            content = CLAUDE_MD_PATH.read_text(encoding="utf-8")
-
-            if field == "threshold_pace_per_km":
-                display_value = _fmt_pace(value)
-            elif field == "css_attuale_per_100m":
-                display_value = _fmt_swim_pace(value)
-            else:
-                display_value = str(round(value))
-
-            pattern = rf"({re.escape(field)}:\s*).*"
-            new_line = rf"\g<1>{display_value} (test {test_date})"
-            updated, count = re.subn(pattern, new_line, content)
-
-            if count == 0:
-                logger.warning("CLAUDE.md field '%s' not found", field)
-                return False
-
-            CLAUDE_MD_PATH.write_text(updated, encoding="utf-8")
-            logger.info("CLAUDE.md updated: %s → %s", field, display_value)
-            return True
+            from scripts.generate_anamnesis import generate_anamnesis
+            return generate_anamnesis()
         except Exception:
-            logger.exception("Failed to update CLAUDE.md")
+            logger.exception("Rigenerazione anamnesi fallita (zone comunque salvate su DB)")
             return False
 
     def commit_manual_result(
@@ -518,10 +513,7 @@ class FitnessTestProcessor:
             method=method,
         )
 
-        claude_md_field = CLAUDE_MD_FIELD.get(test_type)
-        claude_md_ok = False
-        if claude_md_field:
-            claude_md_ok = self._update_claude_md(claude_md_field, float(result), test_type, test_date)
+        anamnesis_ok = self._regenerate_anamnesis()
 
         if notify:
             self._notify_telegram(test_type, float(result), zones, success=True)
@@ -532,7 +524,7 @@ class FitnessTestProcessor:
             "test_type": test_type,
             "result": float(result),
             "zones": zones,
-            "claude_md_updated": claude_md_ok,
+            "anamnesis_updated": anamnesis_ok,
         }
 
     def _claim_notification(self, dedup_key: str) -> bool:

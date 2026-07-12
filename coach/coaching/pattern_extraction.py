@@ -512,7 +512,13 @@ def main() -> None:
     except ImportError: pass
 
     print("Avvio estrazione pattern...")
-    res = extract_patterns()
+    from coach.utils.health import record_health
+    try:
+        res = extract_patterns()
+    except Exception as e:  # noqa: BLE001
+        record_health("pattern_extraction", success=False, error=str(e))
+        raise
+    record_health("pattern_extraction", success=True)
     if res:
         print("\n=== Nuove Osservazioni ===\n")
         print(res)

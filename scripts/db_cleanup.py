@@ -21,12 +21,17 @@ def main():
         res2 = sb.table("pending_confirmations").delete().in_("status", ["expired", "rejected", "confirmed", "corrected"]).lt("created_at", pending_threshold).execute()
         logger.info("Cleaned up old pending_confirmations. Count: %s", len(res2.data) if res2.data else 0)
 
-    except Exception:
+    except Exception as e:
         # Bug fix audit L2: ri-solleva (exit != 0) così il workflow risulta ROSSO.
         # Prima il bare except inghiottiva tutto e usciva 0 → cleanup poteva essere
         # rotto per mesi (bot_messages in crescita illimitata) senza alcun alert.
+        from coach.utils.health import record_health
+        record_health("db_cleanup", success=False, error=str(e))
         logger.exception("Failed during DB cleanup")
         sys.exit(1)
+    else:
+        from coach.utils.health import record_health
+        record_health("db_cleanup", success=True)
 
 if __name__ == "__main__":
     main()

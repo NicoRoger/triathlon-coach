@@ -5,6 +5,8 @@ import sys
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
+from coach.utils.health import record_health
+from coach.utils.purposes import DEBRIEF_REMINDER, WEEKLY_REVIEW_REMINDER
 from coach.utils.supabase_client import get_supabase
 from coach.utils.telegram_logger import send_and_log_message
 
@@ -14,9 +16,11 @@ logger = logging.getLogger(__name__)
 # il purpose passato a send_and_log_message sotto, altrimenti l'idempotency non
 # trova il record e ogni cron reinvia (era il bug del 3× weekly review:
 # "weekly-review".replace('-','_') = "weekly_review" ≠ "weekly_review_reminder").
+# WP2: valori dal registry coach/utils/purposes.py — stessa costante nei due
+# punti, la divergenza non è più possibile per costruzione.
 NOTIF_PURPOSE = {
-    "debrief-reminder": "debrief_reminder",
-    "weekly-review": "weekly_review_reminder",
+    "debrief-reminder": DEBRIEF_REMINDER,
+    "weekly-review": WEEKLY_REVIEW_REMINDER,
 }
 
 
@@ -88,10 +92,12 @@ def main():
             "4. Energia + sonno previsto\n\n"
             "<i>Ignora se off oggi</i>"
         )
-        result = send_and_log_message(msg, purpose="debrief_reminder", parent_workflow="debrief-reminder.yml")
+        result = send_and_log_message(msg, purpose=DEBRIEF_REMINDER, parent_workflow="debrief-reminder.yml")
         if result is None:
             logger.error("Debrief reminder send FAILED (Telegram returned None)")
+            record_health("debrief_reminder", success=False, error="Telegram send returned None")
             sys.exit(1)
+        record_health("debrief_reminder", success=True)
 
     elif notif_type == "weekly-review":
         msg = (
@@ -100,10 +106,12 @@ def main():
             "Apri Claude Code e digita: <code>fai la weekly review</code>\n\n"
             "<i>Tempo richiesto: 15-20 min</i>"
         )
-        result = send_and_log_message(msg, purpose="weekly_review_reminder", parent_workflow="weekly-review.yml")
+        result = send_and_log_message(msg, purpose=WEEKLY_REVIEW_REMINDER, parent_workflow="weekly-review.yml")
         if result is None:
             logger.error("Weekly review reminder send FAILED (Telegram returned None)")
+            record_health("weekly_review_reminder", success=False, error="Telegram send returned None")
             sys.exit(1)
+        record_health("weekly_review_reminder", success=True)
     else:
         print(f"Unknown type: {notif_type}")
         sys.exit(1)

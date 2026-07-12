@@ -133,13 +133,17 @@ class LLMClient:
             cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
 
-            # 5. Log (anche cache stats nei metadata)
+            # 5. Log — i token cache entrano nel COSTO (WP6), non solo nei
+            # metadata: prima la spesa registrata li ignorava e il cap €5
+            # sottostimava la fattura reale.
             cost = budget.log_api_call(
                 model=actual_model,
                 purpose=purpose,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 success=True,
+                cache_creation_tokens=cache_creation,
+                cache_read_tokens=cache_read,
                 metadata={
                     "prefer_model": prefer_model,
                     "temperature": temperature,

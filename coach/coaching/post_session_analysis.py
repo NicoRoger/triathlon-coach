@@ -503,7 +503,13 @@ def main() -> None:
         if result:
             print(result["analysis_text"])
     elif args.recent:
-        n = analyze_recent(days=args.days)
+        from coach.utils.health import record_health
+        try:
+            n = analyze_recent(days=args.days)
+        except Exception as e:  # noqa: BLE001
+            record_health("post_session_analysis", success=False, error=str(e))
+            raise
+        record_health("post_session_analysis", success=True, metadata={"analyzed": n})
         print(f"Analizzate {n} sessioni")
     else:
         parser.print_help()

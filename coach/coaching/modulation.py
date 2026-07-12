@@ -13,6 +13,7 @@ from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
 from coach.utils.dt import today_rome
+from coach.utils.purposes import MODULATION_PROPOSAL
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -415,7 +416,7 @@ def _send_modulation_telegram(message: str, mod_id: str) -> Optional[int]:
 
     return send_and_log_message(
         message,
-        purpose="modulation_proposal",
+        purpose=MODULATION_PROPOSAL,
         context_data={"modulation_id": mod_id},
         reply_markup=keyboard,
     )
@@ -504,7 +505,13 @@ def main() -> None:
         n = expire_past_modulations()
         logger.info("Expired %d stale modulations", n)
     if args.apply_accepted:
-        summary = apply_accepted_modulations()
+        from coach.utils.health import record_health
+        try:
+            summary = apply_accepted_modulations()
+        except Exception as e:  # noqa: BLE001
+            record_health("modulation_apply", success=False, error=str(e))
+            raise
+        record_health("modulation_apply", success=True, metadata=summary)
         logger.info("apply_accepted_modulations summary: %s", summary)
 
 

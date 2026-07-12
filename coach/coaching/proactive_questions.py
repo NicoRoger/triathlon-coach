@@ -11,6 +11,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from coach.utils.dt import today_rome
+from coach.utils.purposes import PROACTIVE_DISABLED_TODAY, PROACTIVE_QUESTION
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ def select_and_send_question() -> Optional[str]:
     # Cooldown: non mandare se già inviata nelle ultime 24h (evita spam se l'utente non risponde)
     cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     recent = sb.table("bot_messages").select("id").eq(
-        "purpose", "proactive_question"
+        "purpose", PROACTIVE_QUESTION
     ).gte("sent_at", cutoff_24h).limit(1).execute()
     if recent.data:
         logger.info("Proactive question skipped: already sent in last 24h")
@@ -95,7 +96,7 @@ def select_and_send_question() -> Optional[str]:
     )
     cutoff_today = midnight_rome.astimezone(timezone.utc).isoformat()
     disabled = sb.table("bot_messages").select("id").eq(
-        "purpose", "proactive_disabled_today"
+        "purpose", PROACTIVE_DISABLED_TODAY
     ).gte("sent_at", cutoff_today).limit(1).execute()
     if disabled.data:
         logger.info("Proactive question skipped: disabilitate oggi dall'atleta")
@@ -123,7 +124,7 @@ def select_and_send_question() -> Optional[str]:
         }
         send_and_log_message(
             msg,
-            purpose="proactive_question",
+            purpose=PROACTIVE_QUESTION,
             context_data={"category": category, "question": question},
             parent_workflow="proactive-check-in.yml",
             reply_markup=buttons,
@@ -140,7 +141,13 @@ def main() -> None:
     try:
         from dotenv import load_dotenv; load_dotenv()
     except ImportError: pass
-    q = select_and_send_question()
+    from coach.utils.health import record_health
+    try:
+        q = select_and_send_question()
+    except Exception as e:  # noqa: BLE001
+        record_health("proactive_questions", success=False, error=str(e))
+        raise
+    record_health("proactive_questions", success=True)
     print(f"Domanda: {q}" if q else "Nessuna domanda")
 
 
