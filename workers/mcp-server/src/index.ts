@@ -493,21 +493,27 @@ export default {
       const state = url.searchParams.get("state") || "";
       const codeChallenge = url.searchParams.get("code_challenge") || "";
 
-      // Con OAUTH_CONNECT_SECRET configurato l'autorizzazione richiede il
-      // secret (l'auto-submit senza autenticazione consegnava il bearer a
-      // chiunque conoscesse l'URL). Senza secret: comportamento precedente.
-      const requireSecret = Boolean(env.OAUTH_CONNECT_SECRET);
+      // WP4 fail-closed: senza OAUTH_CONNECT_SECRET il flusso OAuth è CHIUSO.
+      // (Prima era opt-in: senza secret, l'auto-submit consegnava il bearer a
+      // chiunque conoscesse l'URL del worker.) Configurare con:
+      //   wrangler secret put OAUTH_CONNECT_SECRET   (in workers/mcp-server)
+      if (!env.OAUTH_CONNECT_SECRET) {
+        return htmlPage("Non configurato", `
+          <h1>⚠️ OAuth disabilitato</h1>
+          <p>OAUTH_CONNECT_SECRET non è configurato su questo worker.
+          Impostalo con <code>wrangler secret put OAUTH_CONNECT_SECRET</code> e riprova.</p>
+        `);
+      }
       return htmlPage("Triathlon Coach — Autorizzazione", `
         <h1>🏊🚴🏃 Triathlon Coach AI</h1>
-        <p>${requireSecret ? "Inserisci il secret di connessione:" : "Autorizzazione in corso..."}</p>
+        <p>Inserisci il secret di connessione:</p>
         <form id="f" method="GET" action="/oauth/callback">
           <input type="hidden" name="redirect_uri" value="${escapeHtml(redirectUri)}">
           <input type="hidden" name="state" value="${escapeHtml(state)}">
           <input type="hidden" name="code_challenge" value="${escapeHtml(codeChallenge)}">
-          ${requireSecret ? '<input type="password" name="connect_secret" autofocus placeholder="Connect secret">' : ""}
+          <input type="password" name="connect_secret" autofocus placeholder="Connect secret">
           <button type="submit">✅ Autorizza accesso</button>
         </form>
-        ${requireSecret ? "" : "<script>document.getElementById('f').submit();</script>"}
       `);
     }
 
@@ -517,10 +523,11 @@ export default {
       const state = url.searchParams.get("state") || "";
       const codeChallenge = url.searchParams.get("code_challenge") || "";
 
-      if (env.OAUTH_CONNECT_SECRET &&
+      // WP4 fail-closed: secret obbligatorio, mai bypassabile per assenza di config.
+      if (!env.OAUTH_CONNECT_SECRET ||
           url.searchParams.get("connect_secret") !== env.OAUTH_CONNECT_SECRET) {
         return htmlPage("Accesso negato", `
-          <h1>❌ Secret di connessione errato</h1>
+          <h1>❌ Secret di connessione mancante o errato</h1>
           <p>Torna indietro e riprova.</p>
         `);
       }
