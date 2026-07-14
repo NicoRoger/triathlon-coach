@@ -97,18 +97,28 @@ Dopo approvazione dell'atleta:
    ```
    Un'entry per ogni tipo di sessione di qualità con il volume previsto per settimana.
    - Restituisce `mesocycle_id`
-2. Chiama `commit_plan_change` per ogni sessione, passando il `mesocycle_id` ricevuto. Ogni sessione **DEVE** includere il campo `structured` come flat steps list (D-09):
+2. Chiama `commit_plan_change` per ogni sessione, passando il `mesocycle_id` ricevuto. Ogni sessione **DEVE** includere il campo `structured` nel formato canonico `{"steps": [...]}` (D-09, allineato a propose_session.md):
    ```json
    {
-     "structured": [
-       {"name": "warmup",   "duration_s": 900,  "zone": "Z1-Z2", "notes": "progressivo"},
-       {"name": "drill",    "reps": 4, "duration_s": 50, "zone": "Z1", "target_value": "fingertip drag"},
-       {"name": "main_set", "reps": 6, "duration_s": 360, "zone": "Z4", "target_value": 210, "notes": "@ 105% FTP"},
-       {"name": "cooldown", "duration_s": 600,  "zone": "Z1"}
-     ]
+     "structured": {
+       "steps": [
+         {"name": "warmup",   "duration_s": 900,  "zone": "Z1-Z2", "notes": "progressivo + 3×30\" spin-up"},
+         {"name": "main_set", "reps": 6, "duration_s": 360, "zone": "Z4", "target": "HR 163-172"},
+         {"name": "recovery", "reps": 5, "duration_s": 120, "zone": "Z1"},
+         {"name": "cooldown", "duration_s": 540,  "zone": "Z1"}
+       ]
+     }
    }
    ```
-   Almeno un step `warmup`, uno o piu `main_set` (con intervalli), un `cooldown`. Il campo `target_value` deve contenere il valore numerico preciso da `physiology_zones`.
+   Almeno un step `warmup`, uno o più `main_set` (intervalli espliciti), un `cooldown`.
+   `duration_s` è PER RIPETIZIONE (nuoto: send-off incluso, con `distance_m`). `target` con valore preciso da `physiology_zones`.
+   ⚠️ Il commit RIFIUTA se somma(duration_s×reps) ≠ duration_s (±5%); il TSS viene calcolato dagli step — non stimarlo.
+
+   **Metodologia settimanale obbligatoria** (vedi "Costruzione professionale del main set" in propose_session.md per il dettaglio):
+   - Nessuna sessione col main set identico alla settimana precedente: variante o progressione esplicita, dichiarata nel `progression_plan`.
+   - Fase specific per gara cross: ≥1 sessione bici qualità su 2 in formato variabile (30/30, over-under, strappi), non solo blocchi lineari.
+   - 1×/settimana muscular endurance in bici (big gear 50-55rpm) + 1 sessione `sport=strength` (30-40', forza/core).
+   - Nuoto: send-off derivati dal CSS con target per ripetuta; nella finestra 8 settimane pre-gara A estiva, 1 open water (o simulazione OW in vasca) a settimana.
 3. Conferma: "Mesociclo {name} salvato — {n} sessioni pianificate fino al {end_date}"
 
 ## Output strutturato

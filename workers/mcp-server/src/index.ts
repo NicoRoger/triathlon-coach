@@ -161,10 +161,31 @@ const TOOLS = [
         sport: { type: "string", enum: ["swim", "bike", "run", "brick", "strength"] },
         session_type: { type: "string" },
         duration_s: { type: "integer", minimum: 60 },
-        target_tss: { type: "number" },
+        target_tss: { type: "number", description: "Opzionale: se steps presenti il TSS viene CALCOLATO dagli step (IF² per zona); un valore fornito che devia >25% dal calcolato viene rifiutato." },
         target_zones: { type: "object" },
         description: { type: "string" },
-        structured: { type: "object" },
+        structured: {
+          type: "object",
+          description: "OBBLIGATORIO per sessioni di allenamento (non per rest). Formato canonico: {steps: [{name, duration_s, zone, reps?, distance_m?, target?, notes?}]}. duration_s è PER RIPETIZIONE, send-off/riposo INCLUSO (es. 4×200m partenza 3:20 → reps:4, duration_s:200, distance_m:200). La somma duration_s×reps deve = duration_s totale (±5%) o il commit viene rifiutato.",
+          properties: {
+            steps: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["name", "duration_s", "zone"],
+                properties: {
+                  name: { type: "string", description: "warmup | drill | main_set | recovery | cooldown | ..." },
+                  duration_s: { type: "integer", minimum: 5, description: "Durata PER RIPETIZIONE, riposo/send-off incluso" },
+                  zone: { type: "string", description: "Z1..Z5 (o CSS/CSS_minus5/CSS_plus5 per il nuoto)" },
+                  reps: { type: "integer", minimum: 1 },
+                  distance_m: { type: "number", description: "Per il nuoto: metri PER RIPETIZIONE" },
+                  target: { type: "string", description: "Target numerico preciso da physiology_zones (es. '2:50 sul 200 (CSS+5)', 'HR 151-162')" },
+                  notes: { type: "string" },
+                },
+              },
+            },
+          },
+        },
         status: { type: "string", enum: ["planned", "completed", "skipped", "modified", "cancelled"], description: "Default 'planned'. Per cancellare preferisci il tool delete_session." },
         mesocycle_id: { type: "string", description: "Opzionale: se omesso viene agganciato automaticamente il mesociclo attivo per quella data." },
         calendar_event_id: { type: "string" },
@@ -1333,30 +1354,69 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   // Merged into structured.zones_derived so coach and compliance engine share the same baseline.
   const zonesRow = await getActiveZoneForDiscipline(args.sport, env).catch(() => null);
   const absoluteZones = computeAbsoluteZones(args.sport, zonesRow);
-  const structuredBase = args.structured || {};
+  // Formato canonico UNICO: {steps: [...]}. La skill storicamente mostrava un
+  // array flat — normalizziamo qui così i vecchi pattern non aggirano i check.
+  let structuredBase: any = args.structured || {};
+  if (Array.isArray(structuredBase)) structuredBase = { steps: structuredBase };
+
+  // Guardrail qualità-workout: gli step sono il dettaglio verificabile della
+  // sessione. duration_s per step è PER RIPETIZIONE (send-off/riposo incluso).
+  const steps = structuredBase.steps;
+  if (Array.isArray(steps) && steps.length > 0) {
+    let stepSum = 0;
+    let totalDistance = 0;
+    for (const [i, s] of steps.entries()) {
+      const dur = Number(s.duration_s) || 0;
+      const reps = Number(s.reps) || 1;
+      if (dur <= 0) {
+        throw new Error(
+          `Step ${i + 1} ('${s.name || "?"}') senza duration_s valida: ogni step deve avere ` +
+          `la durata per ripetizione (per il nuoto: tempo di partenza/send-off, riposo incluso).`
+        );
+      }
+      stepSum += dur * reps;
+      if (s.distance_m) totalDistance += Number(s.distance_m) * reps;
+    }
+    const tolerance = Math.round(args.duration_s * 0.05);
+    const delta = stepSum - args.duration_s;
+    if (Math.abs(delta) > tolerance) {
+      throw new Error(
+        `Struttura incoerente: somma step (reps incluse)=${stepSum}s, duration_s=${args.duration_s}s ` +
+        `(delta ${delta > 0 ? "+" : ""}${delta}s, tolleranza ±${tolerance}s). ` +
+        `Correggi gli step o il duration_s prima di committare.`
+      );
+    }
+    // Totali derivati: persistiti così descrizione/brief/analisi citano numeri
+    // veri, non stime a spanne ("~2.3km" per 1700m reali).
+    structuredBase.computed = {
+      total_duration_s: stepSum,
+      ...(totalDistance > 0 ? { total_distance_m: Math.round(totalDistance) } : {}),
+    };
+
+    // TSS deterministico dagli step (hrTSS-style: h × IF² × 100, IF per zona).
+    // Un target_tss fornito che devia >25% dal calcolato è una stima a spanne
+    // e viene rifiutato: inquinerebbe PMC e confronto pianificato/eseguito.
+    const computedTss = computeTssFromSteps(steps);
+    if (computedTss !== null) {
+      structuredBase.computed.tss = computedTss;
+      if (args.target_tss !== undefined) {
+        const diff = Math.abs(Number(args.target_tss) - computedTss);
+        if (diff > computedTss * 0.25) {
+          throw new Error(
+            `target_tss=${args.target_tss} devia troppo dal TSS calcolato dagli step (${computedTss}). ` +
+            `Usa ${computedTss} (o ometti target_tss: viene impostato automaticamente).`
+          );
+        }
+      } else {
+        payload.target_tss = computedTss;
+      }
+    }
+  }
+
   payload.structured = absoluteZones
     ? { ...structuredBase, zones_derived: absoluteZones }
     : (Object.keys(structuredBase).length > 0 ? structuredBase : undefined);
   if (payload.structured === undefined) delete payload.structured;
-
-  // Guardrail: se structured.steps è presente, la somma delle durate deve
-  // coincidere con duration_s (±5%). Previene sessioni strutturalmente incoerenti
-  // prima che raggiungano il DB.
-  const steps = (args.structured as any)?.steps;
-  if (Array.isArray(steps) && steps.length > 0) {
-    const stepSum = steps.reduce((acc: number, s: any) => acc + (Number(s.duration_s) || 0), 0);
-    if (stepSum > 0) {
-      const tolerance = Math.round(args.duration_s * 0.05);
-      const delta = stepSum - args.duration_s;
-      if (Math.abs(delta) > tolerance) {
-        throw new Error(
-          `Struttura incoerente: somma step=${stepSum}s, duration_s=${args.duration_s}s ` +
-          `(delta ${delta > 0 ? "+" : ""}${delta}s, tolleranza ±${tolerance}s). ` +
-          `Correggi gli step o il duration_s prima di committare.`
-        );
-      }
-    }
-  }
 
   const existingResp = await fetch(
     `${env.SUPABASE_URL}/rest/v1/planned_sessions?planned_date=eq.${args.planned_date}&sport=eq.${args.sport}&session_type=eq.${encodeURIComponent(args.session_type)}`,
@@ -1531,6 +1591,36 @@ async function rescheduleSession(args: any, env: Env): Promise<any> {
 // ============================================================================
 
 /** Recupera la riga physiology_zones attiva per la disciplina specificata. */
+/** IF nominale per zona (mid-zone, hrTSS-style). Copre le label Z1..Z5 e le
+ *  zone CSS del nuoto. TSS step = ore × IF² × 100. */
+const ZONE_IF: Record<string, number> = {
+  z1: 0.55, z2: 0.70, z3: 0.85, z4: 0.95, z5: 1.05,
+  css_minus5: 0.70, css: 0.95, css_plus5: 1.05,
+};
+
+/** TSS deterministico dagli step. null se nessuno step ha una zona mappabile.
+ *  La zona può essere "Z2", "Z1-Z2" (si usa la più alta: warm-up progressivo),
+ *  "CSS_minus5", ecc. Step senza zona riconosciuta contano come Z1 (prudente:
+ *  drill/transizioni). */
+function computeTssFromSteps(steps: any[]): number | null {
+  let tss = 0;
+  let anyZone = false;
+  for (const s of steps) {
+    const dur = (Number(s.duration_s) || 0) * (Number(s.reps) || 1);
+    const zoneRaw = String(s.zone || "").toLowerCase().replace(/\s/g, "");
+    const parts = zoneRaw.split(/[-/]/).filter(Boolean);
+    let factor = ZONE_IF.z1;
+    for (const p of parts) {
+      if (ZONE_IF[p] !== undefined) {
+        factor = Math.max(factor, ZONE_IF[p]);
+        anyZone = true;
+      }
+    }
+    tss += (dur / 3600) * factor * factor * 100;
+  }
+  return anyZone ? Math.round(tss) : null;
+}
+
 async function getActiveZoneForDiscipline(discipline: string, env: Env): Promise<any | null> {
   const today = todayRomeISO();
   const rows = await sb(env, `physiology_zones?discipline=eq.${discipline}&or=(valid_to.is.null,valid_to.gte.${today})&valid_from=lte.${today}&order=valid_from.desc&limit=1`).catch(() => null);
