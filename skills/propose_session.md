@@ -73,6 +73,32 @@ I drill tecnici sono parte **INTEGRANTE** della sessione (nel warmup o nel main 
 
 ---
 
+## Costruzione professionale del main set (OBBLIGATORIO)
+
+### Regola anti-fotocopia
+**MAI committare una sessione con main set identico all'ultima sessione dello stesso `session_type`** (verifica con `get_upcoming_plan`/storico). Ad ogni occorrenza: o VARI la struttura (variante diversa dalla libreria sotto) o PROGREDISCI un parametro esplicito (reps, durata rep, densità recuperi, passo target) — e dichiari nel razionale COSA progredisce rispetto alla volta scorsa. Tre sessioni identiche in tre settimane = zero sovraccarico progressivo = stimolo sprecato.
+
+### Nuoto — set professionali
+- **Send-off obbligatori derivati dal CSS**, mai riposi fissi generici: "4×200 partenza 3:20" insegna la gestione del passo, "R20"" no. Target PER RIPETUTA numerico (es. Z2 = CSS+5-8s/100m → "2:50-2:55 sul 200").
+- Progressioni aerobiche tipo (ruota tra): `4×200` → `3×300` → `2×400+200` → `400+300+200+100 descending`.
+- Tecnica: ruota TUTTI i drill della libreria (mai gli stessi 2 di fila), progredisci il rapporto drill:nuotata integrale nelle settimane (es. 60:40 → 40:60), dai un **target stroke count NUMERICO** (baseline dall'ultima sessione, es. "17→16 bracciate/25m"), non "riducilo".
+- Open water: **nella finestra 8 settimane pre-gara A estiva, 1 sessione OW a settimana** (CLAUDE.md §3): sighting ogni 6-8 bracciate, partenze/boe simulate, nuoto in acqua mossa. Se OW impossibile, simula in vasca (sighting drill, partenze dal bordo).
+
+### Bici — qualità per il cross
+- **Fase specific: la variabilità è obbligatoria** — le note del mesociclo la prescrivono ("sforzi variabili e ripetuti, non solo blocchi lineari"). Almeno 1 sessione di qualità su 2 usa formati variabili: `30/30` o `40/20` (Z4-Z5/Z1), over-under (2' sotto soglia + 1' sopra), strappi `8-10×1'` con recupero incompleto, sali-scendi simulati.
+- **Muscular endurance** (debolezza #1 dell'atleta): big-gear intervals 50-55rpm in Z2-Z3 (`3-5×5'`) — almeno 1×/settimana dentro una sessione bici, progressione su durata rep.
+- Warm-up delle sessioni di qualità CON attivazione: progressivo + `2-3×30"` spin-up/allunghi prima del main set.
+
+### Corsa — con vincolo fascite
+- Gli allunghi PROGREDISCONO (n° reps, poi durata 20"→30", poi pendenza) — non restano `5×20"` per tre settimane.
+- Quando la fascite regge (asintomatica, cap km rispettato): introduci variabilità cross a basso impatto (saliscendi continui Z2-Z3 a sensazione, cambi di ritmo brevi in salita) prima di ripetute classiche su piano.
+
+### Forza (sport=strength)
+- **1 sessione/settimana** di forza/core (30-40'): profilo "primo cedimento muscolare" — è il gap n°1. Bodyweight/elastici: affondi, split squat, calf raise eccentrici (protezione fascite), core anti-rotazione, scapolari (protezione spalla). Committala come `sport=strength` con steps.
+
+### Aritmetica (ripetuto perché è il difetto storico)
+Prima di scrivere la prosa: somma gli step. Durata dichiarata = somma step. Distanza dichiarata = somma distance_m. Il guardrail rifiuta il commit se non torna — ma la PROSA deve essere coerente anche dove il guardrail non vede (etichette "MAIN (1400m)" con item che sommano 1100m = inaccettabile).
+
 ## Template output (OBBLIGATORIO — mai deviare da questa struttura)
 
 ```
@@ -97,21 +123,24 @@ Zone di riferimento: [valori da physiology_zones — watt/pace/s100m]
 ```
 
 **Committa con `commit_plan_change`** includendo:
-- `target_tss`: valore numerico stimato
-- `structured`: flat steps list nel formato `[{name, duration_s, zone, target_value, reps?, notes?}]`
-  - Almeno un step `warmup`, uno o piu `main_set` (con intervalli espliciti), un `cooldown`
-  - `target_value` deve contenere il valore numerico preciso da `physiology_zones` (watt / s-km / s-100m)
-  - Per il nuoto, includi `notes` leggibile (es. `"CSS-5: 1:35/100m"`) oltre al `target_value` numerico in s/100m
+- `structured`: **OBBLIGATORIO**, formato canonico `{"steps": [{name, duration_s, zone, reps?, distance_m?, target?, notes?}]}`
+  - `duration_s` è PER RIPETIZIONE, **send-off/riposo INCLUSO** (nuoto: 4×200m partenza 3:20 → `reps:4, duration_s:200, distance_m:200`)
+  - Almeno un step `warmup`, uno o più `main_set` (intervalli espliciti), un `cooldown`
+  - `target` contiene il valore preciso da `physiology_zones` (es. `"2:50 sul 200 (CSS+5)"`, `"HR 151-162"`)
+  - ⚠️ **Il commit viene RIFIUTATO se** somma(duration_s×reps) ≠ duration_s totale (±5%) — fai l'aritmetica PRIMA di scrivere la descrizione, e la prosa DEVE citare gli stessi numeri degli step (distanza totale = somma dei distance_m, mai "~2.3km" se gli step sommano 2000m)
+- `target_tss`: **OMETTILO** — viene calcolato automaticamente dagli step (h × IF² × 100 per zona) e salvato in `structured.computed.tss`. Se lo fornisci e devia >25% dal calcolato, il commit viene rifiutato.
 
-Esempio JSONB canonical:
+Esempio JSONB canonical (nuoto aerobico 45' = 2700s, somma step 2700 ✓):
 ```json
 {
-  "structured": [
-    {"name": "warmup",   "duration_s": 900,  "zone": "Z1-Z2", "notes": "progressivo"},
-    {"name": "drill",    "reps": 4, "duration_s": 50, "zone": "Z1", "target_value": "fingertip drag"},
-    {"name": "main_set", "reps": 6, "duration_s": 360, "zone": "Z4", "target_value": 210, "notes": "@ 105% FTP"},
-    {"name": "cooldown", "duration_s": 600,  "zone": "Z1"}
-  ]
+  "structured": {
+    "steps": [
+      {"name": "warmup",   "duration_s": 480, "zone": "Z1", "distance_m": 400, "notes": "200 sciolto + 4×50 progressivi part. 1:10"},
+      {"name": "main_set", "reps": 4, "duration_s": 200, "zone": "Z2", "distance_m": 200, "target": "2:50-2:55 sul 200 (CSS+5/8), partenza 3:20"},
+      {"name": "main_set", "reps": 3, "duration_s": 260, "zone": "Z2", "distance_m": 250, "target": "pull, 1:28/100m, partenza 4:20"},
+      {"name": "cooldown", "duration_s": 640, "zone": "Z1", "distance_m": 400, "notes": "sciolto misto"}
+    ]
+  }
 }
 ```
 
