@@ -22,9 +22,43 @@ from coach.utils.health import record_health
 
 logger = logging.getLogger(__name__)
 
+# TUTTE le tabelle con dati d'atleta. Ne mancavano 14 su 23: un restore
+# riportava attività e piano, ma perdeva `active_constraints` (i vincoli
+# medici, fonte di verità dichiarata in CLAUDE.md §9 — il coach sarebbe
+# ripartito senza sapere della spalla e della fascite), tutte le `beliefs`
+# (mesi di apprendimento) e ogni analisi di sessione.
+#
+# L'ordine è quello di RIPRISTINO: le tabelle referenziate vengono prima di
+# chi le referenzia. Vedi dr_restore.RESTORE_ORDER, che riusa questa lista.
 TABLES = [
-    "activities", "daily_wellness", "subjective_log", "physiology_zones",
-    "daily_metrics", "mesocycles", "planned_sessions", "races", "health",
+    # 1. Anagrafiche senza dipendenze
+    "races",
+    "activities",
+    # 2. Dipendono da activities/races
+    "mesocycles",              # target_race_id → races
+    "physiology_zones",        # test_activity_id → activities
+    "session_analyses",        # activity_id → activities
+    "planned_sessions",        # mesocycle_id → mesocycles
+    # 3. Serie temporali indipendenti
+    "daily_wellness",
+    "daily_metrics",
+    "subjective_log",
+    # 4. Stato di coaching
+    "active_constraints",
+    "beliefs",
+    "beliefs_history",
+    "plan_modulations",
+    "predictions",
+    "outcomes",
+    "recommendations",
+    "hypothesis_tests",
+    "decision_audit",
+    # 5. Operativo
+    "health",
+    "sent_reminders",
+    "bot_messages",
+    "pending_confirmations",
+    "api_usage",
 ]
 BUCKET = "dr-snapshots"
 
