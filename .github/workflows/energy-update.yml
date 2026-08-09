@@ -20,12 +20,12 @@ on:
         type: choice
         options: ["false", "true"]
 
-# cancel-in-progress false per lo stesso motivo di morning-briefing: non
-# cancellare un run tra invio Telegram e insert bot_messages (duplicherebbe).
-# Permessi minimi: questi job non scrivono sul repository.
+# Permessi minimi: questo job non scrive sul repository.
 permissions:
   contents: read
 
+# cancel-in-progress false per lo stesso motivo di morning-briefing: non
+# cancellare un run tra invio Telegram e insert bot_messages (duplicherebbe).
 concurrency:
   group: energy-update
   cancel-in-progress: false

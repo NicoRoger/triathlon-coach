@@ -102,6 +102,40 @@ def should_trigger_modulation(analysis_text: str, metrics: Optional[dict]) -> bo
     return len(triggers) > 0
 
 
+#: Valori di `source` ammessi dal CHECK originale (migration 2026-06-15).
+#: La migration 2026-08-09 lo allarga alle etichette di provenienza fine, ma
+#: le migration si applicano a mano: finché non è stata eseguita, l'INSERT
+#: fallisce con 23514 e il chiamante (test_scheduler) muore — è ciò che ha
+#: ucciso il job domenicale per 4 settimane.
+_SOURCE_FALLBACK = "auto"
+
+
+def _insert_modulation(sb, record: dict):
+    """Inserisce la modulazione, degradando `source` se il CHECK la rifiuta.
+
+    Il valore fine (es. 'test_scheduler') non viene perso: finisce in
+    `trigger_data.source_detail`, che è JSONB e non ha vincoli. Così il job
+    funziona sia prima sia dopo la migration, e la provenienza resta
+    ricostruibile in entrambi i casi.
+    """
+    try:
+        return sb.table("plan_modulations").insert(record).execute()
+    except Exception as e:  # noqa: BLE001
+        if "plan_modulations_source_check" not in str(e):
+            raise
+        original = record.get("source")
+        logger.warning(
+            "source='%s' rifiutato dal CHECK (migration 2026-08-09 non ancora "
+            "applicata): riprovo come '%s', provenienza in trigger_data.source_detail",
+            original, _SOURCE_FALLBACK,
+        )
+        degraded = dict(record)
+        degraded["source"] = _SOURCE_FALLBACK
+        degraded["trigger_data"] = {**(record.get("trigger_data") or {}),
+                                    "source_detail": original}
+        return sb.table("plan_modulations").insert(degraded).execute()
+
+
 def propose_modulation(
     trigger_event: str,
     trigger_data: dict,
@@ -153,8 +187,8 @@ def propose_modulation(
         "status": "proposed",
         "source": source,
     }
-    res = sb.table("plan_modulations").insert(record).execute()
-    if not res.data:
+    res = _insert_modulation(sb, record)
+    if res is None or not res.data:
         logger.error("Failed to insert modulation")
         return None
 
