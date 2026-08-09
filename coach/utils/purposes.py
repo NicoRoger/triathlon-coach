@@ -19,6 +19,14 @@ PROACTIVE_QUESTION = "proactive_question"
 PROACTIVE_DISABLED_TODAY = "proactive_disabled_today"
 MODULATION_PROPOSAL = "modulation_proposal"
 ZONES_RECALC = "zones_recalc"
+
+# Alert di sistema. DEVONO avere un purpose proprio: finivano loggati come
+# MORNING_BRIEF (default di send_to_telegram) e facevano scattare
+# l'idempotenza del brief, sopprimendo il brief vero di quel giorno.
+BUDGET_ALERT = "budget_alert"
+PROVIDER_FALLBACK = "provider_fallback"
+SMOKE_TEST = "smoke_test"
+
 GENERIC = "generic"
 
 ALL_PURPOSES = frozenset(

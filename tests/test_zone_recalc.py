@@ -58,3 +58,32 @@ def test_untouched_when_no_recognizable_range():
 def test_does_not_cross_lines_or_parens():
     desc = "Z2 oggi.\nDomani altro (HR 140-150)"  # label e range su righe diverse
     assert rewrite_description(desc, LTHR) == desc
+
+
+def test_multiple_zones_on_one_line_each_gets_own_range():
+    """Regressione: con più label di zona sulla stessa riga vinceva il match
+    più a sinistra, così le ripetute Z5 ricevevano il range della Z2 —
+    prescrizione corrotta, scritta in automatico e senza conferma."""
+    assert rewrite_description("20' Z2 + 5x3' Z5 (HR >178)", LTHR) == "20' Z2 + 5x3' Z5 (HR >175)"
+    assert rewrite_description("Z2 60' con finale Z4 (HR 165-174)", LTHR) == "Z2 60' con finale Z4 (HR 166-175)"
+    assert (
+        rewrite_description("8' warm-up Z1 / 30' Z2 (HR 145-155) / 7' cool-down Z1.", LTHR)
+        == "8' warm-up Z1 / 30' Z2 (HR 142-156) / 7' cool-down Z1."
+    )
+
+
+def test_rewrite_touches_only_hr_parens():
+    """Invariante di sicurezza: fuori dai gruppi (HR ...) il testo è identico."""
+    src = "Z1 (HR <138) poi 4x800m in Z4 (HR 160-170, 4:20/km) rec 2' Z1 (HR <138)"
+    out = rewrite_description(src, LTHR)
+    assert _mod._only_hr_ranges_changed(src, out)
+    assert "4x800m" in out and "4:20/km" in out
+
+
+def test_unsafe_rewrite_is_discarded(monkeypatch):
+    """Se una futura modifica alla regex toccasse testo fuori dai range HR,
+    la riscrittura viene scartata invece di corrompere la sessione."""
+    import re as _re
+    monkeypatch.setattr(_mod, "_ZONE_HR_RE", _re.compile(r"(?P<prefix>Z(?P<zn>[1-5]) )(?P<range>\w+)"))
+    src = "Z2 continuo 45'"
+    assert rewrite_description(src, LTHR) == src

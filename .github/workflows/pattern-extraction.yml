@@ -2,8 +2,10 @@ name: pattern-extraction
 
 on:
   schedule:
-    # Domenica notte alle 23:00 (Europe/Rome = 21:00 UTC in estate)
-    - cron: '0 21 * * 0'
+    # Domenica alle 22:00 UTC. Era 21:00, lo stesso minuto in cui parte
+    # l'ingest (`0 */3 * * *`): entrambi committano su docs/ e il push di
+    # questo job perdeva la corsa, in silenzio (vedi step di commit).
+    - cron: '0 22 * * 0'
   workflow_dispatch:
 
 permissions:
@@ -73,9 +75,28 @@ jobs:
         run: python scripts/update_progress_tracker.py
 
       - name: Commit and push changes
+        # `if: always()`: gli step precedenti producono ciascuno un artefatto
+        # indipendente (osservazioni, belief, anamnesi, tracker). Se uno fallisce
+        # non c'è motivo di buttare via il lavoro degli altri — è esattamente ciò
+        # che è successo per 4 settimane, con docs/ congelato al 2026-07-05.
+        if: always()
         run: |
+          set -euo pipefail
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          git add docs/coaching_observations.md docs/progress_tracker.md docs/athlete_beliefs.md docs/athlete_anamnesis.md
-          git commit -m "docs: auto-update observations + tracker + beliefs + anamnesi" || echo "No changes to commit"
-          git push origin HEAD:${{ github.ref }} || echo "Push failed or not needed"
+          git add -A docs/
+          if git diff --cached --quiet; then
+            echo "Nessuna modifica da committare"
+            exit 0
+          fi
+          git commit -m "docs: auto-update observations + tracker + beliefs + anamnesi"
+          # Il push NON viene più ingoiato da `|| echo`: un push perso lasciava
+          # il repo indietro senza che nulla lo segnalasse. Si riprova con
+          # rebase (l'ingest committa sugli stessi file), poi si fallisce.
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "Push tentativo $i fallito, riprovo..."
+            sleep $((i * 5))
+          done
+          echo "::error::Push fallito dopo 3 tentativi: docs/ resta indietro"
+          exit 1

@@ -26,12 +26,23 @@ from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 
-# Z<num> seguito (stessa riga, max 40 char, senza aprire altre parentesi)
-# da "(HR <numeri>": si riscrive solo lo span numerico, il resto della
-# parentesi (", ~5:30/km", ", LTHR 170") resta intatto.
+# Z<num> seguito (stessa riga, max 40 char, senza aprire altre parentesi né
+# incontrare un'ALTRA label di zona) da "(HR <numeri>": si riscrive solo lo
+# span numerico, il resto della parentesi (", ~5:30/km", ", LTHR 170") resta
+# intatto.
+#
+# Il tempered pattern (?!Z[1-5]) è essenziale: senza, su una riga con più zone
+# ("30' Z2 + 5x3' Z5 (HR >178)") vinceva il match più a SINISTRA e il range
+# della Z5 veniva riscritto coi valori della Z2 — ripetute VO2max prescritte a
+# frequenza aerobica, scritte in automatico e senza conferma.
 _ZONE_HR_RE = re.compile(
-    r"(?P<prefix>Z(?P<zn>[1-5])[^\n()]{0,40}?\(HR\s*)(?P<range><?\s*\d+(?:\s*-\s*\d+)?|>\s*\d+)"
+    r"(?P<prefix>Z(?P<zn>[1-5])(?:(?!Z[1-5])[^\n()]){0,40}?\(HR\s*)"
+    r"(?P<range><?\s*\d+(?:\s*-\s*\d+)?|>\s*\d+)"
 )
+
+# Tutto ciò che NON è un range HR fra parentesi deve restare identico: è
+# l'invariante che rende sicura una riscrittura automatica su planned_sessions.
+_HR_PAREN_RE = re.compile(r"\(HR[^)]*\)")
 
 
 def _bounds_from_lthr(lthr: int) -> dict[int, str]:
@@ -44,13 +55,30 @@ def _bounds_from_lthr(lthr: int) -> dict[int, str]:
 
 
 def rewrite_description(description: str, lthr: int) -> str:
-    """Riscrive i range HR riconoscibili in una descrizione. Pura, testabile."""
+    """Riscrive i range HR riconoscibili in una descrizione. Pura, testabile.
+
+    Ritorna la descrizione ORIGINALE se la riscrittura tocca qualcosa fuori da
+    un gruppo `(HR ...)`: meglio una prescrizione con numeri vecchi (che il
+    coach nota) che una corrotta scritta in automatico (che nessuno nota).
+    """
     bounds = _bounds_from_lthr(lthr)
 
     def _sub(m: re.Match) -> str:
         return m.group("prefix") + bounds[int(m.group("zn"))]
 
-    return _ZONE_HR_RE.sub(_sub, description)
+    candidate = _ZONE_HR_RE.sub(_sub, description)
+    if candidate != description and not _only_hr_ranges_changed(description, candidate):
+        logger.error(
+            "zone_recalc: riscrittura scartata, avrebbe modificato testo fuori dai "
+            "range HR. Descrizione lasciata invariata: %.120s", description
+        )
+        return description
+    return candidate
+
+
+def _only_hr_ranges_changed(before: str, after: str) -> bool:
+    """True se le due stringhe differiscono SOLO dentro i gruppi `(HR ...)`."""
+    return _HR_PAREN_RE.sub("(HR)", before) == _HR_PAREN_RE.sub("(HR)", after)
 
 
 def recalc_future_sessions(discipline: str) -> int:

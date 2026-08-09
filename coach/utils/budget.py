@@ -218,6 +218,11 @@ def check_budget_or_raise(estimated_cost: float, purpose: str) -> str:
     # cap di $5.00. Blocca quando la spesa reale ha raggiunto il cap, OPPURE
     # quando la proiezione supera la soglia di blocco $4.80.
     if (spend >= BUDGET_HARD_CAP or projected > BUDGET_BLOCKED) and not is_emergency:
+        # Nessun guard `_crosses` qui: a budget già esaurito `spend <= soglia`
+        # è falso, quindi l'atleta non verrebbe MAI avvisato del blocco. La
+        # ripetizione è invece impedita da _send_budget_alert, che deduplica
+        # una volta al giorno — il livello corretto, perché vale per tutti i
+        # rami e non dipende dalla forma della soglia.
         _send_budget_alert(
             f"🛑 Budget API ESAURITO (${spend:.2f}/${BUDGET_HARD_CAP:.2f}). "
             f"Tutte le chiamate AI disabilitate fino a fine mese. "
@@ -288,9 +293,47 @@ def log_api_call(
 
 
 def _send_budget_alert(message: str) -> None:
-    """Manda alert budget via Telegram."""
+    """Manda alert budget via Telegram.
+
+    Usa send_and_log_message direttamente con un purpose PROPRIO: passando da
+    briefing.send_to_telegram ereditava il default `morning_brief`, quindi ogni
+    alert veniva registrato in bot_messages come se fosse il brief del giorno e
+    faceva scattare l'idempotenza in briefing.main() → nessun brief inviato.
+    """
     try:
-        from coach.planning.briefing import send_to_telegram
-        send_to_telegram(message)
+        from coach.utils.purposes import BUDGET_ALERT
+        from coach.utils.telegram_logger import send_and_log_message
+        if _budget_alert_sent_today(BUDGET_ALERT):
+            logger.info("Alert budget già inviato oggi, skip")
+            return
+        send_and_log_message(message, purpose=BUDGET_ALERT, parent_workflow="budget")
     except Exception:
         logger.warning("Failed to send budget alert via Telegram")
+
+
+def _budget_alert_sent_today(purpose: str) -> bool:
+    """True se un alert budget è già stato inviato oggi (giorno Rome).
+
+    A budget esaurito ogni chiamata bloccata produrrebbe un alert: senza questo
+    dedup sarebbero decine al giorno fino a fine mese. Su errore ritorna False
+    (meglio un alert in più che nessuno: è l'unico vincolo hard del progetto).
+    """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    try:
+        from coach.utils.supabase_client import get_supabase
+        cutoff = (
+            datetime.now(ZoneInfo("Europe/Rome"))
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .astimezone(timezone.utc)
+            .isoformat()
+        )
+        res = (
+            get_supabase().table("bot_messages")
+            .select("id").eq("purpose", purpose).gte("sent_at", cutoff).limit(1).execute()
+        )
+        return bool(res.data)
+    except Exception:
+        logger.warning("Dedup alert budget fallito, procedo con l'invio", exc_info=True)
+        return False

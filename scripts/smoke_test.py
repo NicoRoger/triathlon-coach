@@ -59,8 +59,17 @@ def check_telegram():
 
 @check("Telegram send")
 def check_send():
-    from coach.planning.briefing import send_to_telegram
-    send_to_telegram("🧪 <b>Smoke test</b> — sistema operativo")
+    # Purpose proprio: con quello di default (morning_brief) uno smoke test
+    # eseguito di mattina veniva scambiato per il brief del giorno e lo
+    # sopprimeva.
+    from coach.utils.purposes import SMOKE_TEST
+    from coach.utils.telegram_logger import send_and_log_message
+    if send_and_log_message(
+        "🧪 <b>Smoke test</b> — sistema operativo",
+        purpose=SMOKE_TEST,
+        parent_workflow="smoke_test",
+    ) is None:
+        raise RuntimeError("invio Telegram fallito")
 
 
 @check("Garmin secret present")
