@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 from datetime import timedelta
 from pathlib import Path
 from typing import Optional
@@ -34,9 +33,11 @@ def _load_skill() -> str:
 
 def _get_planned_session(sb, activity_date: str, sport: str) -> Optional[dict]:
     """Trova sessione pianificata per data e sport."""
+    # Esclude le cancellate (l'analisi confronterebbe l'attività con una
+    # prescrizione annullata) e ordina per determinismo con doppie sessioni.
     res = sb.table("planned_sessions").select("*").eq(
         "planned_date", activity_date
-    ).eq("sport", sport).limit(1).execute()
+    ).eq("sport", sport).neq("status", "cancelled").order("session_type").limit(1).execute()
     return res.data[0] if res.data else None
 
 

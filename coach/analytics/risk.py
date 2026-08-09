@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from coach.utils.dt import today_rome, to_rome_date
@@ -229,7 +229,9 @@ def compute_injury_risk() -> RiskScore:
 
     Pesi: 0.35 volume jump, 0.30 injury active, 0.20 soreness, 0.15 history.
     """
-    metrics = _load_metrics(28)
+    # (nessun uso di daily_metrics qui: i 4 fattori documentati sopra pesano
+    # 1.00 fra volume, injury attivo, soreness e storico — la query c'era ma
+    # il risultato veniva scartato)
     activities = _load_recent_activities(14)
     subjective = _load_recent_subjective(60)
     factors: list[str] = []
@@ -413,7 +415,10 @@ def risks_to_brief_lines(risks: dict[str, RiskScore], threshold: str = "high") -
     Output esempio:
         '⚠️ Rischio overreaching: 62% (ACWR=1.42 elevato, RPE medio 7.4)'
     """
-    threshold_value = {"low": LEVEL_LOW, "moderate": LEVEL_MODERATE, "high": LEVEL_HIGH}[threshold]
+    # Soglia di INGRESSO nella banda, non di uscita: `_classify` assegna
+    # "high" a [0.50, 0.75), quindi mappare "high" → LEVEL_HIGH (0.75) faceva
+    # passare i soli "critical" e i rischi high non comparivano mai nel brief.
+    threshold_value = {"low": 0.0, "moderate": LEVEL_LOW, "high": LEVEL_MODERATE}[threshold]
     icons = {"overreaching": "📈", "injury": "🩹", "recovery": "💤"}
     labels = {"overreaching": "overreaching", "injury": "infortunio", "recovery": "recupero insuff."}
     lines: list[str] = []

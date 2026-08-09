@@ -24,7 +24,6 @@ aggiornare il file `docs/athlete_beliefs.md` con i bias longitudinali.
 """
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -185,9 +184,10 @@ def _resolve_compliance(sb, pred: dict) -> Optional[float]:
     # Settimana lun-dom contenente target_date
     monday = target - timedelta(days=target.weekday())
     sunday = monday + timedelta(days=6)
+    # Idem: una sessione cancellata non conta come pianificata mancata.
     planned = sb.table("planned_sessions").select("planned_date,status").gte(
         "planned_date", monday.isoformat()
-    ).lte("planned_date", sunday.isoformat()).execute()
+    ).lte("planned_date", sunday.isoformat()).neq("status", "cancelled").execute()
     if not planned.data:
         return None
     n_planned = len(planned.data)

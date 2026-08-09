@@ -82,7 +82,7 @@ def _verify_brief_zones(sb) -> bool:
         else:
             disc_list = ", ".join(f"{d}={v}" for d, v in sorted(by_disc.items()))
             print(f"  [OK] physiology_zones: {disc_list}")
-            print(f"  [OK] briefing.py legge physiology_zones -> Zone misurate nel brief")
+            print("  [OK] briefing.py legge physiology_zones -> Zone misurate nel brief")
 
     except Exception as exc:
         print(f"  ERRORE sezione BRIEF ZONES: {exc}")

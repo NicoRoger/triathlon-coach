@@ -17,7 +17,6 @@ import os
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
-import requests
 
 from coach.utils.supabase_client import get_supabase
 from coach.utils.health import record_health

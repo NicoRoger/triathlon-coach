@@ -1,8 +1,7 @@
 import argparse
 import logging
-import os
 import sys
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from coach.utils.health import record_health

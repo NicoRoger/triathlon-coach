@@ -6,8 +6,6 @@ Integrato in ingest.yml come step post-sync.
 from __future__ import annotations
 
 import logging
-import os
-from collections import Counter
 from datetime import timedelta
 
 from coach.utils.dt import today_rome

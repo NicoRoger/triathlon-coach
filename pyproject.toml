@@ -19,8 +19,16 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# I test stubbano moduli e usano fixture dinamiche: import "non usati" e
-# closure su variabili di loop sono deliberati.
-"tests/*" = ["F401", "F811", "B023"]
+# I test stubbano moduli e usano fixture dinamiche: import "non usati",
+# ridefinizioni e closure su variabili di loop sono deliberati.
+"tests/*" = ["F401", "F811", "B023", "B905", "F841"]
+# `coach/cognition/` è una facade di re-export puri: gli import "non usati"
+# SONO l'interfaccia del package.
+"coach/cognition/**/__init__.py" = ["F401"]
+# Script diagnostici: la query viene eseguita per verificare che funzioni,
+# il risultato non serve. Assegnarlo a una variabile è il modo più leggibile.
+"scripts/smoke_test.py" = ["F841"]
+"scripts/verify_live_behavior.py" = ["F841"]
+"scripts/test_race_week_brief.py" = ["F841"]
 # Script one-off di analisi: variabili intermedie tenute per leggibilità.
 "scripts/analyze_elite_archive.py" = ["F841", "B007"]

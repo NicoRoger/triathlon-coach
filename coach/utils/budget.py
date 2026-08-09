@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import calendar
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Optional
 

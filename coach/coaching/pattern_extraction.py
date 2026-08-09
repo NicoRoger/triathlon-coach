@@ -195,7 +195,7 @@ def update_beliefs_from_session_patterns(days: int = 14) -> dict:
 
     Returns dict {'updated': int, 'created': int, 'skipped': int, 'errors': int}.
     """
-    from coach.analytics.belief_engine import reinforce_belief, create_belief, list_beliefs
+    from coach.analytics.belief_engine import reinforce_belief, create_belief
 
     sb = get_supabase()
     since = (today_rome() - timedelta(days=days)).isoformat()

@@ -239,7 +239,7 @@ def sync_beliefs_from_observations(content: Optional[str] = None) -> dict:
         # Per evitare contradiction su belief vecchie ma non più visibili (potrebbero
         # essere riapparse in futuro), faccio contradict SOLO se belief recente
         # (< 60gg). Beliefs vecchie le lascio decay naturale.
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timezone
         if b.last_reinforced_at:
             last = b.last_reinforced_at
             if last.tzinfo is None:

@@ -424,6 +424,15 @@ class _ModFakeQuery:
     def eq(self, *a, **k):
         return self
 
+    # Il codice filtra le sessioni cancellate e ordina per determinismo:
+    # il doppio deve esporre la stessa superficie di query, altrimenti
+    # fallisce per AttributeError invece che per la logica sotto test.
+    def neq(self, *a, **k):
+        return self
+
+    def order(self, *a, **k):
+        return self
+
     def limit(self, *a, **k):
         return self
 

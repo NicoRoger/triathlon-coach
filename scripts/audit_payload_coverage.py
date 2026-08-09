@@ -10,11 +10,8 @@ Salva in docs/audit_garmin_completeness_2026-05-07.md
 """
 from __future__ import annotations
 
-import json
 import logging
-import os
 import sys
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
