@@ -525,10 +525,15 @@ export default {
           Impostalo con <code>wrangler secret put OAUTH_CONNECT_SECRET</code> e riprova.</p>
         `);
       }
+      // method="POST": con GET il secret finiva nella query string, quindi nei
+      // log di invocazione Cloudflare (observability attiva), nella cronologia
+      // del browser e potenzialmente nel Referer. Quel valore è l'unica
+      // barriera davanti a /oauth/token, che restituisce il bearer con accesso
+      // in scrittura a tutto il piano.
       return htmlPage("Triathlon Coach — Autorizzazione", `
         <h1>🏊🚴🏃 Triathlon Coach AI</h1>
         <p>Inserisci il secret di connessione:</p>
-        <form id="f" method="GET" action="/oauth/callback">
+        <form method="POST" action="/oauth/callback">
           <input type="hidden" name="redirect_uri" value="${escapeHtml(redirectUri)}">
           <input type="hidden" name="state" value="${escapeHtml(state)}">
           <input type="hidden" name="code_challenge" value="${escapeHtml(codeChallenge)}">
@@ -540,13 +545,22 @@ export default {
 
     // ── OAuth: callback ────────────────────────────────────────────────────
     if (url.pathname === "/oauth/callback") {
-      const redirectUri = url.searchParams.get("redirect_uri") || "";
-      const state = url.searchParams.get("state") || "";
-      const codeChallenge = url.searchParams.get("code_challenge") || "";
+      // Il form invia in POST (il secret non deve stare nell'URL). I parametri
+      // non sensibili restano leggibili anche da query string per compatibilità
+      // con eventuali link diretti già in uso.
+      const form = req.method === "POST"
+        ? await req.formData().catch(() => null)
+        : null;
+      const param = (name: string): string =>
+        (form?.get(name) as string | null) ?? url.searchParams.get(name) ?? "";
+
+      const redirectUri = param("redirect_uri");
+      const state = param("state");
+      const codeChallenge = param("code_challenge");
 
       // WP4 fail-closed: secret obbligatorio, mai bypassabile per assenza di config.
       if (!env.OAUTH_CONNECT_SECRET ||
-          url.searchParams.get("connect_secret") !== env.OAUTH_CONNECT_SECRET) {
+          param("connect_secret") !== env.OAUTH_CONNECT_SECRET) {
         return htmlPage("Accesso negato", `
           <h1>❌ Secret di connessione mancante o errato</h1>
           <p>Torna indietro e riprova.</p>
@@ -876,31 +890,49 @@ function isDateString(v: unknown): v is string {
 }
 
 // ── Data freshness helpers (Fix: temporal staleness) ─────────────────────────
-function oldestDateFromRecords(records: any[]): string | null {
+/** Data del record OSSERVATO più recente.
+ *
+ * La freschezza si misura sull'ultimo dato arrivato, non sul più vecchio: la
+ * versione precedente prendeva `dates.sort()[0]` (il minimo), quindi qualsiasi
+ * finestra più lunga di 6 ore — cioè tutte: 28 giorni per il contesto
+ * settimanale, 14 per le metriche — dichiarava "DATI VECCHI" anche a trenta
+ * secondi da un sync riuscito. Il ramo ✅ era irraggiungibile e il coach
+ * riceveva un allarme costante che contraddiceva `sync_status`.
+ *
+ * Si guardano solo i campi OSSERVAZIONALI: `planned_date` descrive sessioni
+ * future, includerlo misurerebbe il piano invece dei dati arrivati.
+ */
+function newestObservedDate(records: any[]): string | null {
   const dates: string[] = [];
   for (const r of records) {
     if (!r) continue;
-    for (const c of [r.date, r.planned_date, r.started_at, r.logged_at, r.created_at, r.proposed_at]) {
+    for (const c of [r.date, r.started_at, r.logged_at, r.created_at, r.proposed_at]) {
       if (c && typeof c === "string") dates.push(c.slice(0, 10));
     }
   }
-  return dates.length > 0 ? dates.sort()[0] : null;
+  if (dates.length === 0) return null;
+  dates.sort();
+  return dates[dates.length - 1];
 }
 
 function dataFreshness(recordGroups: any[][]): Record<string, any> {
   const now = new Date();
   const serverDateRome = todayRomeISO();
-  const oldest = oldestDateFromRecords(recordGroups.flat().filter(Boolean));
-  const ageHours = oldest ? Math.round((now.getTime() - new Date(oldest).getTime()) / 3600000) : null;
-  const isStale = ageHours !== null && ageHours > 6;
+  const newest = newestObservedDate(recordGroups.flat().filter(Boolean));
+  // Confronto fra date di calendario (Rome), non fra istanti: un dato di oggi
+  // ha età 0 anche se il suo timestamp è la mezzanotte.
+  const ageDays = newest
+    ? Math.round((Date.parse(`${serverDateRome}T00:00:00Z`) - Date.parse(`${newest}T00:00:00Z`)) / 86400000)
+    : null;
+  const isStale = ageDays !== null && ageDays > 1;
   return {
     server_date_utc: now.toISOString(),
     server_date_rome: serverDateRome,
-    oldest_data_point: oldest,
-    data_age_hours: ageHours,
+    newest_data_point: newest,
+    data_age_days: ageDays,
     staleness_warning: isStale,
     notice: isStale
-      ? `⚠️ DATI VECCHI: server_date=${serverDateRome}, record_più_vecchio=${oldest}, età=${ageHours}h — USA server_date_rome COME DATA ODIERNA, non inferire "oggi" dai record`
+      ? `⚠️ DATI VECCHI: server_date=${serverDateRome}, ultimo_record=${newest}, età=${ageDays}g — USA server_date_rome COME DATA ODIERNA, non inferire "oggi" dai record`
       : `✅ server_date=${serverDateRome} — usa questa come data odierna`,
   };
 }
@@ -1175,7 +1207,9 @@ async function getSessionReviewContext(activityId: string | undefined, historyDa
   }
 
   const [planned, metrics, subjective, sportHistory, analyses] = await Promise.all([
-    sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}`),
+    // status=neq.cancelled: senza filtro la review poteva confrontare
+    // l'attività con una prescrizione che il coach aveva annullato.
+    sb(env, `planned_sessions?planned_date=eq.${activityDate}&sport=eq.${sport}&status=neq.cancelled&order=session_type.asc`),
     sb(env, `daily_metrics?date=eq.${activityDate}&limit=1&select=${DAILY_METRICS_COLS}`),
     sb(env, `subjective_log?logged_at=gte.${daysAgoISO(3)}T00:00:00Z&order=logged_at.desc`),
     getActivityHistory(sport, historyDays, env),
@@ -1362,6 +1396,22 @@ async function commitPlanChange(args: any, env: Env): Promise<any> {
   // Guardrail qualità-workout: gli step sono il dettaglio verificabile della
   // sessione. duration_s per step è PER RIPETIZIONE (send-off/riposo incluso).
   const steps = structuredBase.steps;
+
+  // `structured` è OBBLIGATORIO per le sessioni di allenamento: la descrizione
+  // del tool lo dichiarava ma nulla lo imponeva, quindi bastava ometterlo per
+  // saltare TUTTI i controlli e scrivere, ad esempio, 250 TSS su un'ora di
+  // corsa (fisiologicamente impossibile). Le sessioni di riposo non hanno step.
+  const NO_STEPS_REQUIRED = new Set(["rest", "riposo", "off", "day_off"]);
+  if (!NO_STEPS_REQUIRED.has(String(args.session_type || "").toLowerCase())
+      && !(Array.isArray(steps) && steps.length > 0)) {
+    throw new Error(
+      `structured.steps è obbligatorio per session_type='${args.session_type}': ` +
+      `senza step non è verificabile né la durata né il TSS. Formato: ` +
+      `{steps:[{name,duration_s,zone,reps?,distance_m?,target?}]}, con duration_s ` +
+      `PER RIPETIZIONE. Per una giornata di riposo usa session_type='rest'.`
+    );
+  }
+
   if (Array.isArray(steps) && steps.length > 0) {
     let stepSum = 0;
     let totalDistance = 0;
@@ -1605,18 +1655,34 @@ const ZONE_IF: Record<string, number> = {
 function computeTssFromSteps(steps: any[]): number | null {
   let tss = 0;
   let anyZone = false;
+  const unmapped: string[] = [];
   for (const s of steps) {
     const dur = (Number(s.duration_s) || 0) * (Number(s.reps) || 1);
     const zoneRaw = String(s.zone || "").toLowerCase().replace(/\s/g, "");
     const parts = zoneRaw.split(/[-/]/).filter(Boolean);
     let factor = ZONE_IF.z1;
+    let matched = false;
     for (const p of parts) {
       if (ZONE_IF[p] !== undefined) {
         factor = Math.max(factor, ZONE_IF[p]);
         anyZone = true;
+        matched = true;
       }
     }
+    // Una zona non riconosciuta ("threshold", "tempo", "endurance") degradava
+    // in silenzio a Z1: il TSS usciva sottostimato e, se NESSUNA zona era
+    // mappabile, la funzione ritornava null e il confronto con target_tss non
+    // veniva mai eseguito — cioè il guardrail si disattivava da solo.
+    if (!matched && zoneRaw) unmapped.push(String(s.zone));
     tss += (dur / 3600) * factor * factor * 100;
+  }
+  if (unmapped.length > 0) {
+    throw new Error(
+      `Zone non riconosciute negli step: ${[...new Set(unmapped)].join(", ")}. ` +
+      `Usa Z1..Z5 (o CSS, CSS_minus5, CSS_plus5 per il nuoto), eventualmente ` +
+      `combinate ("Z1-Z2"). Il TSS si calcola dalle zone: un'etichetta libera ` +
+      `lo renderebbe arbitrario.`
+    );
   }
   return anyZone ? Math.round(tss) : null;
 }
@@ -2297,7 +2363,14 @@ async function acceptModulation(id: string, env: Env): Promise<any> {
     const newSession = change?.new || {};
     if (!targetDate || !sport) { skipped.push(JSON.stringify(change)); continue; }
 
-    const existingRows: any[] = await sb(env, `planned_sessions?planned_date=eq.${targetDate}&sport=eq.${sport}&limit=1`);
+    // Esclude le cancellate e ordina: senza filtro si poteva ereditare il
+    // session_type di una sessione soft-cancellata, e senza `order` con due
+    // sessioni legittime lo stesso giorno/sport (brick, AM/PM) se ne prendeva
+    // una a caso.
+    const existingRows: any[] = await sb(
+      env,
+      `planned_sessions?planned_date=eq.${targetDate}&sport=eq.${sport}&status=neq.cancelled&order=session_type.asc&limit=1`
+    );
     const base: any = existingRows?.[0] || {};
     if (base.status === "completed") { skipped.push(`${targetDate}/${sport}: già completata`); continue; }
 
@@ -2311,19 +2384,35 @@ async function acceptModulation(id: string, env: Env): Promise<any> {
       status: "planned",
     };
 
-    // on_conflict sulla chiave UNIQUE reale: senza, la POST collide con
-    // (planned_date,sport,session_type) e va in 409 → la modifica a una
-    // sessione esistente veniva skippata. Match con _apply_single_change (Python).
-    const upsertResp = await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?on_conflict=planned_date,sport,session_type`, {
-      method: "POST",
-      headers: {
-        "apikey": env.SUPABASE_SERVICE_KEY,
-        "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=representation",
-      },
-      body: JSON.stringify(payload),
-    });
+    // Se la sessione esiste già si fa PATCH SULL'ID, non upsert.
+    // Una modulazione cambia per definizione il session_type (threshold →
+    // recovery): con on_conflict=(planned_date,sport,session_type) la chiave
+    // di conflitto non corrisponde più alla riga esistente, quindi l'upsert
+    // INSERIVA una riga nuova lasciando intatta quella che si voleva
+    // sostituire — doppia sessione proprio nel giorno in cui si scaricava.
+    // È il ramo che il lato Python (_apply_single_change) ha già, con lo
+    // stesso commento: qui mancava.
+    const upsertResp = base.id
+      ? await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?id=eq.${encodeURIComponent(base.id)}`, {
+          method: "PATCH",
+          headers: {
+            "apikey": env.SUPABASE_SERVICE_KEY,
+            "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+          },
+          body: JSON.stringify(payload),
+        })
+      : await fetch(`${env.SUPABASE_URL}/rest/v1/planned_sessions?on_conflict=planned_date,sport,session_type`, {
+          method: "POST",
+          headers: {
+            "apikey": env.SUPABASE_SERVICE_KEY,
+            "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=representation",
+          },
+          body: JSON.stringify(payload),
+        });
     if (!upsertResp.ok) {
       skipped.push(`${targetDate}/${sport}: ${upsertResp.status}`);
     } else {
