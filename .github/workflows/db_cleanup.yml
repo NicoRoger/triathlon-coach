@@ -5,6 +5,10 @@ on:
     - cron: '0 2 * * 0'  # Ogni domenica alle 02:00
   workflow_dispatch:
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest

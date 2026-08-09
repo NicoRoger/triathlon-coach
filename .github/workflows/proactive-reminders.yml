@@ -30,6 +30,10 @@ on:
         type: choice
         options: ["false", "true"]
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 jobs:
   run:
     runs-on: ubuntu-latest

@@ -7,6 +7,10 @@ on:
     - cron: '0 18 * * 0'  # inverno: 19:00 Rome
   workflow_dispatch:
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 jobs:
   notify:
     runs-on: ubuntu-latest

@@ -13,6 +13,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

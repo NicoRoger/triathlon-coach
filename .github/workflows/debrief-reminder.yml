@@ -14,6 +14,10 @@ on:
     - cron: '0 21 * * *'   # 23:00 Rome (estate) / 22:00 (inverno) — fallback tardo
   workflow_dispatch:
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 jobs:
   remind:
     runs-on: ubuntu-latest

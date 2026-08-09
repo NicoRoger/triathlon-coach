@@ -5,6 +5,10 @@ on:
     - cron: '15 * * * *'  # ogni ora al :15
   workflow_dispatch:
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest

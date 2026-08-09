@@ -11,6 +11,15 @@ on:
 permissions:
   contents: read
 
+# Stesso gruppo dell'ingest: i due job analizzano le stesse attività e,
+# lanciati insieme, spendevano DUE volte la chiamata LLM per la stessa
+# sessione (il vincolo UNIQUE su session_analyses previene la riga
+# doppia, ma il costo è già sostenuto — con budget hard di 5 euro/mese
+# non è un dettaglio).
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
 jobs:
   backfill:
     runs-on: ubuntu-latest

@@ -25,6 +25,10 @@ on:
 # Telegram e l'insert in bot_messages lascia il brief non registrato → il run
 # successivo non lo vede e lo duplica. Il run in coda aspetta e viene poi
 # bloccato dall'idempotency once-per-day.
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 concurrency:
   group: morning-briefing
   cancel-in-progress: false

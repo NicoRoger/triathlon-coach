@@ -5,6 +5,10 @@ on:
     - cron: '0 12 * * *'  # ogni giorno mezzogiorno UTC
   workflow_dispatch:
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 jobs:
   ping:
     runs-on: ubuntu-latest
