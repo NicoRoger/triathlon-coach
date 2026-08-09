@@ -45,16 +45,17 @@ Nessun mesociclo attivo.
 Carico al 2026-08-09: CTL 20.88 | ATL 1.27 | TSB 19.61 | readiness 73/100 (caution)
 
 Prossime gare:
-- 2026-08-29 (20gg): Lavarone Cross Sprint [A] — Lavarone
+- 2026-08-29 (19gg): Lavarone Cross Sprint [A] — Lavarone
 
 ## Baseline fisiologiche (finestra 28gg)
 - HR riposo: 51 bpm tipica (range 44-59)
 - HRV rMSSD baseline: 81 ms (n=28)
 
 ## Pattern osservati (belief non flaggate, weak+)
-- [weak_belief n=7 conf=0.93] RPE sottostimato in bici Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti)
-- [weak_belief n=7 conf=0.93] Tendenza a superare le zone di intensità previste nelle sessioni di tecnica/recupero (HR media 151bpm in Z2, picchi a 175bpm)
-- [validated_belief n=12 conf=0.85] Difficoltà a mantenere il focus tecnico in sessioni lunghe di nuoto (durata > 3000s, distanza > 3km, RPE non allineato)
+- [validated_belief n=8 conf=0.95] RPE sottostimato in bici Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti)
+- [validated_belief n=8 conf=0.95] Tendenza a superare le zone di intensità previste nelle sessioni di tecnica/recupero (HR media 151bpm in Z2, picchi a 175bpm)
+- [validated_belief n=13 conf=0.92] Difficoltà a mantenere il focus tecnico in sessioni lunghe di nuoto (durata > 3000s, distanza > 3km, RPE non allineato)
+- [weak_belief n=8 conf=0.61] Tendenza a spingere oltre la Z2 target (HR media 147bpm, NP 243W in Z2)
 
 ## Storico test fisiologici
 

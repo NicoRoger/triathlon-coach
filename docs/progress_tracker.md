@@ -1,11 +1,11 @@
 # Progress Tracker
 
-*Aggiornato automaticamente il 2026-08-09*
+*Aggiornato automaticamente il 2026-08-10*
 
 ## Forma Fisica (CTL Trend)
 
 - **CTL attuale**: 20.9
-- **Delta 90gg**: -2.9 (-12%)
+- **Delta 90gg**: -3.9 (-16%)
 - **TSB oggi**: 19.6
 - **Readiness**: 73/100
 - **Trend settimanale**: ↘ (-5.2)
@@ -22,10 +22,10 @@
 
 ## Compliance Piano
 
+- Sett. 03/08: ░░░░░░░░░░ 0% (0/0)
 - Sett. 27/07: ░░░░░░░░░░ 0% (0/0)
 - Sett. 20/07: ░░░░░░░░░░ 0% (0/1)
 - Sett. 13/07: █░░░░░░░░░ 11% (1/9)
-- Sett. 06/07: ███████░░░ 75% (6/8)
 
 ## Mesociclo Corrente
 
@@ -33,4 +33,4 @@
 
 ## Prossimo Obiettivo
 
-- **Lavarone Cross Sprint** (A): 2026-08-29 — 20 giorni
+- **Lavarone Cross Sprint** (A): 2026-08-29 — 19 giorni
