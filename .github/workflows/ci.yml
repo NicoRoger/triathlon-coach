@@ -1,0 +1,88 @@
+name: ci
+
+# Rete di sicurezza mancante fino a oggi: i test esistevano ma non girava
+# nessuno in CI, quindi una regressione poteva arrivare in produzione senza
+# che nulla la fermasse (i job schedulati eseguono direttamente da main).
+# Qui si esegue tutto ciò che è verificabile senza credenziali: test Python,
+# lint sui bug, type-check dei due worker e build della dashboard.
+# La verifica CONTRO il sistema reale resta smoke-integration.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Test e lint Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: '.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Installa dipendenze
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Lint (solo regole che pescano bug)
+        run: ruff check .
+      - name: Test
+        # I test sono a stub: nessun accesso a rete o DB, nessun secret.
+        run: pytest -q
+
+  workers:
+    name: Type-check Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [mcp-server, telegram-bot]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Installa dipendenze
+        working-directory: workers/${{ matrix.worker }}
+        run: npm ci
+      - name: tsc --noEmit
+        working-directory: workers/${{ matrix.worker }}
+        run: npx tsc --noEmit
+
+  dashboard:
+    name: Build dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Installa dipendenze
+        working-directory: dashboard
+        run: npm ci
+      - name: tsc --noEmit
+        # `vite build` transpila senza type-check: serve uno step esplicito,
+        # altrimenti un errore di tipo passerebbe fino al deploy su Pages.
+        working-directory: dashboard
+        run: npx tsc --noEmit
+      - name: Build
+        working-directory: dashboard
+        run: npm run build

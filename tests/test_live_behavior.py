@@ -248,6 +248,11 @@ class _AcceptedModFakeQuery:
             clone._filter_status = val
         return clone
 
+    def neq(self, col: str, val: str):
+        """Il codice esclude le sessioni cancellate: il doppio deve esporre
+        `neq` (e non filtrare nulla, dato che il fixture non ne contiene)."""
+        return self
+
     def limit(self, *a, **k):
         return self
 

@@ -83,6 +83,27 @@ interface PendingConfirmation {
 }
 
 // ============================================================================
+// Date
+// ============================================================================
+
+/** Data odierna in Europe/Rome (YYYY-MM-DD).
+ *
+ * I flag giornalieri sono per GIORNO LOCALE dell'atleta: usare la data UTC
+ * farebbe cadere nel giorno sbagliato ogni interazione fra mezzanotte e le
+ * 02:00 di Roma. Stessa implementazione del worker MCP.
+ */
+function todayRomeISO(): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+// ============================================================================
 // Testi statici
 // ============================================================================
 
@@ -1048,12 +1069,27 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
   }
 
   if (data === "proactive_disable_today") {
-    // Il flag deve vivere in bot_messages, NON nella KV del Worker: le domande
-    // proattive partono da GitHub Actions (proactive_questions.py) che legge
-    // solo il DB — un flag KV era un no-op silenzioso.
-    const flagResp = await supabaseFetch(env, "/rest/v1/bot_messages", "POST",
-      { telegram_message_id: messageId ?? 0, chat_id: chatId, purpose: "proactive_disabled_today" },
-      { Prefer: "return=minimal" });
+    // Il flag vive in `sent_reminders`, la tabella progettata per i flag
+    // giornalieri (UNIQUE su trigger_type + sent_date).
+    //
+    // Prima si scriveva in `bot_messages`, che è il LOG dei messaggi inviati e
+    // ha `telegram_message_id NOT NULL UNIQUE`: quel message_id era già stato
+    // registrato dal lato Python quando aveva mandato la domanda, quindi
+    // l'INSERT finiva sempre in 409 e il bottone non ha mai funzionato — le
+    // domande continuavano ad arrivare dopo un messaggio di conferma.
+    // `resolution=merge-duplicates` rende idempotente il doppio tap.
+    const flagResp = await supabaseFetch(
+      env,
+      "/rest/v1/sent_reminders?on_conflict=trigger_type,sent_date",
+      "POST",
+      {
+        trigger_type: "proactive_disabled_today",
+        sent_date: todayRomeISO(),
+        message_id: messageId ?? null,
+        context: { source: "telegram_button", chat_id: chatId },
+      },
+      { Prefer: "resolution=merge-duplicates,return=minimal" },
+    );
     await sendMessage(env, chatId, flagResp.ok
       ? "🚫 Domande proattive disabilitate per oggi."
       : "⚠️ Errore nel salvataggio: le domande potrebbero comunque arrivare.");

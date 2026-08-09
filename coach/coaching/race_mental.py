@@ -5,7 +5,6 @@ Genera mental check giornaliero (T-7→T-1), race briefing (T-2), vigilia (T-1),
 from __future__ import annotations
 
 import logging
-from datetime import date
 from pathlib import Path
 
 from coach.utils.budget import BudgetExceededError

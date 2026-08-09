@@ -8,7 +8,6 @@ import logging
 import random
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from coach.utils.dt import today_rome
 from coach.utils.purposes import PROACTIVE_DISABLED_TODAY, PROACTIVE_QUESTION
@@ -86,28 +85,32 @@ def select_and_send_question() -> Optional[str]:
         logger.info("Proactive question skipped: already sent in last 24h")
         return None
 
-    # "🚫 Disabilita oggi" (bottone Telegram): il bot logga il tap in
-    # bot_messages con questo purpose invece di un KV mai letto da nessuno
-    # (fix di sessione precedente) — ma finora nessun codice Python lo
-    # controllava, quindi il bottone restava un no-op. Cutoff a mezzanotte
-    # Rome, stesso pattern di _brief_already_sent_today in briefing.py.
-    midnight_rome = datetime.now(ZoneInfo("Europe/Rome")).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    cutoff_today = midnight_rome.astimezone(timezone.utc).isoformat()
-    disabled = sb.table("bot_messages").select("id").eq(
-        "purpose", PROACTIVE_DISABLED_TODAY
-    ).gte("sent_at", cutoff_today).limit(1).execute()
+    # "🚫 Disabilita oggi" (bottone Telegram). Il flag vive in `sent_reminders`,
+    # che ha UNIQUE (trigger_type, sent_date) ed è la tabella pensata per i
+    # flag giornalieri. Prima il bot scriveva in `bot_messages`, dove
+    # telegram_message_id è NOT NULL UNIQUE ed era già occupato dal messaggio
+    # della domanda stessa: l'INSERT andava sempre in 409 e il bottone non ha
+    # mai funzionato, pur rispondendo "disabilitate".
+    disabled = sb.table("sent_reminders").select("id").eq(
+        "trigger_type", PROACTIVE_DISABLED_TODAY
+    ).eq("sent_date", today.isoformat()).limit(1).execute()
     if disabled.data:
         logger.info("Proactive question skipped: disabilitate oggi dall'atleta")
         return None
 
     metrics_res = sb.table("daily_metrics").select("flags,readiness_label").eq("date", today.isoformat()).limit(1).execute()
     metrics = metrics_res.data[0] if metrics_res.data else {}
-    race_res = sb.table("planned_sessions").select("planned_date").eq("session_type", "race").gte("planned_date", today.isoformat()).order("planned_date").limit(1).execute()
+    # Le gare vivono in `races` (come per briefing e proactive_reminders), non
+    # in planned_sessions con session_type='race': quella riga non esiste in
+    # tutto il repo, quindi days_to_race era sempre None e la categoria
+    # "race_week" non è mai stata scelta — nella settimana di gara l'atleta
+    # riceveva una domanda casuale invece del check-in dedicato.
+    race_res = sb.table("races").select("race_date").gte(
+        "race_date", today.isoformat()
+    ).order("race_date").limit(1).execute()
     days_to_race = None
     if race_res.data:
-        days_to_race = (date.fromisoformat(race_res.data[0]["planned_date"]) - today).days
+        days_to_race = (date.fromisoformat(race_res.data[0]["race_date"]) - today).days
     context = {"flags": metrics.get("flags") or [], "readiness": metrics.get("readiness_label"), "days_to_race": days_to_race}
     category, question = select_question(context)
     cat_emoji = {"injury": "🩹", "recovery": "😴", "motivation": "🔥", "technique": "🔧", "race_week": "🏁", "general": "💬"}

@@ -424,6 +424,15 @@ class _ModFakeQuery:
     def eq(self, *a, **k):
         return self
 
+    # Il codice filtra le sessioni cancellate e ordina per determinismo:
+    # il doppio deve esporre la stessa superficie di query, altrimenti
+    # fallisce per AttributeError invece che per la logica sotto test.
+    def neq(self, *a, **k):
+        return self
+
+    def order(self, *a, **k):
+        return self
+
     def limit(self, *a, **k):
         return self
 
@@ -724,9 +733,15 @@ def test_l3_empty_snapshot_aborts():
 def test_l4_watchdog_alerts_missing_component():
     from datetime import datetime, timezone
     wd = _load("scripts.watchdog", "scripts/watchdog.py")
-    # nessuna riga health → ogni componente atteso deve generare un alert
+    # nessuna riga health → ogni componente DICHIARATO deve generare un alert.
+    # L'insieme atteso include ora anche i componenti a cadenza nota: un job
+    # mai riuscito non scrive righe, quindi guardando solo i core restava
+    # invisibile (pattern_extraction è morto 4 settimane così).
     alerts = wd.compute_alerts([], datetime(2026, 6, 1, tzinfo=timezone.utc))
-    assert len(alerts) == len(wd.THRESHOLDS_HOURS)
+    declared = (set(wd.THRESHOLDS_HOURS) | set(wd.CADENCE_THRESHOLDS_HOURS)) - wd.MUTED_COMPONENTS
+    assert len(alerts) == len(declared)
+    for comp in declared:
+        assert any(comp in a for a in alerts), f"nessun alert per {comp}"
     assert any("garmin_sync" in a for a in alerts)
 
 

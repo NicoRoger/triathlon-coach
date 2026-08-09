@@ -25,18 +25,16 @@ from coach.utils.supabase_client import get_supabase
 logger = logging.getLogger(__name__)
 BUCKET = "dr-snapshots"
 
-# Ordine importante per FK
-RESTORE_ORDER = [
-    "races",
-    "mesocycles",
-    "physiology_zones",
-    "activities",
-    "daily_wellness",
-    "subjective_log",
-    "daily_metrics",
-    "planned_sessions",
-    "health",
-]
+# Ordine importante per FK — deriva dalla stessa lista dello snapshot, così
+# le due non possono divergere: quando una migration aggiunge una tabella la
+# si dichiara in UN posto solo.
+#
+# L'ordine precedente metteva `physiology_zones` PRIMA di `activities`, ma
+# physiology_zones.test_activity_id è FK verso activities(id) e nei dump reali
+# è popolato: il restore esplodeva a metà (races e mesocycles già scritti,
+# activities e wellness mai) lasciando il DB inconsistente proprio durante un
+# disaster recovery.
+from scripts.dr_snapshot import TABLES as RESTORE_ORDER  # noqa: E402
 
 
 def decrypt(blob: bytes, key_b64: str) -> bytes:

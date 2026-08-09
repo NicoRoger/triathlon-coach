@@ -18,6 +18,10 @@ on:
   schedule:
     - cron: '45 5 * * 1'
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest

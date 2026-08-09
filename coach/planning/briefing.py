@@ -17,7 +17,6 @@ import os
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
-import requests
 
 from coach.utils.supabase_client import get_supabase
 from coach.utils.health import record_health
@@ -382,6 +381,46 @@ def _build_session_section(planned_sessions: list[dict], zones_by_discipline: Op
     return "\n".join(lines)
 
 
+_DISCIPLINE_ITA = {"swim": "nuoto", "bike": "bici", "run": "corsa"}
+_SEVERITY_ICON = {"critical": "🛑", "high": "⚠️", "medium": "⚠️", "low": "ℹ️"}
+
+
+def _build_constraint_warnings() -> list[str]:
+    """Righe di warning derivate dai vincoli medici ATTIVI nel DB.
+
+    Sostituisce i due flag hardcoded via env var: la fonte di verità è
+    `active_constraints`, la stessa che alimenta l'anamnesi e le prescrizioni.
+    Così un vincolo risolto sparisce dal brief da solo, e un vincolo nuovo
+    compare senza toccare il codice.
+
+    Degrada a lista vuota su errore: il brief resta utile anche se questa
+    query fallisce (le altre sezioni hanno lo stesso comportamento).
+    """
+    try:
+        res = (
+            get_supabase().table("active_constraints")
+            .select("discipline,description,severity,symptom_status")
+            .is_("resolved_at", "null")
+            .order("created_at")
+            .execute()
+        )
+    except Exception:
+        logger.warning("Lettura active_constraints fallita nel brief", exc_info=True)
+        return []
+
+    out: list[str] = []
+    for c in res.data or []:
+        icon = _SEVERITY_ICON.get((c.get("severity") or "").lower(), "•")
+        disc = _DISCIPLINE_ITA.get(c.get("discipline") or "", c.get("discipline") or "")
+        desc = (c.get("description") or "").strip()
+        if not desc:
+            continue
+        status = c.get("symptom_status")
+        suffix = f" <i>({status})</i>" if status else ""
+        out.append(f"{icon} <b>{disc}</b>: {desc}{suffix}")
+    return out
+
+
 def _fetch_latest_severity(kind: str) -> Optional[dict]:
     """Fase 1.5 — recupera l'ultimo log injury/illness ancora 'attivo' (ultimi 14gg)
     per estrarre severity, body_location, durata attesa.
@@ -461,16 +500,18 @@ def _build_warnings_section(metrics: dict) -> str:
         else:
             flag_lines.append("🤒 Flag malattia attivo → stop intensità")
 
-    # Warning permanenti gestiti da env var (default True, settali a "false" quando risolti)
-    permanent = []
-    if os.environ.get("SHOULDER_ACTIVE", "true").lower() == "true":
-        permanent.append(
-            "<b>Spalla dx</b> (borsite ancora attiva): se nuoti, solo Z1-Z2 con focus tecnica. Niente serie intense."
-        )
-    if os.environ.get("PLANTAR_ACTIVE", "true").lower() == "true":
-        permanent.append(
-            "<b>Fascite plantare sx</b>: se corri, max +10% volume rispetto a settimana scorsa."
-        )
+    # Vincoli medici dal DB (active_constraints), non da env var.
+    #
+    # Prima erano due flag hardcoded sugli infortuni di questo atleta, letti da
+    # SHOULDER_ACTIVE/PLANTAR_ACTIVE con default "true" per fallire in
+    # sicurezza. Ma nei workflow `${{ secrets.X }}` non definito produce
+    # STRINGA VUOTA, non variabile assente: il default non si applicava e
+    # `"" == "true"` è falso, quindi bastava che il secret non fosse mai stato
+    # creato perché i warning su spalla e fascite sparissero dal brief. Il
+    # codice era fail-safe, il workflow lo rendeva fail-open su un vincolo
+    # medico. In più i valori restavano fermi anche dopo il via libera del
+    # fisioterapista, mentre il DB era già aggiornato.
+    permanent = _build_constraint_warnings()
 
     if not flag_lines and not permanent:
         return ""
@@ -478,8 +519,8 @@ def _build_warnings_section(metrics: dict) -> str:
     lines = ["<b>⚠️ Da tenere d'occhio</b>"]
     for f in flag_lines:
         lines.append(f)
-    for p in permanent:
-        lines.append(f"• {p}")
+    # `permanent` porta già la propria icona di severità
+    lines.extend(permanent)
     return "\n".join(lines)
 
 def _build_race_progress_section(today: date) -> str:
@@ -899,7 +940,6 @@ def build_energy_update() -> str:
 
 
 def main() -> None:
-    import os
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     # Idempotenza once-per-day: skip se un brief è già stato inviato OGGI
@@ -934,7 +974,6 @@ def main_energy() -> None:
     dopo il risveglio naturale — non alle 5:00 come il brief principale,
     altrimenti il sonno interrotto dalla notifica falsa proprio i dati che
     deve riportare."""
-    import os
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     force_send = os.environ.get("FORCE_SEND", "").lower() in ("true", "1", "yes")

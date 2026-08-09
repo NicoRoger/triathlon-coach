@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import requests
 
@@ -43,21 +43,39 @@ CADENCE_THRESHOLDS_HOURS = {
 }
 DEFAULT_THRESHOLD_HOURS = 30
 
+# Componenti MUTI: integrazioni disattivate di proposito. La copertura totale
+# (WP2) monitora ogni riga presente in `health`, incluse quelle storiche di job
+# non più attivi — che allertano per sempre senza che nessuno debba agire.
+# Silenziarli qui è esplicito e reversibile; cancellare la riga dal DB no
+# (il prossimo job la ricrea e si perde lo storico).
+MUTED_COMPONENTS = {
+    # Ingest Strava disattivato: Garmin è l'unica fonte dati (lo step è
+    # commentato in ingest.yml). Rimuovere da qui se si riattiva Strava.
+    "strava_sync",
+}
+
 
 def compute_alerts(rows: list[dict], now: datetime) -> list[str]:
     """Calcola gli alert dato lo stato health. Funzione pura (testabile).
 
     Unione di: componenti CORE (alert anche se riga assente, audit L4) +
-    TUTTE le righe presenti in health (soglia da override cadenza o default).
+    TUTTE le righe presenti in health (soglia da override cadenza o default),
+    meno i componenti in MUTED_COMPONENTS (integrazioni spente di proposito).
     """
     by_comp = {row["component"]: row for row in (rows or [])}
+    # I componenti DICHIARATI (core + cadenza) vanno controllati anche se non
+    # hanno alcuna riga in `health`: un job che non è MAI riuscito non scrive
+    # nulla, quindi guardando solo le righe esistenti resta invisibile. È
+    # successo davvero — pattern_extraction è morto per 4 settimane senza un
+    # solo alert, perché non aveva mai creato la sua riga.
+    declared = set(THRESHOLDS_HOURS) | set(CADENCE_THRESHOLDS_HOURS)
     components: dict[str, float] = {
         comp: float(
             THRESHOLDS_HOURS.get(comp)
             or CADENCE_THRESHOLDS_HOURS.get(comp)
             or DEFAULT_THRESHOLD_HOURS
         )
-        for comp in set(THRESHOLDS_HOURS) | set(by_comp)
+        for comp in (declared | set(by_comp)) - MUTED_COMPONENTS
     }
     alerts: list[str] = []
     for comp, threshold in sorted(components.items()):

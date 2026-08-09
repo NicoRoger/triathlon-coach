@@ -18,7 +18,6 @@ Integrato in ingest.yml domenica sera.
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
@@ -61,11 +60,14 @@ def compute_weekly_compliance(week_start: Optional[date] = None) -> WeeklyCompli
 
     week_end = week_start + timedelta(days=6)
 
+    # Le sessioni soft-cancellate non sono "pianificate e non fatte": contarle
+    # abbassa la compliance e fa scattare un auto-adjustment (riduzione volume)
+    # su una settimana in realtà rispettata.
     planned_res = sb.table("planned_sessions").select(
         "planned_date,sport,session_type,duration_s,status"
     ).gte("planned_date", week_start.isoformat()).lte(
         "planned_date", week_end.isoformat()
-    ).execute()
+    ).neq("status", "cancelled").execute()
     planned = planned_res.data or []
 
     activities_res = sb.table("activities").select(

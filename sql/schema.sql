@@ -1,6 +1,24 @@
 -- ============================================================================
 -- Triathlon Coach AI — Supabase schema v0.1
 -- ============================================================================
+--
+-- ⚠️  NON È LA FONTE DI VERITÀ DELLO SCHEMA. Questo file fotografa la v0.1;
+--     lo schema reale è schema.sql PIÙ tutte le migrations in `migrations/`,
+--     applicate in ordine cronologico.
+--
+--     Divergenze note: 11 tabelle create solo dalle migrations (beliefs,
+--     active_constraints, bot_messages, sent_reminders, pending_confirmations,
+--     plan_modulations, predictions, outcomes, recommendations,
+--     hypothesis_tests, decision_audit), più colonne e vincoli UNIQUE su cui
+--     il codice fa `on_conflict` (planned_sessions, physiology_zones) e lo
+--     stato 'cancelled' del soft-delete.
+--
+--     Ricreare un database da SOLO questo file produce un sistema che crasha
+--     al primo upsert — è già successo, vedi 2026-07-02-daily-metrics-garmin-load.sql.
+--     Per ricostruire: questo file, poi le migrations in ordine.
+--     La verifica che lo schema reale regga il codice è
+--     `scripts/smoke_integration.py`, eseguito da smoke-integration.yml.
+--
 -- Convenzioni:
 --   - Tutti i timestamp in UTC (TIMESTAMPTZ)
 --   - Ogni tabella ha created_at e updated_at

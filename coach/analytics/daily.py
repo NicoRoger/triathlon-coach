@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
-from typing import Optional
 
 from coach.analytics.pmc import (
     DailyTSS,
@@ -109,7 +108,7 @@ def _fetch_recent_subjective(sb, day: date) -> dict:
     if res2.data:
         last = max(r["logged_at"] for r in res2.data)
         # Days since
-        from datetime import datetime as dt, timezone
+        from datetime import datetime as dt
         last_dt = dt.fromisoformat(last.replace("Z", "+00:00")).date()
         out["illness_recent_days"] = (day - last_dt).days
 

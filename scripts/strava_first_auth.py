@@ -13,7 +13,6 @@ Procedura:
 from __future__ import annotations
 
 import getpass
-import json
 import sys
 
 import requests
@@ -44,7 +43,7 @@ def main() -> None:
     print(f"access_token (vita ~6h): {data['access_token']}")
     print("\n=== Aggiungi a GitHub Secrets ===")
     print(f"STRAVA_CLIENT_ID={client_id}")
-    print(f"STRAVA_CLIENT_SECRET=<già hai>")
+    print("STRAVA_CLIENT_SECRET=<già hai>")
     print(f"STRAVA_REFRESH_TOKEN={data['refresh_token']}")
 
 

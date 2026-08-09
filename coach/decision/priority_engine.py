@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from enum import IntEnum
 from typing import Optional
 
@@ -408,7 +408,6 @@ def _default_decision_by_phase(ctx: DecisionContext) -> dict:
 
 
 def main() -> None:
-    import json
     logging.basicConfig(level=logging.INFO)
     # Demo: 4 scenari
     scenarios = [

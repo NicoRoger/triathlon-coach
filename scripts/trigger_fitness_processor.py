@@ -141,7 +141,7 @@ def main() -> None:
 
     # Riepilogo finale
     if args.dry_run:
-        print(f"[dry-run] Nessuna attività processata — rieseguire senza --dry-run per scrivere su DB.")
+        print("[dry-run] Nessuna attività processata — rieseguire senza --dry-run per scrivere su DB.")
     else:
         print(f"Processati: {processed_count} attività — vedi output sopra per dettagli.")
     print("Rieseguire verify_physiology.py per confermare i valori in DB.")

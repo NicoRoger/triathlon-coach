@@ -13,7 +13,7 @@ import io
 import statistics
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -374,7 +374,7 @@ Schema: 100 veloci, 200 regolari
     print(f"\nDocumento generato: {output_path}")
 
     # Print summary
-    print(f"\n=== Riepilogo ===")
+    print("\n=== Riepilogo ===")
     print(f"Sessioni: {analysis['total_sessions']}")
     print(f"Periodo: {analysis['date_range']}")
     print(f"Volume medio: {analysis['avg_weekly_hours']}h/sett")

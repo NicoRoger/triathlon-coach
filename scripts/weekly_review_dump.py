@@ -48,7 +48,7 @@ def main():
 
     sb = get_supabase()
 
-    print(f"# WEEKLY REVIEW DUMP")
+    print("# WEEKLY REVIEW DUMP")
     print(f"Today: {today} ({today.strftime('%A')})")
     print(f"Past week analyzed: {week_start} → {week_end}")
     print(f"Metrics range: {metrics_start} → {today}")

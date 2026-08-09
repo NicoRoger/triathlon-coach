@@ -8,7 +8,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import date, datetime, timedelta, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from coach.utils.budget import BudgetExceededError
@@ -76,13 +77,15 @@ def should_trigger_modulation(analysis_text: str, metrics: Optional[dict]) -> bo
     negations = ("nessun", "nessuna", "senza", "no ", "non ", "niente")
     text_lower = analysis_text.lower()
     for kw in critical_keywords:
-        idx = text_lower.find(kw)
-        if idx == -1:
-            continue
-        preceding = text_lower[max(0, idx - 20):idx]
-        if any(neg in preceding for neg in negations):
-            continue
-        triggers.append(kw)
+        # TUTTE le occorrenze, non solo la prima: bastava una menzione negata
+        # in apertura ("Nessun dolore alla spalla... però dolore acuto al
+        # tendine") perché l'intera keyword venisse scartata e il segnale di
+        # infortunio reale sparisse. Basta UNA occorrenza non negata.
+        for m in re.finditer(re.escape(kw), text_lower):
+            preceding = text_lower[max(0, m.start() - 20):m.start()]
+            if not any(neg in preceding for neg in negations):
+                triggers.append(kw)
+                break
 
     # Pattern critici nelle metriche
     if metrics:
@@ -97,6 +100,40 @@ def should_trigger_modulation(analysis_text: str, metrics: Optional[dict]) -> bo
                 triggers.append(f"flag:{f}")
 
     return len(triggers) > 0
+
+
+#: Valori di `source` ammessi dal CHECK originale (migration 2026-06-15).
+#: La migration 2026-08-09 lo allarga alle etichette di provenienza fine, ma
+#: le migration si applicano a mano: finché non è stata eseguita, l'INSERT
+#: fallisce con 23514 e il chiamante (test_scheduler) muore — è ciò che ha
+#: ucciso il job domenicale per 4 settimane.
+_SOURCE_FALLBACK = "auto"
+
+
+def _insert_modulation(sb, record: dict):
+    """Inserisce la modulazione, degradando `source` se il CHECK la rifiuta.
+
+    Il valore fine (es. 'test_scheduler') non viene perso: finisce in
+    `trigger_data.source_detail`, che è JSONB e non ha vincoli. Così il job
+    funziona sia prima sia dopo la migration, e la provenienza resta
+    ricostruibile in entrambi i casi.
+    """
+    try:
+        return sb.table("plan_modulations").insert(record).execute()
+    except Exception as e:  # noqa: BLE001
+        if "plan_modulations_source_check" not in str(e):
+            raise
+        original = record.get("source")
+        logger.warning(
+            "source='%s' rifiutato dal CHECK (migration 2026-08-09 non ancora "
+            "applicata): riprovo come '%s', provenienza in trigger_data.source_detail",
+            original, _SOURCE_FALLBACK,
+        )
+        degraded = dict(record)
+        degraded["source"] = _SOURCE_FALLBACK
+        degraded["trigger_data"] = {**(record.get("trigger_data") or {}),
+                                    "source_detail": original}
+        return sb.table("plan_modulations").insert(degraded).execute()
 
 
 def propose_modulation(
@@ -150,8 +187,8 @@ def propose_modulation(
         "status": "proposed",
         "source": source,
     }
-    res = sb.table("plan_modulations").insert(record).execute()
-    if not res.data:
+    res = _insert_modulation(sb, record)
+    if res is None or not res.data:
         logger.error("Failed to insert modulation")
         return None
 
@@ -259,8 +296,10 @@ def apply_accepted_modulations() -> dict:
     for row in rows:
         mid = row["id"]
         try:
-            ok = apply_modulation(mid)
-            # rileggi lo status finale per il conteggio
+            apply_modulation(mid)
+            # l'esito autorevole è lo status finale a DB, non il booleano di
+            # ritorno: si rilegge subito sotto
+
             st = sb.table("plan_modulations").select("status").eq("id", mid).limit(1).execute()
             final = (st.data[0]["status"] if st.data else "failed")
             if final in summary:
@@ -326,10 +365,15 @@ def _apply_single_change(sb, change: dict) -> bool:
     if not target_date or not sport:
         return False
 
-    # Recupera la sessione esistente per preservare i campi non modificati
+    # Recupera la sessione esistente per preservare i campi non modificati.
+    # Esclude le cancellate e ordina in modo deterministico: senza il filtro,
+    # l'update poteva pescare una sessione soft-cancellata e riportarla a
+    # 'planned' — la sessione fantasma risorgeva accanto a quella vera,
+    # raddoppiando il carico del giorno. Senza `order`, con due sessioni
+    # legittime stesso giorno/sport (brick, AM/PM) ne colpiva una a caso.
     existing = sb.table("planned_sessions").select("*").eq(
         "planned_date", target_date
-    ).eq("sport", sport).limit(1).execute()
+    ).eq("sport", sport).neq("status", "cancelled").order("session_type").limit(1).execute()
     base = (existing.data[0] if existing.data else {}) or {}
 
     def _pick(key, default):

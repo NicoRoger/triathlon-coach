@@ -405,12 +405,21 @@ def get_client_for_purpose(purpose: str) -> HybridClient:
 
 
 def _alert_provider_fallback(purpose: str, error: str) -> None:
-    """Manda alert Telegram quando Gemini fallisce e fallback Anthropic si attiva."""
+    """Manda alert Telegram quando Gemini fallisce e fallback Anthropic si attiva.
+
+    Purpose PROPRIO, non quello di default del brief: passando da
+    briefing.send_to_telegram questi alert venivano registrati in bot_messages
+    come 'morning_brief' e facevano scattare l'idempotenza in briefing.main(),
+    sopprimendo il brief vero di quel giorno.
+    """
     try:
-        from coach.planning.briefing import send_to_telegram
-        send_to_telegram(
+        from coach.utils.purposes import PROVIDER_FALLBACK
+        from coach.utils.telegram_logger import send_and_log_message
+        send_and_log_message(
             f"⚠️ Gemini fallita per `{purpose}` → fallback Anthropic Haiku. "
-            f"Errore: {error[:120]}"
+            f"Errore: {error[:120]}",
+            purpose=PROVIDER_FALLBACK,
+            parent_workflow="llm_client",
         )
     except Exception:
         logger.warning("Failed to send provider fallback alert via Telegram")

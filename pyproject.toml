@@ -1,0 +1,34 @@
+[tool.ruff]
+# Il progetto non è un package installabile: gli import si risolvono da root
+# con PYTHONPATH=. (vedi workflow). Qui si dichiara solo il perimetro lint.
+target-version = "py311"
+line-length = 120
+exclude = [".git", "__pycache__", "dashboard", "node_modules"]
+
+[tool.ruff.lint]
+# Regole scelte per pescare BUG, non per imporre stile: il codice esistente
+# non segue una convenzione unica e riscriverlo per gusto sarebbe rumore.
+#   E9  errori di sintassi/runtime
+#   F   pyflakes: nomi non definiti, import e variabili morte (spesso logica dimenticata)
+#   B   bugbear: default mutabili, closure su variabili di loop, except sospetti
+#   UP  pyupgrade limitato a costrutti deprecati che rompono su versioni nuove
+select = ["E9", "F", "B", "UP032"]
+ignore = [
+    "B008",  # call in argument default: usato di proposito in alcuni helper
+    "B904",  # raise ... from err: rumoroso sul codice esistente, non è un bug
+]
+
+[tool.ruff.lint.per-file-ignores]
+# I test stubbano moduli e usano fixture dinamiche: import "non usati",
+# ridefinizioni e closure su variabili di loop sono deliberati.
+"tests/*" = ["F401", "F811", "B023", "B905", "F841"]
+# `coach/cognition/` è una facade di re-export puri: gli import "non usati"
+# SONO l'interfaccia del package.
+"coach/cognition/**/__init__.py" = ["F401"]
+# Script diagnostici: la query viene eseguita per verificare che funzioni,
+# il risultato non serve. Assegnarlo a una variabile è il modo più leggibile.
+"scripts/smoke_test.py" = ["F841"]
+"scripts/verify_live_behavior.py" = ["F841"]
+"scripts/test_race_week_brief.py" = ["F841"]
+# Script one-off di analisi: variabili intermedie tenute per leggibilità.
+"scripts/analyze_elite_archive.py" = ["F841", "B007"]

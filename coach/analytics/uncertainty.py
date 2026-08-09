@@ -18,8 +18,7 @@ import json
 import logging
 import statistics
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from coach.utils.supabase_client import get_supabase
 

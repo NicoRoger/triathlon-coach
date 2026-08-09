@@ -8,6 +8,7 @@ from scripts.send_notification import NOTIF_PURPOSE
 from scripts.watchdog import (
     CADENCE_THRESHOLDS_HOURS,
     DEFAULT_THRESHOLD_HOURS,
+    MUTED_COMPONENTS,
     THRESHOLDS_HOURS,
     compute_alerts,
 )
@@ -65,3 +66,39 @@ def test_cadence_override_respected():
     assert not any("pattern_extraction" in a for a in ok)
     late = compute_alerts([_row("pattern_extraction", success_hours_ago=250)], NOW)
     assert any("pattern_extraction" in a for a in late)
+
+
+def test_muted_component_never_alerts():
+    """Integrazione spenta di proposito (strava_sync): la riga health storica
+    resta nel DB ma non deve generare alert, nemmeno con fallimenti."""
+    assert "strava_sync" in MUTED_COMPONENTS
+    stale = compute_alerts([_row("strava_sync", success_hours_ago=2000)], NOW)
+    failing = compute_alerts([_row("strava_sync", failure=True)], NOW)
+    assert not any("strava_sync" in a for a in stale)
+    assert not any("strava_sync" in a for a in failing)
+
+
+def test_muted_does_not_hide_other_components():
+    """Il mute è chirurgico: gli altri componenti restano monitorati."""
+    alerts = compute_alerts(
+        [_row("strava_sync", success_hours_ago=2000),
+         _row("garmin_sync", success_hours_ago=50)],
+        NOW,
+    )
+    assert any("garmin_sync" in a for a in alerts)
+
+
+def test_declared_component_without_row_alerts():
+    """Regressione: un job DICHIARATO ma mai riuscito non scrive alcuna riga in
+    `health`. Guardando solo le righe esistenti restava invisibile —
+    pattern_extraction è morto 4 settimane senza un alert."""
+    assert "pattern_extraction" in CADENCE_THRESHOLDS_HOURS
+    alerts = compute_alerts([_row("garmin_sync", success_hours_ago=1)], NOW)
+    assert any("pattern_extraction" in a and "mai eseguito" in a for a in alerts)
+
+
+def test_unknown_component_without_row_is_not_invented():
+    """Non si allerta su componenti mai dichiarati e mai visti: il set di
+    partenza sono i dichiarati, non un elenco arbitrario."""
+    alerts = compute_alerts([_row("garmin_sync", success_hours_ago=1)], NOW)
+    assert not any("job_mai_esistito" in a for a in alerts)

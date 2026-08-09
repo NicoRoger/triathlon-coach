@@ -113,7 +113,7 @@ def _verify_pmc(sb, today_iso: str) -> None:
             tsb = row.get("tsb")
 
             if ctl is None and atl is None and tsb is None:
-                print(f"CTL: None | ATL: None | TSB: None")
+                print("CTL: None | ATL: None | TSB: None")
                 print(
                     "PMC non disponibile (test FTP/soglia non ancora eseguiti — vedi Phase 2)"
                 )

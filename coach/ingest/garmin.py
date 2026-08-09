@@ -33,7 +33,7 @@ import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from coach.models import Activity, DailyWellness, Source, Sport
 from coach.utils.dt import today_rome
@@ -535,15 +535,31 @@ def main() -> None:
         n_act = sync_activities(days_back=int(os.environ.get("INGEST_DAYS_BACK", "7")))
         n_well = sync_wellness(days_back=int(os.environ.get("INGEST_DAYS_BACK", "7")))
         logger.info("Synced %d activities, %d wellness days", n_act, n_well)
-        n_failures = _last_sync_failures["activities"] + _last_sync_failures["wellness"]
-        total_synced = n_act + n_well
-        # Se ci sono stati tentativi ma TUTTI falliti → NON è un sync sano.
-        success = not (n_failures > 0 and total_synced == 0)
+        fail_act = _last_sync_failures["activities"]
+        fail_well = _last_sync_failures["wellness"]
+
+        # I due flussi si valutano SEPARATAMENTE. Sommandoli, bastava che una
+        # sola attività entrasse per dichiarare sano un run in cui il wellness
+        # era fallito al 100%: HRV, sonno e resting HR smettevano di arrivare
+        # mentre `garmin_sync` restava fresco e il watchdog verde — e la
+        # readiness continuava a girare su dati stantii senza alcun segnale.
+        ok_act = n_act > 0 or fail_act == 0
+        ok_well = n_well > 0 or fail_well == 0
+        success = ok_act and ok_well
+        problems = []
+        if not ok_act:
+            problems.append(f"activities: {fail_act} falliti, 0 sincronizzati")
+        if not ok_well:
+            problems.append(f"wellness: {fail_well} falliti, 0 sincronizzati")
+
         record_health(
             "garmin_sync",
             success=success,
-            error=None if success else f"tutti gli item falliti ({n_failures} failures)",
-            metadata={"activities": n_act, "wellness": n_well, "failures": n_failures},
+            error=None if success else "; ".join(problems),
+            metadata={
+                "activities": n_act, "wellness": n_well,
+                "failures_activities": fail_act, "failures_wellness": fail_well,
+            },
         )
     except Exception as e:  # noqa: BLE001
         logger.exception("Garmin sync failed")

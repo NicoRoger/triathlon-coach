@@ -1,6 +1,5 @@
 ﻿"""Diagnostica completa payload Garmin: trova dove vivono sleep, vo2max, training_status."""
 from coach.utils.supabase_client import get_supabase
-import json
 
 sb = get_supabase()
 r = sb.table('daily_wellness').select('date,raw_payload').not_.is_('raw_payload','null').order('date',desc=True).limit(1).execute()

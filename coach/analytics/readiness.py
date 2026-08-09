@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass
-from datetime import date, timedelta
 from typing import Optional
 
 
@@ -116,12 +115,17 @@ def compute_flags(
                 if yesterday_z is not None and yesterday_z <= HRV_WARNING_Z:
                     flags.append("fatigue_warning")
 
-        # Trend negativo: media 7d sotto baseline 28d > 5%
-        if len(wellness.hrv_history_28d) >= 21:
-            recent_7 = wellness.hrv_history_28d[-7:]
-            baseline_28 = statistics.fmean(wellness.hrv_history_28d)
-            if statistics.fmean(recent_7) < baseline_28 * 0.95:
-                flags.append("trend_negative")
+    # Trend negativo: media 7d sotto baseline 28d > 5%.
+    # NON annidato sotto `hrv_today is not None`: il trend si calcola sullo
+    # storico e non usa affatto il valore di oggi. Annidandolo, una sola notte
+    # senza orologio faceva sparire sia `trend_negative` sia la regola §5.2
+    # (trend_negative + TSB < -20 → anticipa scarico), senza che il readiness
+    # score cambiasse abbastanza da segnalare la perdita.
+    if len(wellness.hrv_history_28d) >= 21:
+        recent_7 = wellness.hrv_history_28d[-7:]
+        baseline_28 = statistics.fmean(wellness.hrv_history_28d)
+        if statistics.fmean(recent_7) < baseline_28 * 0.95:
+            flags.append("trend_negative")
 
     # TSB profondo + trend negativo → anticipa scarico
     if "trend_negative" in flags and training.tsb is not None and training.tsb < TSB_DEEP_NEGATIVE:
@@ -454,12 +458,16 @@ def classify_fatigue_type(
     hr_drift = _compute_hr_drift(activity, splits)
     pace_drop = _compute_pace_drop(sport, splits)
 
-    # Segnali booleani
+    # Segnali booleani, INDIPENDENTI fra loro: prima `muscular_signal`
+    # richiedeva `hr_drift <= 10` mentre `cardiovascular_signal` richiedeva
+    # `hr_drift > 10`, quindi i due predicati partizionavano lo stesso valore e
+    # il ramo "mixed" era matematicamente irraggiungibile. Il cedimento misto
+    # (drift alto E pace che cala con RPE alto) è il caso classico del lungo, e
+    # per questo atleta la componente muscolare è la debolezza dichiarata:
+    # etichettarlo "cardiovascular" puro faceva perdere l'informazione che conta.
     cardiovascular_signal = hr_drift is not None and hr_drift > 10.0
-    # Muscular: HR stabile (drift basso o mancante) + RPE alto + pace/potenza degrada
     muscular_signal = (
-        (hr_drift is None or hr_drift <= 10.0)
-        and rpe is not None and rpe >= 8
+        rpe is not None and rpe >= 8
         and pace_drop is not None and pace_drop > 0.05
     )
 

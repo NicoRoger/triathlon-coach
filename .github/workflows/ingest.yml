@@ -12,9 +12,9 @@ on:
 
 permissions:
   actions: write
-  # C2: il fitness_test_processor aggiorna CLAUDE.md sul runner; serve write
-  # per committare l'aggiornamento (altrimenti le soglie annunciate su Telegram
-  # non finiscono mai nel repo).
+  # Il fitness_test_processor rigenera docs/athlete_anamnesis.md sul runner:
+  # serve write per committarla, altrimenti le soglie annunciate su Telegram
+  # non finiscono mai nel repo.
   contents: write
 
 concurrency:

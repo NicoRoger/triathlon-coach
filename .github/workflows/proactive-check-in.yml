@@ -8,6 +8,10 @@ on:
     - cron: '0 17 * * 2,4,6'  # inverno: 18:00 Rome
   workflow_dispatch:
 
+# Permessi minimi: questi job non scrivono sul repository.
+permissions:
+  contents: read
+
 concurrency:
   group: proactive-check-in
   cancel-in-progress: true
