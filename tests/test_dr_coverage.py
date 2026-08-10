@@ -83,3 +83,13 @@ def test_activities_precede_dependent_tables():
             f"{dependent} viene ripristinata prima di activities: violazione FK"
         )
     assert pos["races"] < pos["mesocycles"], "mesocycles.target_race_id → races"
+
+
+def test_athletes_precede_everything():
+    """Ogni tabella con dati d'atleta ha una FK verso athletes: se non arriva
+    per prima, il restore viola il vincolo alla prima riga scritta."""
+    from scripts.dr_snapshot import TABLES
+
+    assert TABLES[0] == "athletes", (
+        f"athletes deve essere la prima tabella ripristinata, trovata: {TABLES[0]}"
+    )
