@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 # L'ordine è quello di RIPRISTINO: le tabelle referenziate vengono prima di
 # chi le referenzia. Vedi dr_restore.RESTORE_ORDER, che riusa questa lista.
 TABLES = [
+    # 0. Anagrafica atleti: PRIMA di tutto, ogni altra tabella la referenzia
+    "athletes",
     # 1. Anagrafiche senza dipendenze
     "races",
     "activities",
