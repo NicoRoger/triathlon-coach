@@ -20,7 +20,7 @@ import statistics
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
-from coach.utils.supabase_client import get_supabase
+from coach.utils.athlete import aq
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,6 @@ def record_recommendation(rec: Recommendation,
                           tradeoffs: Optional[dict] = None,
                           related_prediction_ids: Optional[list[str]] = None) -> str:
     """Salva una Recommendation in DB. Ritorna id."""
-    sb = get_supabase()
     if source_module:
         rec.source_module = source_module
 
@@ -206,7 +205,7 @@ def record_recommendation(rec: Recommendation,
         "metadata": rec.metadata or None,
     }
     row = {k: v for k, v in row.items() if v is not None}
-    res = sb.table("recommendations").insert(row).execute()
+    res = aq("recommendations").insert(row).execute()
     rid = res.data[0]["id"]
     logger.info("Recommendation logged: source=%s conf=%.2f id=%s",
                 rec.source_module, rec.confidence, rid)
