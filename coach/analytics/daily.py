@@ -22,23 +22,23 @@ from coach.analytics.readiness import (
 )
 from coach.utils.dt import today_rome
 from coach.utils.health import record_health
-from coach.utils.supabase_client import get_supabase
+from coach.utils.athlete import aq
 
 logger = logging.getLogger(__name__)
 
 
-def _fetch_activities_window(sb, start: date) -> list[dict]:
-    res = sb.table("activities").select(
+def _fetch_activities_window(start: date) -> list[dict]:
+    res = aq("activities").select(
         "id,started_at,sport,tss,duration_s,avg_hr"
     ).gte("started_at", start.isoformat()).execute()
     return res.data or []
 
 
-def _fetch_wellness_window(sb, start: date, end: date) -> list[dict]:
+def _fetch_wellness_window(start: date, end: date) -> list[dict]:
     """Wellness in [start, end]. Upper bound necessario in backfill: senza,
     la baseline HRV 28d includerebbe dati FUTURI rispetto al giorno ricalcolato."""
     res = (
-        sb.table("daily_wellness").select("*")
+        aq("daily_wellness").select("*")
         .gte("date", start.isoformat())
         .lte("date", end.isoformat())
         .execute()
@@ -46,14 +46,14 @@ def _fetch_wellness_window(sb, start: date, end: date) -> list[dict]:
     return sorted(res.data or [], key=lambda r: r["date"])
 
 
-def _fetch_lthr_by_sport(sb) -> dict[str, int]:
+def _fetch_lthr_by_sport() -> dict[str, int]:
     """LTHR attivo per disciplina da physiology_zones (valid_to IS NULL).
 
     Usato dal fallback hrTSS in aggregate_daily_tss al posto del default
     env/160. Le discipline (swim/bike/run) coincidono con activities.sport.
     """
     try:
-        res = sb.table("physiology_zones").select(
+        res = aq("physiology_zones").select(
             "discipline,lthr,valid_from,valid_to"
         ).execute()
     except Exception:  # noqa: BLE001
@@ -71,13 +71,13 @@ def _fetch_lthr_by_sport(sb) -> dict[str, int]:
     return out
 
 
-def _fetch_recent_subjective(sb, day: date) -> dict:
+def _fetch_recent_subjective(day: date) -> dict:
     """Ultime 24h di subjective log (bounded a `day`: in backfill non deve
     leggere righe future rispetto al giorno ricalcolato)."""
     since = (day - timedelta(days=1)).isoformat()
     until = (day + timedelta(days=1)).isoformat()
     res = (
-        sb.table("subjective_log").select("*")
+        aq("subjective_log").select("*")
         .gte("logged_at", since)
         .lte("logged_at", until)
         .execute()
@@ -102,7 +102,7 @@ def _fetch_recent_subjective(sb, day: date) -> dict:
 
     # Check illness past 5 days
     since_5 = (day - timedelta(days=5)).isoformat()
-    res2 = sb.table("subjective_log").select("logged_at").eq(
+    res2 = aq("subjective_log").select("logged_at").eq(
         "illness_flag", True
     ).gte("logged_at", since_5).lte("logged_at", until).execute()
     if res2.data:
@@ -117,17 +117,16 @@ def _fetch_recent_subjective(sb, day: date) -> dict:
 
 def compute_for(day: date, history_days: int = 90) -> dict:
     """Calcola daily_metrics per `day` e fa upsert."""
-    sb = get_supabase()
     window_start = day - timedelta(days=history_days)
 
-    activities = _fetch_activities_window(sb, window_start)
-    daily_tss = aggregate_daily_tss(activities, lthr_by_sport=_fetch_lthr_by_sport(sb))
+    activities = _fetch_activities_window(window_start)
+    daily_tss = aggregate_daily_tss(activities, lthr_by_sport=_fetch_lthr_by_sport())
 
     # Seed PMC: CTL/ATL del giorno prima della finestra (se già calcolati).
     # Senza seed la serie parte da 0 e la finestra 90gg porta ~11.7% di errore.
     initial_ctl = initial_atl = 0.0
     seed_res = (
-        sb.table("daily_metrics").select("ctl,atl")
+        aq("daily_metrics").select("ctl,atl")
         .eq("date", (window_start - timedelta(days=1)).isoformat())
         .execute()
     )
@@ -155,7 +154,7 @@ def compute_for(day: date, history_days: int = 90) -> dict:
         )
 
     # HRV z-score
-    wellness_rows = _fetch_wellness_window(sb, day - timedelta(days=28), day)
+    wellness_rows = _fetch_wellness_window(day - timedelta(days=28), day)
     today_iso = day.isoformat()
     today_wellness = next((r for r in wellness_rows if r["date"] == today_iso), {})
 
@@ -215,7 +214,7 @@ def compute_for(day: date, history_days: int = 90) -> dict:
         tsb=today_pmc.tsb if today_pmc else None,
         days_since_hard_session=None,
     )
-    subj_data = _fetch_recent_subjective(sb, day)
+    subj_data = _fetch_recent_subjective(day)
     ss = SubjectiveState(**subj_data)
 
     readiness = compute_readiness(wh, ts, ss)
@@ -252,7 +251,7 @@ def compute_for(day: date, history_days: int = 90) -> dict:
         "readiness_factors": readiness.factors,
         "flags": readiness.flags,
     }
-    sb.table("daily_metrics").upsert(metrics, on_conflict="date").execute()
+    aq("daily_metrics").upsert(metrics, on_conflict="date").execute()
     return metrics
 
 

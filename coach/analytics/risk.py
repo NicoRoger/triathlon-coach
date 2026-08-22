@@ -29,7 +29,7 @@ from datetime import timedelta
 from typing import Optional
 
 from coach.utils.dt import today_rome, to_rome_date
-from coach.utils.supabase_client import get_supabase
+from coach.utils.athlete import aq
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +93,9 @@ def _classify(v: float) -> str:
 # ============================================================================
 
 def _load_metrics(days: int = 28) -> list[dict]:
-    sb = get_supabase()
     since = (today_rome() - timedelta(days=days)).isoformat()
     res = (
-        sb.table("daily_metrics")
+        aq("daily_metrics")
         .select("date,ctl,atl,tsb,daily_tss,hrv_z_score,readiness_score,flags")
         .gte("date", since)
         .order("date", desc=False)
@@ -106,10 +105,9 @@ def _load_metrics(days: int = 28) -> list[dict]:
 
 
 def _load_recent_activities(days: int = 7) -> list[dict]:
-    sb = get_supabase()
     since = (today_rome() - timedelta(days=days)).isoformat()
     res = (
-        sb.table("activities")
+        aq("activities")
         .select("started_at,sport,tss,duration_s")
         .gte("started_at", f"{since}T00:00:00Z")
         .order("started_at", desc=True)
@@ -119,10 +117,9 @@ def _load_recent_activities(days: int = 7) -> list[dict]:
 
 
 def _load_recent_subjective(days: int = 14) -> list[dict]:
-    sb = get_supabase()
     since = (today_rome() - timedelta(days=days)).isoformat()
     res = (
-        sb.table("subjective_log")
+        aq("subjective_log")
         .select("logged_at,kind,rpe,soreness,injury_flag,illness_flag,severity")
         .gte("logged_at", since)
         .order("logged_at", desc=True)
@@ -348,10 +345,9 @@ def compute_recovery_risk() -> RiskScore:
         raw["hrv_z_last3"] = [round(v, 2) for v in hrv_last3]
 
     # Sleep: query daily_wellness
-    sb = get_supabase()
     since = (today_rome() - timedelta(days=7)).isoformat()
     w_res = (
-        sb.table("daily_wellness")
+        aq("daily_wellness")
         .select("date,sleep_score")
         .gte("date", since)
         .order("date", desc=True)

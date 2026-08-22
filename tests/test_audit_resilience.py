@@ -54,6 +54,12 @@ class _FakeQuery:
         return self
 
     def eq(self, col, val):
+        # Il doppio non modella la multi-tenancy: `athlete_id` viene ignorato
+        # perché questi test verificano resilienza e analytics, non lo scoping
+        # (che ha i suoi test in tests/test_athlete_scoping.py). Filtrarlo
+        # davvero svuoterebbe i dataset, che non portano quel campo.
+        if col == "athlete_id":
+            return self
         # filtro non-distruttivo: ritorna un nuovo _FakeQuery con le righe filtrate
         filtered = [r for r in self._rows if r.get(col) == val]
         clone = _FakeQuery(filtered)
