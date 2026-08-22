@@ -28,6 +28,20 @@ def send_and_log_message(
     Returns:
         message_id Telegram se successo, None altrimenti
     """
+    # Pausa coaching: quando l'atleta è fermo per un motivo noto (accertamenti
+    # medici, infortunio), i messaggi a calendario fisso diventano rumore
+    # quotidiano su qualcosa che non sta facendo. Si sopprime QUI, il punto da
+    # cui passa ogni messaggio, così nessun mittente può sfuggire al filtro.
+    # Ingest e analytics continuano: i dati di questo periodo servono a
+    # ripartire da una base reale. Gli alert di sistema passano comunque.
+    from coach.utils.pause import is_paused, pause_until
+    if is_paused(purpose):
+        logger.info(
+            "Coaching in pausa fino al %s: messaggio '%s' non inviato",
+            pause_until(), purpose,
+        )
+        return None
+
     # Bug fix audit I5: env var con .get + validazione, niente KeyError/ValueError
     # non gestiti fuori dal try.
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
