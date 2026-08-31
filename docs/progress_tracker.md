@@ -1,11 +1,11 @@
 # Progress Tracker
 
-*Aggiornato automaticamente il 2026-08-24*
+*Aggiornato automaticamente il 2026-08-31*
 
 ## Forma Fisica (CTL Trend)
 
 - **CTL attuale**: 17.2
-- **Delta 90gg**: -16.6 (-49%)
+- **Delta 90gg**: -17.3 (-50%)
 - **TSB oggi**: 17.0
 - **Readiness**: 80/100
 - **Trend settimanale**: ↘ (-3.5)
@@ -22,10 +22,10 @@
 
 ## Compliance Piano
 
+- Sett. 24/08: ░░░░░░░░░░ 0% (0/0)
 - Sett. 17/08: ░░░░░░░░░░ 0% (1/0)
 - Sett. 10/08: ░░░░░░░░░░ 0% (0/0)
 - Sett. 03/08: ░░░░░░░░░░ 0% (0/0)
-- Sett. 27/07: ░░░░░░░░░░ 0% (0/0)
 
 ## Mesociclo Corrente
 
@@ -33,4 +33,4 @@
 
 ## Prossimo Obiettivo
 
-- **Lavarone Cross Sprint** (A): 2026-08-29 — 5 giorni
+- Nessuna gara in programma

@@ -42,20 +42,19 @@ spalla dx post borsite + tendinopatia CLB: via libera fisio ai carichi (29/06), 
 
 Nessun mesociclo attivo.
 
-Carico al 2026-08-22: CTL 17.2 | ATL 0.2 | TSB 17.0 | readiness 80/100 (ready)
-
-Prossime gare:
-- 2026-08-29 (5gg): Lavarone Cross Sprint [A] — Lavarone
-
 ## Baseline fisiologiche (finestra 28gg)
-- HR riposo: 52 bpm tipica (range 47-59)
-- HRV rMSSD baseline: 77 ms (n=28)
+- HR riposo: 51 bpm tipica (range 47-59)
+- HRV rMSSD baseline: 78 ms (n=27)
 
 ## Pattern osservati (belief non flaggate, weak+)
-- [validated_belief n=10 conf=0.95] RPE sottostimato in bici Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti)
-- [validated_belief n=15 conf=0.95] Difficoltà a mantenere il focus tecnico in sessioni lunghe di nuoto (durata > 3000s, distanza > 3km, RPE non allineato)
-- [validated_belief n=10 conf=0.95] Tendenza a superare le zone di intensità previste nelle sessioni di tecnica/recupero (HR media 151bpm in Z2, picchi a 175bpm)
-- [validated_belief n=10 conf=0.77] Tendenza a spingere oltre la Z2 target (HR media 147bpm, NP 243W in Z2)
+- [validated_belief n=10 conf=0.85] Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)
+- [validated_belief n=8 conf=0.80] Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)
+- [weak_belief n=6 conf=0.80] Overpacing in test soglia (HR 194bpm, calo potenza finale, pacing irregolare)
+- [validated_belief n=11 conf=0.77] RPE sottostimato in bici Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti)
+- [validated_belief n=11 conf=0.77] Tendenza a superare le zone di intensità previste nelle sessioni di tecnica/recupero (HR media 151bpm in Z2, picchi a 175bpm)
+- [validated_belief n=16 conf=0.77] Difficoltà a mantenere il focus tecnico in sessioni lunghe di nuoto (durata > 3000s, distanza > 3km, RPE non allineato)
+- [weak_belief n=5 conf=0.75] RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)
+- [weak_belief n=11 conf=0.60] Tendenza a spingere oltre la Z2 target (HR media 147bpm, NP 243W in Z2)
 
 ## Storico test fisiologici
 
