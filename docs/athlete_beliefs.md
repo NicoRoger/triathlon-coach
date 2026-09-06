@@ -8,7 +8,7 @@
 > validated (n>=8, conf>0.7) · strong (stable >6 mesi).
 
 
-_Last update: 2026-08-31T00:00:06_
+_Last update: 2026-09-06T23:18:57_
 
 ## Calibrazione predizioni
 

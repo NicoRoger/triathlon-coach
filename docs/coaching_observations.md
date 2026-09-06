@@ -1,13 +1,13 @@
-# ANALISI PATTERN LONGITUDINALI — AGOSTO 2026
+## ANALISI PATTERN LONGITUDINALI — AGOSTO 2026
 ## Cognitive MVP Fase 2.2: Prescrizioni Longitudinali
 
 ---
 
 ## Pattern di Recupero
 
-- **HRV più basso il mercoledì (media 74.0, z=-0.6)** (n=4 sett, confidence 0.7) → **Prescrizione**: Evitare sessioni di qualità il mercoledì; preferire recupero attivo (30min Z1) o riposo completo. Se programmato, posticipare a giovedì. **Expected outcome**: +4-6 punti HRV, riduzione stress cumulativo settimanale.
+- **HRV più basso il mercoledì (media 73.2, z=-0.6)** (n=4 sett, confidence 0.7) → **Prescrizione**: Evitare sessioni di qualità il mercoledì; preferire recupero attivo (30min Z1) o riposo completo. Se programmato, posticipare a giovedì. **Expected outcome**: +4-6 punti HRV, riduzione stress cumulativo settimanale.
 
-- **HRV picco giovedì (media 82.8, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Programmare FTP test, sessioni soglia e blocchi Z3-Z4 preferibilmente giovedì. Questo è il giorno di massima disponibilità neuromuscolare. **Expected outcome**: +12-15% efficacia stimoli, adattamento ottimizzato.
+- **HRV picco martedì (media 86.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Programmare FTP test, sessioni soglia e blocchi Z3-Z4 preferibilmente martedì. Questo è il giorno di massima disponibilità neuromuscolare. **Expected outcome**: +12-15% efficacia stimoli, adattamento ottimizzato.
 
 - **Correlazione TSS-qualità sonno (TSS>70 → sonno 87.3 vs TSS<50 → sonno 53.4)** (n=11 giorni, confidence 0.85) → **Prescrizione**: Dopo TSS>70, anticipare sonno di 30-45min e implementare routine pre-sonno (10min stretching + respirazione 4-7-8). **Expected outcome**: +45min qualità sonno, +1-2 cicli REM, recovery window ottimizzato.
 
@@ -43,4 +43,12 @@
 
 ## Pattern Soggettivi
 
-- **RPE disallineato tra sport (nuoto: tendenza underestimate, bici: underestimate Z3+)** (n=15 sessioni cross-sport, confidence 0.75) → **Prescrizione**: Calibrare RPE con riferimento biometrico (HR, potenza). Nuoto: RPE 2 = HR<140
+- **RPE disallineato tra sport (nuoto: tendenza underestimate, bici: underestimate Z3+)** (n=15 sessioni cross-sport, confidence 0.75) → **Prescrizione**: Calibrare RPE con riferimento biometrico (HR, potenza). Nuoto: RPE 2 = HR<140bpm. Bici: RPE 3-4 = HR 155-165bpm. **Expected outcome**: Migliore coerenza RPE, ottimizzazione intensità allenamento.
+
+---
+
+## Pattern Biometrici
+
+- **HRV più alto il martedì (media 86.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Sfruttare il martedì per le sessioni più impegnative o test di valutazione. **Expected outcome**: Massimizzazione dell'adattamento agli stimoli di alta intensità.
+
+- **HRV più basso il
