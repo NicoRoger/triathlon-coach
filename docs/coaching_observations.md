@@ -1,3 +1,7 @@
+Ottimo lavoro, coach! L'analisi è dettagliata e le prescrizioni sono ben formulate. Integriamo i nuovi dati e affiniamo i pattern esistenti.
+
+---
+
 ## ANALISI PATTERN LONGITUDINALI — AGOSTO 2026
 ## Cognitive MVP Fase 2.2: Prescrizioni Longitudinali
 
@@ -5,9 +9,9 @@
 
 ## Pattern di Recupero
 
-- **HRV più basso il mercoledì (media 73.2, z=-0.6)** (n=4 sett, confidence 0.7) → **Prescrizione**: Evitare sessioni di qualità il mercoledì; preferire recupero attivo (30min Z1) o riposo completo. Se programmato, posticipare a giovedì. **Expected outcome**: +4-6 punti HRV, riduzione stress cumulativo settimanale.
+- **HRV più basso il mercoledì (media 74.2, z=-0.6)** (n=4 sett, confidence 0.75) → **Prescrizione**: Evitare sessioni di qualità il mercoledì; preferire recupero attivo (30min Z1) o riposo completo. Se programmato, posticipare a giovedì. **Expected outcome**: +4-6 punti HRV, riduzione stress cumulativo settimanale.
 
-- **HRV picco martedì (media 86.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Programmare FTP test, sessioni soglia e blocchi Z3-Z4 preferibilmente martedì. Questo è il giorno di massima disponibilità neuromuscolare. **Expected outcome**: +12-15% efficacia stimoli, adattamento ottimizzato.
+- **HRV picco martedì (media 87.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Programmare FTP test, sessioni soglia e blocchi Z3-Z4 preferibilmente martedì. Questo è il giorno di massima disponibilità neuromuscolare. **Expected outcome**: +12-15% efficacia stimoli, adattamento ottimizzato.
 
 - **Correlazione TSS-qualità sonno (TSS>70 → sonno 87.3 vs TSS<50 → sonno 53.4)** (n=11 giorni, confidence 0.85) → **Prescrizione**: Dopo TSS>70, anticipare sonno di 30-45min e implementare routine pre-sonno (10min stretching + respirazione 4-7-8). **Expected outcome**: +45min qualità sonno, +1-2 cicli REM, recovery window ottimizzato.
 
@@ -23,7 +27,7 @@
 
 - **Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)** (n=8 sessioni, confidence 0.8) → **Prescrizione**: 2 sessioni/sett forza braccia (elastici, pull buoy) + 10-15min mobilità dinamica spalle pre-nuoto. Aumentare Z1/Z2 di 500m/sett. **Expected outcome**: RPE fatica -2 punti, resistenza +200-300m pre-affaticamento, pace +2-3 sec/100m.
 
-- **Overpacing in test soglia (HR 194bpm, calo potenza finale, pacing irregolare)** (n=6 sessioni, confidence 0.8) → **Prescrizione**: Strategia pacing conservativa iniziale, warm-up strutturato progressivo, allarmi HR/pace rigidi. **Expected outcome**: +15-20% compliance pacing, dati soglia più accurati e riproducibili.
+- **Overpacing in test soglia (HR 194bpm, calo potenza finale, pacing irregolare)** (n=6 sessione, confidence 0.8) → **Prescrizione**: Strategia pacing conservativa iniziale, warm-up strutturato progressivo, allarmi HR/pace rigidi. **Expected outcome**: +15-20% compliance pacing, dati soglia più accurati e riproducibili.
 
 - **Difficoltà focus tecnico sessioni lunghe (>3000s, >3km, RPE disallineato)** (n=2 sessioni, confidence 0.6) → **IPOTESI Prescrizione**: Suddividere in blocchi brevi con pause attive/passive programmate. Feedback immediati (SWOLF, bracciate/vasca) per autoregolazione. **Expected outcome**: +10-15% mantenimento tecnica, RPE allineato.
 
@@ -49,6 +53,4 @@
 
 ## Pattern Biometrici
 
-- **HRV più alto il martedì (media 86.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Sfruttare il martedì per le sessioni più impegnative o test di valutazione. **Expected outcome**: Massimizzazione dell'adattamento agli stimoli di alta intensità.
-
-- **HRV più basso il
+- **HRV più alto il martedì (media 87.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Sfruttare il martedì per
