@@ -2,7 +2,7 @@ Ottimo lavoro, coach! L'analisi è dettagliata e le prescrizioni sono ben formul
 
 ---
 
-## ANALISI PATTERN LONGITUDINALI — AGOSTO 2026
+## ANALISI PATTERN LONGITUDINALI — SETTEMBRE 2026
 ## Cognitive MVP Fase 2.2: Prescrizioni Longitudinali
 
 ---
@@ -53,4 +53,4 @@ Ottimo lavoro, coach! L'analisi è dettagliata e le prescrizioni sono ben formul
 
 ## Pattern Biometrici
 
-- **HRV più alto il martedì (media 87.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Sfruttare il martedì per
+- **HRV più alto il martedì (media 86.8, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Sfruttare il martedì
