@@ -91,13 +91,25 @@ def export_all() -> dict:
         # Pagine da 1000
         all_rows = []
         page = 0
-        while True:
-            res = sb.table(t).select("*").range(page * 1000, (page + 1) * 1000 - 1).execute()
-            rows = res.data or []
-            all_rows.extend(rows)
-            if len(rows) < 1000:
-                break
-            page += 1
+        try:
+            while True:
+                res = sb.table(t).select("*").range(page * 1000, (page + 1) * 1000 - 1).execute()
+                rows = res.data or []
+                all_rows.extend(rows)
+                if len(rows) < 1000:
+                    break
+                page += 1
+        except Exception as exc:  # noqa: BLE001
+            # Tabella dichiarata nell'elenco ma non ancora creata nel DB: le
+            # migration si applicano a mano, quindi il codice può conoscere una
+            # tabella prima che esista. Saltarla è corretto — far fallire
+            # l'INTERO backup per una tabella mancante significherebbe restare
+            # senza snapshot di TUTTE le altre (è successo: `athletes` ha
+            # bloccato il backup per settimane).
+            if any(c in str(exc) for c in ("PGRST205", "PGRST204", "42P01")):
+                logger.warning("Tabella %s non ancora creata nel DB: saltata nel backup", t)
+                continue
+            raise
         out[t] = all_rows
         logger.info("Exported %s: %d rows", t, len(all_rows))
     return out

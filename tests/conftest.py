@@ -39,3 +39,18 @@ def _no_coaching_pause(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(pause_mod, "PAUSE_UNTIL", None)
     monkeypatch.delenv("COACH_PAUSE_UNTIL", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _assume_migration_applied(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assume lo schema multi-atleta già applicato per tutta la suite.
+
+    `aq()` altrimenti sonda la tabella `athletes` a ogni chiamata, e i doppi di
+    Supabase dei test esistenti non espongono l'intera catena del builder:
+    fallirebbero per una sonda, non per la logica che verificano. La modalità
+    legacy (migration non applicata) ha i suoi test dedicati in
+    tests/test_legacy_athlete_mode.py, che controllano la sonda esplicitamente.
+    """
+    import coach.utils.athlete as athlete_mod
+
+    monkeypatch.setattr(athlete_mod, "legacy_single_athlete_mode", lambda: False)
