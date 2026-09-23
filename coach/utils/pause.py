@@ -39,10 +39,13 @@ SYSTEM_PURPOSES = frozenset({BUDGET_ALERT, PROVIDER_FALLBACK, SMOKE_TEST, GENERI
 #: Primo giorno in cui le notifiche all'atleta tornano attive.
 #: None = nessuna pausa.
 #:
-#: 2026-08-27: stop allenamenti in attesa della risonanza magnetica cardiaca.
-#: Le notifiche riprendono il giorno dell'esame; se servisse prolungare, basta
-#: cambiare questa data (o impostare COACH_PAUSE_UNTIL).
-PAUSE_UNTIL: Optional[date] = date(2026, 8, 27)
+#: Nessuna pausa attiva.
+#:
+#: Storico: dal 22/08 al 27/08/2026 le notifiche sono state sospese in attesa
+#: di una risonanza magnetica cardiaca. La pausa è scaduta da sola alla data
+#: indicata, senza che nessuno dovesse riattivare nulla — che era lo scopo del
+#: meccanismo. Via libera della cardiologa ricevuto.
+PAUSE_UNTIL: Optional[date] = None
 
 
 def pause_until() -> Optional[date]:
