@@ -16,6 +16,7 @@ from coach.utils.budget import BudgetExceededError
 from coach.utils.dt import today_rome
 from coach.utils.purposes import MODULATION_PROPOSAL
 from coach.utils.supabase_client import get_supabase
+from coach.utils.athlete import conflict_key
 
 logger = logging.getLogger(__name__)
 
@@ -409,7 +410,7 @@ def _apply_single_change(sb, change: dict) -> bool:
         sb.table("planned_sessions").update(payload).eq("id", base["id"]).execute()
     else:
         sb.table("planned_sessions").upsert(
-            payload, on_conflict="planned_date,sport,session_type"
+            payload, on_conflict=conflict_key("planned_sessions")
         ).execute()
     return True
 

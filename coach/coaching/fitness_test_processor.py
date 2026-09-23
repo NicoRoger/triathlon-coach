@@ -17,6 +17,7 @@ from typing import Optional
 
 from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
+from coach.utils.athlete import conflict_key
 
 logger = logging.getLogger(__name__)
 
@@ -432,7 +433,7 @@ class FitnessTestProcessor:
         # esisteva alcun vincolo unique (upsert sarebbe fallito a runtime) e
         # test diversi lo stesso giorno si sarebbero sovrascritti.
         self.sb.table("physiology_zones").upsert(
-            record, on_conflict="discipline,valid_from,method"
+            record, on_conflict=conflict_key("physiology_zones")
         ).execute()
         logger.info("Physiology zones upserted: %s %s=%s", discipline, db_field, result)
 

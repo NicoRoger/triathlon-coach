@@ -38,6 +38,7 @@ from typing import Optional
 from coach.models import Activity, DailyWellness, Source, Sport
 from coach.utils.dt import today_rome
 from coach.utils.supabase_client import get_supabase
+from coach.utils.athlete import conflict_key
 from coach.utils.health import record_health
 
 logger = logging.getLogger(__name__)
@@ -519,7 +520,7 @@ def sync_wellness(days_back: int = 7) -> int:
 
             sb.table("daily_wellness").upsert(
                 wellness_dict,
-                on_conflict="date",
+                on_conflict=conflict_key("daily_wellness"),
             ).execute()
             count += 1
         except Exception as e:  # noqa: BLE001
