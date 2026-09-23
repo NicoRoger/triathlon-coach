@@ -179,6 +179,45 @@ def aq(table: str):
     return _ScopedTable(sb.table(table), current_athlete_id())
 
 
+#: Chiavi di conflitto che la migration multi-atleta ESTENDE con athlete_id.
+#: Valore = chiave pre-migration. Le altre restano invariate: `activities`
+#: (external_id,source) e `bot_messages` (telegram_message_id) sono uniche a
+#: livello globale per natura, non per atleta.
+_CONFLICT_KEYS_EXTENDED = {
+    "daily_metrics": "date",
+    "daily_wellness": "date",
+    "physiology_zones": "discipline,valid_from,method",
+    "planned_sessions": "planned_date,sport,session_type",
+    "races": "name,race_date",
+    "mesocycles": "start_date",
+    "beliefs": "belief_key",
+    "sent_reminders": "trigger_type,sent_date",
+}
+
+
+def conflict_key(table: str) -> str:
+    """Chiave `on_conflict` corretta per lo stato ATTUALE dello schema.
+
+    La migration rinomina diversi vincoli UNIQUE aggiungendovi athlete_id
+    (`daily_wellness.date` → `(athlete_id, date)`, ecc.). Un `on_conflict`
+    hardcoded al valore vecchio fallirebbe con 42P10 il giorno in cui la
+    migration viene applicata, rompendo sync wellness, metriche, test fitness
+    e modulazioni — cioè un secondo guasto identico a quello appena risolto,
+    innescato proprio dal gesto che doveva completare la feature.
+
+    Risolvendola qui, la migration si può applicare in qualsiasi momento senza
+    coordinare un deploy.
+    """
+    legacy = _CONFLICT_KEYS_EXTENDED.get(table)
+    if legacy is None:
+        raise ValueError(
+            f"Tabella '{table}' senza chiave di conflitto dichiarata. "
+            f"Aggiungila a _CONFLICT_KEYS_EXTENDED se la migration la estende, "
+            f"altrimenti usa direttamente la chiave costante."
+        )
+    return legacy if legacy_single_athlete_mode() else f"athlete_id,{legacy}"
+
+
 def with_athlete(payload: dict, athlete_id: Optional[str] = None) -> dict:
     """Inietta athlete_id in un payload, senza sovrascriverlo se già presente."""
     out = dict(payload)

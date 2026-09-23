@@ -22,7 +22,7 @@ from coach.analytics.readiness import (
 )
 from coach.utils.dt import today_rome
 from coach.utils.health import record_health
-from coach.utils.athlete import aq
+from coach.utils.athlete import aq, conflict_key
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +251,7 @@ def compute_for(day: date, history_days: int = 90) -> dict:
         "readiness_factors": readiness.factors,
         "flags": readiness.flags,
     }
-    aq("daily_metrics").upsert(metrics, on_conflict="date").execute()
+    aq("daily_metrics").upsert(metrics, on_conflict=conflict_key("daily_metrics")).execute()
     return metrics
 
 

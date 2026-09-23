@@ -117,3 +117,28 @@ def test_wellness_assunto_presente_in_legacy(monkeypatch):
     rispondere senza interrogare un'anagrafica che non esiste."""
     monkeypatch.setattr(athlete_mod, "get_supabase", lambda: _FakeSB(athletes_missing=True))
     assert athlete_mod.has_wellness_data() is True
+
+
+def test_conflict_key_segue_lo_stato_dello_schema(monkeypatch):
+    """La migration rinomina i vincoli UNIQUE aggiungendovi athlete_id. Un
+    on_conflict hardcoded al valore vecchio fallirebbe con 42P10 il giorno in
+    cui la migration viene applicata — rompendo sync wellness, metriche, test
+    fitness e modulazioni, cioè un secondo guasto innescato proprio dal gesto
+    che doveva completare la feature."""
+    monkeypatch.setattr(athlete_mod, "get_supabase", lambda: _FakeSB(athletes_missing=True))
+    assert athlete_mod.conflict_key("daily_wellness") == "date"
+    assert athlete_mod.conflict_key("planned_sessions") == "planned_date,sport,session_type"
+
+    athlete_mod.legacy_single_athlete_mode.cache_clear()
+    monkeypatch.setattr(athlete_mod, "get_supabase", lambda: _FakeSB(athletes_missing=False))
+    assert athlete_mod.conflict_key("daily_wellness") == "athlete_id,date"
+    assert athlete_mod.conflict_key("planned_sessions") == "athlete_id,planned_date,sport,session_type"
+
+
+def test_conflict_key_rifiuta_tabelle_non_dichiarate(monkeypatch):
+    """Meglio un errore esplicito che una chiave inventata: `activities` e
+    `bot_messages` hanno vincoli globali che la migration NON tocca, e
+    aggiungervi athlete_id li romperebbe."""
+    monkeypatch.setattr(athlete_mod, "get_supabase", lambda: _FakeSB(athletes_missing=True))
+    with pytest.raises(ValueError, match="activities"):
+        athlete_mod.conflict_key("activities")

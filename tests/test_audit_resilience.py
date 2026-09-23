@@ -818,11 +818,23 @@ def test_o7_e4_o8_o9_migration_present():
 
 
 def test_o7_e4_code_on_conflict_aligned():
-    # Il codice deve usare le chiavi unique allargate
+    """Il codice deve usare le chiavi unique ALLARGATE (audit O7/E4).
+
+    La chiave non è più una stringa letterale nel sorgente: passa da
+    `conflict_key()`, che la adatta allo stato dello schema (la migration
+    multi-atleta vi aggiunge athlete_id). Si verifica quindi l'intento —
+    quale chiave viene risolta — invece della forma del sorgente.
+    """
+    from coach.utils.athlete import _CONFLICT_KEYS_EXTENDED
+
+    assert _CONFLICT_KEYS_EXTENDED["planned_sessions"] == "planned_date,sport,session_type"
+    assert _CONFLICT_KEYS_EXTENDED["physiology_zones"] == "discipline,valid_from,method"
+
+    # E i due moduli devono passare dal resolver, non da una costante.
     mod_src = (ROOT / "coach" / "coaching" / "modulation.py").read_text(encoding="utf-8")
-    assert 'on_conflict="planned_date,sport,session_type"' in mod_src
+    assert 'conflict_key("planned_sessions")' in mod_src
     ft_src = (ROOT / "coach" / "coaching" / "fitness_test_processor.py").read_text(encoding="utf-8")
-    assert 'on_conflict="discipline,valid_from,method"' in ft_src
+    assert 'conflict_key("physiology_zones")' in ft_src
 
 
 # ===========================================================================
