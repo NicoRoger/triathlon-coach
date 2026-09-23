@@ -62,7 +62,48 @@ DEFAULT_SLUG = "nicolo"
 
 
 class UnknownAthleteError(RuntimeError):
-    """Slug non presente in `athletes` (o tabella non ancora migrata)."""
+    """Slug non presente in `athletes` (tabella esistente, riga assente)."""
+
+
+#: Codice PostgREST per "tabella non nello schema".
+_TABLE_MISSING_CODES = ("PGRST205", "PGRST204", "42P01")
+
+
+def _athletes_table_missing(exc: Exception) -> bool:
+    text = str(exc)
+    return any(code in text for code in _TABLE_MISSING_CODES) and "athletes" in text
+
+
+@lru_cache(maxsize=1)
+def legacy_single_athlete_mode() -> bool:
+    """True se la tabella `athletes` non esiste ancora nel database.
+
+    Le migration si applicano a mano nell'editor SQL di Supabase: fra il
+    deploy del codice e la loro esecuzione può passare tempo. Senza questo
+    controllo, ogni query passata da `aq()` esplode con PGRST205 — ed è
+    esattamente ciò che è successo: l'analytics giornaliero è andato in crash
+    per 32 giorni consecutivi, lasciando `daily_metrics` vuoto, mentre il
+    Garmin sync continuava a funzionare.
+
+    In questa modalità si torna al comportamento pre-migration (query non
+    filtrate). È PROVABILMENTE sicuro: se non esiste la tabella `athletes`
+    non può esistere un secondo atleta, e la colonna `athlete_id` non esiste
+    su nessuna tabella — filtrarla darebbe errore. Appena la migration viene
+    applicata, il sistema torna da solo in modalità multi-atleta.
+    """
+    try:
+        get_supabase().table("athletes").select("id").limit(1).execute()
+        return False
+    except Exception as exc:  # noqa: BLE001
+        if _athletes_table_missing(exc):
+            logger.warning(
+                "Tabella `athletes` assente: modalità single-atleta legacy "
+                "(query NON filtrate). Applica "
+                "migrations/2026-08-09-multi-athlete-foundation.sql per abilitare "
+                "il multi-atleta."
+            )
+            return True
+        raise
 
 
 @lru_cache(maxsize=4)
@@ -111,6 +152,8 @@ def has_wellness_data() -> bool:
     Il readiness va ricalibrato su TSB + soggettivo: l'assenza di quei dati è
     una PROPRIETÀ della fonte, non un guasto, e va distinta da un sync rotto.
     """
+    if legacy_single_athlete_mode():
+        return True  # pre-migration esiste un solo atleta, su Garmin
     return bool(current_athlete().get("has_wellness_data", True))
 
 
@@ -129,6 +172,10 @@ def aq(table: str):
             f"Tabella '{table}' non classificata. Aggiungila a PER_ATHLETE_TABLES "
             f"(se contiene dati d'atleta) o a SYSTEM_TABLES (se condivisa)."
         )
+    # Migration non ancora applicata: nessun filtro, come prima del
+    # multi-atleta. Vedi legacy_single_athlete_mode per perché è sicuro.
+    if legacy_single_athlete_mode():
+        return sb.table(table)
     return _ScopedTable(sb.table(table), current_athlete_id())
 
 
