@@ -191,6 +191,36 @@ def _run_pace_context(activity: dict, planned: Optional[dict]) -> Optional[str]:
     return "\n".join(lines)
 
 
+def _swim_pace_context(activity: dict, css_s: Optional[float]) -> str:
+    """Pace medio vs CSS per il nuoto (l'HR in vasca non è affidabile).
+
+    L'ingest Garmin scrive per il nuoto SOLO avg_pace_s_per_100m: leggendo il
+    solo campo /km il confronto con CSS non veniva mai prodotto e l'LLM
+    riceveva sempre "CSS non disponibile o pace non registrata"."""
+    avg_pace_100m = activity.get("avg_pace_s_per_100m")
+    if not avg_pace_100m and activity.get("avg_pace_s_per_km"):
+        avg_pace_100m = activity["avg_pace_s_per_km"] / 10
+    avg_pace_100m = round(float(avg_pace_100m), 1) if avg_pace_100m else None
+    if not (css_s and avg_pace_100m):
+        return (
+            "CSS non disponibile o pace non registrata. "
+            "NOTA: dati HR pool inaffidabili — valuta su RPE e sensazione."
+        )
+    delta = round(avg_pace_100m - css_s, 1)
+    interp = (
+        "più VELOCE del CSS — sprint/Z4+" if delta < -5
+        else "± CSS — soglia/Z4" if abs(delta) <= 5
+        else f"{abs(delta)}s/100m più LENTO del CSS — aerobico Z2/Z3"
+    )
+    fmt = lambda s: _fmt_pace(float(s)).replace("/km", "/100m")  # noqa: E731
+    return (
+        f"CSS: {fmt(css_s)} | Pace media: {fmt(avg_pace_100m)} | "
+        f"Delta: {delta:+.1f}s/100m ({interp})\n"
+        f"Il pace è tempo per 100m: valore più ALTO = più LENTO.\n"
+        f"NOTA: dati HR pool inaffidabili — valuta compliance solo su pace e RPE."
+    )
+
+
 def _our_hr_zone(avg_hr: float, lthr: float) -> str:
     """Classifica una HR media nella NOSTRA zona (LTHR 5-zone, confini contigui)."""
     r = avg_hr / lthr
@@ -293,26 +323,7 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     if sport == "swim":
         zones_row = _get_physiology_zones(sb, "swim")
         css_s = (zones_row or {}).get("css_pace_s_per_100m")
-        # avg_pace_s_per_km per nuoto = s/km; converti in s/100m dividendo per 10
-        avg_pace_km = activity.get("avg_pace_s_per_km")
-        avg_pace_100m = round(avg_pace_km / 10, 1) if avg_pace_km else None
-        if css_s and avg_pace_100m:
-            delta = round(avg_pace_100m - css_s, 1)
-            interp = (
-                "sotto CSS — sprint/Z4+" if delta < -5
-                else "± CSS — soglia/Z4" if abs(delta) <= 5
-                else f"+{abs(delta)}s/100m sopra CSS — aerobico Z2/Z3"
-            )
-            swim_pace_context = (
-                f"CSS: {css_s}s/100m | Pace media: {avg_pace_100m}s/100m | "
-                f"Delta: {delta:+.1f}s/100m ({interp})\n"
-                f"NOTA: dati HR pool inaffidabili — valuta compliance solo su pace e RPE."
-            )
-        else:
-            swim_pace_context = (
-                "CSS non disponibile o pace non registrata. "
-                "NOTA: dati HR pool inaffidabili — valuta su RPE e sensazione."
-            )
+        swim_pace_context = _swim_pace_context(activity, css_s)
 
     # ADAPT-01: classificazione deterministica cedimento (zero LLM)
     from coach.analytics.readiness import classify_fatigue_type

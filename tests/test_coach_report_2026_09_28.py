@@ -264,3 +264,14 @@ def test_manually_refuted_belief_stays_flagged(m, monkeypatch):
     by_id = {b["id"]: b for b in db["beliefs"]}
     assert by_id["refuted"]["flagged"] is True      # decisione del coach: resta
     assert by_id["old_bug"]["flagged"] is False     # flag da vecchio bug: sbloccata
+
+
+# --- 6. Nuoto: pace vs CSS ------------------------------------------------------
+
+def test_swim_css_context_uses_per_100m_pace_written_by_ingest(m):
+    """L'ingest Garmin scrive per il nuoto solo avg_pace_s_per_100m."""
+    ctx = m.psa._swim_pace_context({"avg_pace_s_per_100m": 77.0, "avg_pace_s_per_km": None}, 80)
+    assert "CSS: 1:20/100m" in ctx and "Pace media: 1:17/100m" in ctx
+    assert "non disponibile" not in ctx
+    slow = m.psa._swim_pace_context({"avg_pace_s_per_100m": 100.0}, 80)
+    assert "più LENTO del CSS" in slow
