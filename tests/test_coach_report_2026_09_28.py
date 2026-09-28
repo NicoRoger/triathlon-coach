@@ -5,6 +5,7 @@
 2. Analisi post-seduta che leggeva 7:35/km come "più veloce" di 5:40-6:15.
 3. Sedute pianificate mai collegate all'attività svolta.
 4. Watchdog: weekly_analysis (on-demand) sempre "mai eseguito?".
+5. Belief confutata a mano sbloccata dal reconcile domenicale.
 """
 from __future__ import annotations
 
@@ -36,6 +37,9 @@ def m():
             briefing=importlib.import_module("coach.planning.briefing"),
             matching=importlib.import_module("coach.planning.session_matching"),
             watchdog=importlib.import_module("scripts.watchdog"),
+            beliefs=importlib.import_module("coach.analytics.belief_engine"),
+            athlete=importlib.import_module("coach.utils.athlete"),
+            supabase_client=importlib.import_module("coach.utils.supabase_client"),
         )
     finally:
         for k in [k for k in sys.modules if _is_project_module(k)]:
@@ -215,3 +219,48 @@ def test_proactive_gate_is_catch_up_not_exact_hour(m):
     text = wf.read_text(encoding="utf-8")
     assert '-lt 18' in text
     assert '!= "18"' not in text
+
+
+# --- 5. Belief confutata a mano -----------------------------------------------
+
+class _FakeTable:
+    """Query builder minimale: filtri eq/neq su colonne presenti nella riga
+    (athlete_id, aggiunto da aq(), viene ignorato: le righe finte non ce l'hanno)."""
+
+    def __init__(self, db, name):
+        self.db, self.name, self.filters, self.patch = db, name, [], None
+
+    def select(self, *a, **k): return self
+    def eq(self, col, val): self.filters.append((col, lambda v, x=val: v == x)); return self
+    def neq(self, col, val): self.filters.append((col, lambda v, x=val: v != x)); return self
+    def update(self, patch): self.patch = patch; return self
+    def insert(self, row): self.db.setdefault(self.name, []).append(row); return self
+
+    def execute(self):
+        rows = [r for r in self.db.get(self.name, [])
+                if all(col not in r or ok(r[col]) for col, ok in self.filters)]
+        if self.patch is not None:
+            for r in rows:
+                r.update(self.patch)
+        return SimpleNamespace(data=rows)
+
+
+def test_manually_refuted_belief_stays_flagged(m, monkeypatch):
+    common = {"status": "validated_belief", "confidence": 0.8, "evidence_n": 15, "prescription": None}
+    db = {
+        "athletes": [{"id": "a1"}],
+        "beliefs": [
+            {"id": "refuted", "belief_text": "Superamento zone in sessioni recupero", "flagged": True, **common},
+            {"id": "old_bug", "belief_text": "HRV più alta dopo giorni di riposo", "flagged": True, **common},
+        ],
+        "beliefs_history": [{"belief_id": "refuted", "change_type": "refuted"}],
+    }
+    fake = SimpleNamespace(table=lambda name: _FakeTable(db, name))
+    monkeypatch.setattr(m.beliefs, "get_supabase", lambda: fake)
+    monkeypatch.setattr(m.supabase_client, "get_supabase", lambda: fake)
+    monkeypatch.setattr(m.athlete, "legacy_single_athlete_mode", lambda: True)  # come in prod
+
+    assert m.beliefs.reconcile_flagged_beliefs() == 1
+    by_id = {b["id"]: b for b in db["beliefs"]}
+    assert by_id["refuted"]["flagged"] is True      # decisione del coach: resta
+    assert by_id["old_bug"]["flagged"] is False     # flag da vecchio bug: sbloccata
