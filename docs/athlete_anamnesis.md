@@ -46,15 +46,19 @@ Iter diagnostico cardiologico in corso — stop precauzionale auto-imposto da me
 
 Nessun mesociclo attivo.
 
+Carico al 2026-09-28: CTL 11.51 | ATL 8.79 | TSB 2.72 | readiness 63/100 (caution)
+
 ## Baseline fisiologiche (finestra 28gg)
 - HR riposo: 51 bpm tipica (range 47-64)
-- HRV rMSSD baseline: 76 ms (n=27)
+- HRV rMSSD baseline: 75 ms (n=28)
 
 ## Pattern osservati (belief non flaggate, weak+)
-- [validated_belief n=13 conf=0.95] Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)
-- [validated_belief n=11 conf=0.95] Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)
-- [validated_belief n=9 conf=0.95] Overpacing in test soglia (HR 194bpm, calo potenza finale, pacing irregolare)
-- [validated_belief n=8 conf=0.95] RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)
+- [validated_belief n=14 conf=0.95] Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)
+- [validated_belief n=9 conf=0.95] RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)
+- [validated_belief n=12 conf=0.95] Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)
+- [validated_belief n=10 conf=0.85] Overpacing sistematico in sessioni aerobiche (pace 1:17/100m vs target 1:40/100m, HR 151bpm in Z2 target)
+- [validated_belief n=12 conf=0.85] Overpacing Z2 sistematico (HR media 147bpm, NP 243W in Z2 target, 67.4% Z3 in gruppo)
+- [validated_belief n=10 conf=0.77] Overpacing in test soglia (HR 194bpm, calo potenza finale, pacing irregolare)
 
 ## Storico test fisiologici
 

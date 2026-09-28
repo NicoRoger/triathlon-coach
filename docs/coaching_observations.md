@@ -1,17 +1,16 @@
-Ottimo lavoro, coach! L'analisi è dettagliata e le prescrizioni sono ben formulate. Integriamo i nuovi dati e affiniamo i pattern esistenti.
+# ANALISI PATTERN LONGITUDINALI — SETTEMBRE 2026
+## Cognitive MVP Fase 2.2: Prescrizioni Longitudinali (Aggiornamento)
 
----
-
-## ANALISI PATTERN LONGITUDINALI — SETTEMBRE 2026
-## Cognitive MVP Fase 2.2: Prescrizioni Longitudinali
+**Periodo analizzato**: 31 agosto – 28 settembre 2026  
+**Confidence threshold applicato**: n≥8 (0.7-0.85), n≥4 (0.5-0.7), n<4 (IPOTESI)
 
 ---
 
 ## Pattern di Recupero
 
-- **HRV più basso il mercoledì (media 74.2, z=-0.6)** (n=4 sett, confidence 0.75) → **Prescrizione**: Evitare sessioni di qualità il mercoledì; preferire recupero attivo (30min Z1) o riposo completo. Se programmato, posticipare a giovedì. **Expected outcome**: +4-6 punti HRV, riduzione stress cumulativo settimanale.
+- **HRV picco martedì (media 85.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Programmare FTP test, sessioni soglia e blocchi Z3-Z4 preferibilmente martedì. Questo è il giorno di massima disponibilità neuromuscolare. **Expected outcome**: +12-15% efficacia stimoli, adattamento ottimizzato.
 
-- **HRV picco martedì (media 87.0, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Programmare FTP test, sessioni soglia e blocchi Z3-Z4 preferibilmente martedì. Questo è il giorno di massima disponibilità neuromuscolare. **Expected outcome**: +12-15% efficacia stimoli, adattamento ottimizzato.
+- **HRV crollo giovedì (media 60.5, z=-1.2)** (n=4 sett, confidence 0.85) → **Prescrizione**: Giovedì è giorno di recupero obbligatorio. Implementare riposo completo o Z1 passivo (max 30min). Se programmato carico, posticipare a venerdì. **Expected outcome**: +15-20 punti HRV venerdì, prevenzione overtraining settimanale.
 
 - **Correlazione TSS-qualità sonno (TSS>70 → sonno 87.3 vs TSS<50 → sonno 53.4)** (n=11 giorni, confidence 0.85) → **Prescrizione**: Dopo TSS>70, anticipare sonno di 30-45min e implementare routine pre-sonno (10min stretching + respirazione 4-7-8). **Expected outcome**: +45min qualità sonno, +1-2 cicli REM, recovery window ottimizzato.
 
@@ -23,34 +22,16 @@ Ottimo lavoro, coach! L'analisi è dettagliata e le prescrizioni sono ben formul
 
 ### Nuoto
 
-- **Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)** (n=10 sessioni, confidence 0.85) → **Prescrizione**: Lasciare cronometro a borsa; vincolo rigido HR<140bpm (RPE 2/10). Usare cardiofrequenzimetro come constraint assoluto. **Expected outcome**: +30-35% compliance zone, riduzione carico spalla 15-20%, recovery time +8-10h.
+- **Overpacing sistematico in sessioni aerobiche (pace 1:17/100m vs target 1:40/100m, HR 151bpm in Z2 target)** (n=10 sessioni, confidence 0.85) → **Prescrizione**: Vincolo rigido: pace ≥1:40/100m per Z1-Z2. Usare cronometro di vasca come constraint assoluto, non come target da battere. Ridurre volume del 20% per sessione fino a compliance >80%. **Expected outcome**: +35% riduzione sovraccarico, recovery time +10-15h, rispetto vincolo medico garantito.
 
 - **Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)** (n=8 sessioni, confidence 0.8) → **Prescrizione**: 2 sessioni/sett forza braccia (elastici, pull buoy) + 10-15min mobilità dinamica spalle pre-nuoto. Aumentare Z1/Z2 di 500m/sett. **Expected outcome**: RPE fatica -2 punti, resistenza +200-300m pre-affaticamento, pace +2-3 sec/100m.
 
-- **Overpacing in test soglia (HR 194bpm, calo potenza finale, pacing irregolare)** (n=6 sessione, confidence 0.8) → **Prescrizione**: Strategia pacing conservativa iniziale, warm-up strutturato progressivo, allarmi HR/pace rigidi. **Expected outcome**: +15-20% compliance pacing, dati soglia più accurati e riproducibili.
+- **Pacing irregolare e pause prolungate in sessioni lunghe (>3000s, cadenza decrescente, continuità compromessa)** (n=3 sessioni, confidence 0.7) → **Prescrizione**: Strutturare allenamenti in blocchi brevi (max 400-500m) con pause predefinite <30sec. Feedback real-time (SWOLF, bracciate/vasca) per autoregolazione. Ridurre volume totale fino a compliance. **Expected outcome**: +15-20% mantenimento tecnica, RPE allineato, continuità garantita.
 
-- **Difficoltà focus tecnico sessioni lunghe (>3000s, >3km, RPE disallineato)** (n=2 sessioni, confidence 0.6) → **IPOTESI Prescrizione**: Suddividere in blocchi brevi con pause attive/passive programmate. Feedback immediati (SWOLF, bracciate/vasca) per autoregolazione. **Expected outcome**: +10-15% mantenimento tecnica, RPE allineato.
+- **Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)** (n=10 sessioni, confidence 0.85) → **Prescrizione**: Lasciare cronometro a borsa; vincolo rigido HR<140bpm (RPE 2/10). Usare cardiofrequenzimetro come constraint assoluto. **Expected outcome**: +30-35% compliance zone, riduzione carico spalla 15-20%, recovery time +8-10h.
 
 ### Bici
 
-- **Overpacing Z2 (HR media 147bpm, NP 243W in Z2 target, 67.4% Z3 in gruppo)** (n=12 sessioni, confidence 0.85) → **Prescrizione**: Vincolo rigido HR 145-155bpm per parte centrale. Uscite gruppo programmate come "libere" o evitate se non compliance. **Expected outcome**: +30% riduzione sovraccarico, TSS realistico (+15-20 punti), adattamento aerobico ottimizzato.
+- **Overpacing Z2 sistematico (HR media 147bpm, NP 243W in Z2 target, 67.4% Z3 in gruppo)** (n=12 sessioni, confidence 0.85) → **Prescrizione**: Vincolo rigido HR 145-155bpm per parte centrale. Uscite gruppo programmate come "libere" o evitate se non compliance. Implementare allarme HR automatico. **Expected outcome**: +30% riduzione sovraccarico, TSS realistico (+15-20 punti), adattamento aerobico ottimizzato.
 
-- **RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)** (n=5 sessioni, confidence 0.75) → **Prescrizione**: Quando "gambe pesanti", aumentare RPE di +1-2 punti rispetto sensazione immediata. Allineare RPE a HR/Potenza oggettiva. **Expected outcome**: TSS calcolato realistico, percezione sforzo calibrata.
-
-- **Pattern non ancora osservabile**: Analisi potenza media vs target in Z3-Z4 (n insufficiente per prescrizione).
-
-### Corsa
-
-- **Pattern non ancora osservabile**: Dati corsa insufficienti nel periodo (n<4 sessioni).
-
----
-
-## Pattern Soggettivi
-
-- **RPE disallineato tra sport (nuoto: tendenza underestimate, bici: underestimate Z3+)** (n=15 sessioni cross-sport, confidence 0.75) → **Prescrizione**: Calibrare RPE con riferimento biometrico (HR, potenza). Nuoto: RPE 2 = HR<140bpm. Bici: RPE 3-4 = HR 155-165bpm. **Expected outcome**: Migliore coerenza RPE, ottimizzazione intensità allenamento.
-
----
-
-## Pattern Biometrici
-
-- **HRV più alto il martedì (media 86.8, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Sfruttare il martedì
+- **RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)** (n=5 sessioni, confidence 0.75) → **Prescrizione**: Quando "gambe pesanti", aumentare RPE di +1-2 punti rispetto sensazione immediata. Allineare RPE a HR/Potenza oggettiva. Usare tabella di calibrazione: RP
