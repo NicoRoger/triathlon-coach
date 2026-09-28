@@ -138,12 +138,45 @@ def _build_wellness_section(wellness: dict, metrics: dict) -> str:
     return "\n".join(lines)
 
 
+def _night_synced(wellness: dict) -> bool:
+    """True se la notte appena finita è già su Garmin Connect.
+
+    bodyBatteryHighestValue è il picco della giornata *fin qui sincronizzata*
+    dall'orologio: se l'orologio non ha ancora caricato la notte, il picco del
+    giorno è il valore di mezzanotte (~5-15, la batteria prima di dormire) e il
+    messaggio riportava "Energia al risveglio: 11/100" con un risveglio reale
+    a 52. La fine del sonno esiste solo dopo il risveglio, quindi la sua
+    presenza prova che i dati coprono il risveglio."""
+    raw = wellness.get("raw_payload")
+    if isinstance(raw, dict):
+        sleep_dto = (raw.get("sleep") or {}).get("dailySleepDTO") or {}
+        if sleep_dto.get("sleepEndTimestampGMT") or sleep_dto.get("sleepEndTimestampLocal"):
+            return True
+    # Righe senza raw_payload (legacy/test): lo sleep score della notte è
+    # anch'esso calcolato solo dopo il risveglio.
+    return wellness.get("sleep_score") is not None
+
+
+def _wake_body_battery(wellness: dict) -> Optional[int]:
+    """Body Battery al risveglio, o None se il dato non è ancora affidabile.
+
+    Preferisce il campo esplicito di Garmin (bodyBatteryAtWakeTime); in
+    mancanza usa il massimo del giorno, ma SOLO se la notte è sincronizzata
+    (vedi _night_synced) — altrimenti il massimo è il valore di mezzanotte."""
+    raw = wellness.get("raw_payload")
+    if isinstance(raw, dict) and raw.get("bodyBatteryAtWakeTime") is not None:
+        return raw["bodyBatteryAtWakeTime"]
+    if not _night_synced(wellness):
+        return None
+    return wellness.get("body_battery_max")
+
+
 def _build_energy_section(wellness: dict, metrics: dict) -> str:
     """Body Battery + readiness Garmin — separati dal brief delle 5:00 perché
     la notifica di quell'ora interrompe il sonno e falsa entrambi i valori
     (letti bassi non per stanchezza reale ma per il risveglio forzato)."""
     lines = []
-    bb_str = _interpret_body_battery(wellness.get("body_battery_max"))
+    bb_str = _interpret_body_battery(_wake_body_battery(wellness))
     if bb_str:
         lines.append(f"Energia al risveglio: {bb_str}")
 
@@ -935,6 +968,13 @@ def build_energy_update() -> str:
 
     wellness_res = sb.table("daily_wellness").select("*").eq("date", today_iso).execute()
     wellness = wellness_res.data[0] if wellness_res.data else {}
+
+    # Notte non ancora caricata dall'orologio: Body Battery e readiness Garmin
+    # sarebbero quelli di mezzanotte/ieri. Niente messaggio: main_energy non
+    # registra l'invio e il prossimo ingest (ogni 3h) riprova.
+    if _wake_body_battery(wellness) is None and not _night_synced(wellness):
+        logger.info("Energy update: notte %s non ancora sincronizzata da Garmin — rinvio", today_iso)
+        return ""
 
     return _build_energy_section(wellness, metrics)
 

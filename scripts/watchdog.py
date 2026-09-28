@@ -35,8 +35,8 @@ CADENCE_THRESHOLDS_HOURS = {
     "proactive_questions": 80,      # 3x/settimana
     "post_session_analysis": 8,     # ogni ingest (3h)
     "modulation_apply": 8,          # ogni ingest (3h)
+    "session_matching": 8,          # ogni ingest (3h)
     "pattern_extraction": 200,      # domenicale (+ margine ritardi cron)
-    "weekly_analysis": 200,
     "weekly_review_reminder": 200,
     "db_cleanup": 200,
     "debrief_evening": 200,         # riga storica, nessun writer attivo
@@ -52,6 +52,16 @@ MUTED_COMPONENTS = {
     # Ingest Strava disattivato: Garmin è l'unica fonte dati (lo step è
     # commentato in ingest.yml). Rimuovere da qui se si riattiva Strava.
     "strava_sync",
+}
+
+
+# Componenti ON-DEMAND: nessun cron, girano solo a mano (weekly_analysis è
+# lanciato dalla weekly review, skills/weekly_review.md). Non hanno una
+# cadenza, quindi né "mai eseguito" né "stale" hanno senso: dichiararlo con
+# soglia 200h produceva un falso "nessuna riga health (mai eseguito?)"
+# permanente. Si allerta solo se l'ultimo run registrato è fallito.
+ON_DEMAND_COMPONENTS = {
+    "weekly_analysis",
 }
 
 
@@ -75,9 +85,15 @@ def compute_alerts(rows: list[dict], now: datetime) -> list[str]:
             or CADENCE_THRESHOLDS_HOURS.get(comp)
             or DEFAULT_THRESHOLD_HOURS
         )
-        for comp in (declared | set(by_comp)) - MUTED_COMPONENTS
+        for comp in (declared | set(by_comp)) - MUTED_COMPONENTS - ON_DEMAND_COMPONENTS
     }
     alerts: list[str] = []
+    for comp in sorted(ON_DEMAND_COMPONENTS - MUTED_COMPONENTS):
+        row = by_comp.get(comp) or {}
+        fail, ok = row.get("last_failure_at"), row.get("last_success_at")
+        if fail and (not ok or _parse_ts(fail) > _parse_ts(ok)):
+            err = row.get("last_error") or "-"
+            alerts.append(f"🚨 <b>{comp}</b>: ultimo run fallito\n  err: {err[:120]}")
     for comp, threshold in sorted(components.items()):
         row = by_comp.get(comp)
         if row is None:
@@ -91,16 +107,18 @@ def compute_alerts(rows: list[dict], now: datetime) -> list[str]:
             if comp in THRESHOLDS_HOURS or row.get("last_failure_at"):
                 alerts.append(f"⚠️ <b>{comp}</b>: mai sincronizzato")
             continue
-        last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
-        if last_dt.tzinfo is None:
-            last_dt = last_dt.replace(tzinfo=timezone.utc)
-        age = (now - last_dt).total_seconds() / 3600
+        age = (now - _parse_ts(last)).total_seconds() / 3600
         if age > threshold:
             err = row.get("last_error") or "-"
             alerts.append(
                 f"🚨 <b>{comp}</b>: {age:.1f}h dall'ultimo successo (soglia {threshold}h)\n  err: {err[:120]}"
             )
     return alerts
+
+
+def _parse_ts(value: str) -> datetime:
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def main() -> None:

@@ -38,13 +38,18 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Proactive Questions Check-In
-        # Gate DST: invia solo nel run che cade alle 18:xx Europe/Rome
-        # (workflow_dispatch manuale bypassa il gate).
+        # Catch-up gate (come send_notification.py --rome-hour): invia dalle
+        # 18:00 Rome a fine serata. Il vecchio gate "ora == 18" skippava ogni
+        # run: i cron di GitHub arrivano con 2-4h di ritardo (18:48-20:20 UTC),
+        # il job usciva 0 prima di Python e dal 25/08 nessuna domanda partiva,
+        # con run sempre verdi. Il doppio invio (due cron nella finestra) è
+        # bloccato dal cooldown 24h in proactive_questions.py.
+        # workflow_dispatch manuale bypassa il gate.
         run: |
           if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
-            HOUR=$(TZ='Europe/Rome' date +%H)
-            if [ "$HOUR" != "18" ]; then
-              echo "DST gate: ora Rome $HOUR != 18, skip"
+            HOUR=$(TZ='Europe/Rome' date +%-H)
+            if [ "$HOUR" -lt 18 ]; then
+              echo "Gate: ora Rome $HOUR < 18, troppo presto, skip"
               exit 0
             fi
           fi
