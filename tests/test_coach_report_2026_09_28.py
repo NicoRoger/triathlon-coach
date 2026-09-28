@@ -297,3 +297,15 @@ def test_watchdog_realerts_only_on_change(m, monkeypatch):
     monkeypatch.setattr(m.watchdog, "aq", lambda table: _Q())
     assert m.watchdog._recently_alerted("proactive_questions", NOW) is True
     assert m.watchdog._recently_alerted("garmin_sync,proactive_questions", NOW) is False
+
+
+# --- 8. Brief nei giorni di HRV crash --------------------------------------------
+
+def test_warnings_section_is_valid_telegram_html(m):
+    """Un '<' nudo in parse_mode HTML fa rifiutare il brief; il fallback testo
+    semplice poi cancellava tutto fino al '>' successivo."""
+    import re
+    text = m.briefing._build_warnings_section({"flags": ["fatigue_critical", "fatigue_warning"]})
+    assert "recovery obbligatorio" in text
+    stripped = re.sub(r"</?(b|i|code)>", "", text)
+    assert "<" not in stripped and ">" not in stripped

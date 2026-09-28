@@ -482,7 +482,10 @@ def _build_warnings_section(metrics: dict) -> str:
     """Warning specifici (hardcoded da CLAUDE.md, gestiti via env var) + severity-aware."""
     flags = metrics.get("flags") or []
     flag_msgs = {
-        "fatigue_critical": "🚨 HRV in crash (z<-2) → recovery obbligatorio oggi",
+        # &lt;: il brief è in parse_mode HTML. Un "<" nudo faceva rifiutare il
+        # messaggio e il fallback testo semplice cancellava tutto fino al ">"
+        # successivo — proprio nei giorni di HRV crash.
+        "fatigue_critical": "🚨 HRV in crash (z&lt;-2) → recovery obbligatorio oggi",
         "fatigue_warning": "⚠️ HRV in calo da 2+ giorni → rimodula sessione di oggi",
         "trend_negative": "📉 HRV trend 7gg sotto baseline 28gg",
         "anticipate_recovery_week": "🔄 Suggerito anticipo settimana di scarico",
