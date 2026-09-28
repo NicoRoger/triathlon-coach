@@ -275,3 +275,25 @@ def test_swim_css_context_uses_per_100m_pace_written_by_ingest(m):
     assert "non disponibile" not in ctx
     slow = m.psa._swim_pace_context({"avg_pace_s_per_100m": 100.0}, 80)
     assert "più LENTO del CSS" in slow
+
+
+# --- 7. Watchdog: niente alert ripetuti ogni ora --------------------------------
+
+def test_watchdog_signature_ignores_changing_hours(m):
+    a1 = ["🚨 <b>proactive_questions</b>: 800.1h dall'ultimo successo (soglia 80h)\n  err: -"]
+    a2 = ["🚨 <b>proactive_questions</b>: 801.1h dall'ultimo successo (soglia 80h)\n  err: -"]
+    assert m.watchdog.alert_signature(a1) == m.watchdog.alert_signature(a2) == "proactive_questions"
+
+
+def test_watchdog_realerts_only_on_change(m, monkeypatch):
+    sent = [{"context_data": {"signature": "proactive_questions"}}]
+
+    class _Q:
+        def select(self, *a): return self
+        def eq(self, *a): return self
+        def gte(self, *a): return self
+        def execute(self): return SimpleNamespace(data=sent)
+
+    monkeypatch.setattr(m.watchdog, "aq", lambda table: _Q())
+    assert m.watchdog._recently_alerted("proactive_questions", NOW) is True
+    assert m.watchdog._recently_alerted("garmin_sync,proactive_questions", NOW) is False

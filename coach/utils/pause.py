@@ -28,13 +28,13 @@ import os
 from datetime import date
 from typing import Optional
 
-from coach.utils.purposes import BUDGET_ALERT, GENERIC, PROVIDER_FALLBACK, SMOKE_TEST
+from coach.utils.purposes import BUDGET_ALERT, GENERIC, PROVIDER_FALLBACK, SMOKE_TEST, WATCHDOG_ALERT
 
 logger = logging.getLogger(__name__)
 
 #: Notifiche di SISTEMA: passano sempre, anche in pausa. Non riguardano
 #: l'allenamento e servono ad accorgersi dei guasti.
-SYSTEM_PURPOSES = frozenset({BUDGET_ALERT, PROVIDER_FALLBACK, SMOKE_TEST, GENERIC})
+SYSTEM_PURPOSES = frozenset({BUDGET_ALERT, PROVIDER_FALLBACK, SMOKE_TEST, GENERIC, WATCHDOG_ALERT})
 
 #: Primo giorno in cui le notifiche all'atleta tornano attive.
 #: None = nessuna pausa.

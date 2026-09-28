@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 
 import requests
 
+from coach.utils.athlete import aq
+from coach.utils.purposes import WATCHDOG_ALERT
 from coach.utils.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -116,6 +119,35 @@ def compute_alerts(rows: list[dict], now: datetime) -> list[str]:
     return alerts
 
 
+# Il watchdog gira ogni ora: senza questo, un guasto non risolto (es.
+# proactive_questions fermo dal 25/08) generava un messaggio Telegram OGNI ORA
+# per settimane. Si rinotifica solo se l'insieme dei componenti in allarme
+# cambia, oppure dopo REALERT_HOURS come promemoria.
+REALERT_HOURS = 12
+
+
+def alert_signature(alerts: list[str]) -> str:
+    """Insieme dei componenti in allarme (non il testo: le ore di ritardo
+    cambiano a ogni run e renderebbero ogni alert "nuovo")."""
+    comps = sorted({m.group(1) for a in alerts for m in [re.search(r"<b>([^<]+)</b>", a)] if m})
+    return ",".join(comps)
+
+
+def _recently_alerted(signature: str, now: datetime) -> bool:
+    since = (now - timedelta(hours=REALERT_HOURS)).isoformat()
+    try:
+        res = (
+            aq("bot_messages").select("context_data")
+            .eq("purpose", WATCHDOG_ALERT)
+            .gte("sent_at", since)
+            .execute()
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Dedup watchdog non disponibile: invio comunque", exc_info=True)
+        return False
+    return any((r.get("context_data") or {}).get("signature") == signature for r in res.data or [])
+
+
 def _parse_ts(value: str) -> datetime:
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -130,14 +162,20 @@ def main() -> None:
     alerts = compute_alerts(res.data or [], now)
 
     if alerts:
-        msg = "<b>Watchdog alert</b>\n\n" + "\n\n".join(alerts)
-        from coach.utils.telegram_logger import send_and_log_message
-        send_and_log_message(
-            message=msg,
-            purpose="generic",
-            parent_workflow="watchdog.yml"
-        )
-        logger.warning("Watchdog: %d alert", len(alerts))
+        signature = alert_signature(alerts)
+        if _recently_alerted(signature, now):
+            logger.warning("Watchdog: %d alert invariati, già notificati nelle ultime %dh — skip",
+                           len(alerts), REALERT_HOURS)
+        else:
+            msg = "<b>Watchdog alert</b>\n\n" + "\n\n".join(alerts)
+            from coach.utils.telegram_logger import send_and_log_message
+            send_and_log_message(
+                message=msg,
+                purpose=WATCHDOG_ALERT,
+                context_data={"signature": signature},
+                parent_workflow="watchdog.yml"
+            )
+            logger.warning("Watchdog: %d alert", len(alerts))
     else:
         logger.info("All healthy")
 
