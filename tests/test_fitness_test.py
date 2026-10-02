@@ -375,3 +375,41 @@ class TestBikeZonesFromLTHR(unittest.TestCase):
         z = derive_zones_for_discipline("bike", lthr=170)
         self.assertTrue(z, "le zone bici da LTHR non devono essere vuote")
         self.assertIn("Z4_threshold", z)
+
+
+class TestThresholdRunRawGarminLaps(unittest.TestCase):
+    """Gli split in DB sono lapDTOs grezzi di Garmin: niente avg_pace_s_per_km."""
+
+    def test_pace_from_raw_garmin_lap(self):
+        proc = _make_processor()
+        structured = {"test_type": "threshold_run_30min", "extraction": {"primary": {"interval_index": 1}}}
+        activity = {"id": "raw", "sport": "run", "splits": [
+            {"lapIndex": 1, "distance": 2500.0, "duration": 900.0, "averageSpeed": 2.78},
+            {"lapIndex": 2, "distance": 6900.0, "duration": 1800.0, "averageSpeed": 3.8333},
+        ]}
+        self.assertAlmostEqual(proc._extract_threshold_run(activity, structured), 260.9, places=1)
+
+    def test_pace_from_duration_distance_when_no_speed(self):
+        proc = _make_processor()
+        structured = {"test_type": "threshold_run_30min", "extraction": {"primary": {"interval_index": 0}}}
+        activity = {"id": "raw2", "sport": "run", "splits": [{"distance": 7000.0, "duration": 1785.0}]}
+        self.assertAlmostEqual(proc._extract_threshold_run(activity, structured), 255.0, places=1)
+
+    def test_autolap_1km_does_not_use_warmup_pace(self):
+        """Auto-lap Garmin a 1 km: splits[1] è un km di riscaldamento (5:30/km)."""
+        proc = _make_processor()
+        structured = {"test_type": "threshold_run_30min", "extraction": {"primary": {"interval_index": 1}}}
+        laps = [{"distance": 1000.0, "duration": 330.0, "averageSpeed": 3.03} for _ in range(12)]
+        activity = {"id": "autolap", "sport": "run", "splits": laps}
+        self.assertIsNone(proc._extract_threshold_run(activity, structured))
+
+    def test_finds_test_segment_when_index_points_elsewhere(self):
+        proc = _make_processor()
+        structured = {"test_type": "threshold_run_30min", "extraction": {"primary": {"interval_index": 1}}}
+        activity = {"id": "lap3", "sport": "run", "splits": [
+            {"distance": 2600.0, "duration": 900.0},     # warmup
+            {"distance": 400.0, "duration": 120.0},      # allunghi
+            {"distance": 6900.0, "duration": 1800.0},    # test 30'
+            {"distance": 1600.0, "duration": 600.0},     # cooldown
+        ]}
+        self.assertAlmostEqual(proc._extract_threshold_run(activity, structured), 260.9, places=1)
