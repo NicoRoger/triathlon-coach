@@ -413,3 +413,26 @@ class TestThresholdRunRawGarminLaps(unittest.TestCase):
             {"distance": 1600.0, "duration": 600.0},     # cooldown
         ]}
         self.assertAlmostEqual(proc._extract_threshold_run(activity, structured), 260.9, places=1)
+
+
+class TestThresholdRunNoActivityFallback(unittest.TestCase):
+
+    def test_no_test_segment_goes_to_coach_review_not_activity_average(self):
+        """Senza un segmento di 20-40' NON si usa il pace medio dell'attività
+        (riscaldamento incluso): si chiede la revisione del coach."""
+        proc = _make_processor()
+        structured = {
+            "test_type": "threshold_run_30min",
+            "extraction": {
+                "primary": {"interval_index": 1},
+                "fallback": {"field": "avg_pace_s_per_km", "source": "activity", "formula": "value * 1.02"},
+            },
+        }
+        laps = [{"distance": 1000.0, "duration": 300.0} for _ in range(11)]
+        activity = {"id": "autolap", "sport": "run", "avg_pace_s_per_km": 300.0, "splits": laps}
+        with patch.object(proc, "_notify_telegram") as notify, \
+             patch.object(proc, "_upsert_physiology_zones") as upsert:
+            result = proc.process_fitness_test(activity, {"structured": structured})
+        self.assertEqual(result["status"], "needs_coach_review")
+        upsert.assert_not_called()
+        notify.assert_called_once()

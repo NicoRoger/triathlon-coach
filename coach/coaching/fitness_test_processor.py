@@ -115,7 +115,7 @@ class FitnessTestProcessor:
         # instradiamo alla revisione del coach.
         if structured.get("extraction"):
             result = extractor(activity, structured)
-            if result is None:
+            if result is None and test_type not in NO_ACTIVITY_FALLBACK:
                 result = self._try_fallback_extraction(activity, structured)
         else:
             result = None
@@ -576,6 +576,12 @@ class FitnessTestProcessor:
 # di Garmin a 1 km, splits[interval_index] è un km del riscaldamento: il suo
 # pace (~5:30/km) sta dentro i bound di plausibilità e sarebbe stato scritto
 # come soglia senza alcun avviso.
+# Test per cui il fallback sulla MEDIA DELL'ATTIVITÀ non è una stima della
+# soglia: la seduta comprende 25' di riscaldamento e defaticamento, quindi il
+# pace medio × 1.02 (protocollo) esce molto più lento della soglia vera e
+# passerebbe i bound di plausibilità. Senza segmento valido → revisione coach.
+NO_ACTIVITY_FALLBACK = {"threshold_run_30min", "threshold_run_20min"}
+
 THRESHOLD_RUN_MIN_SEGMENT_S = 20 * 60
 THRESHOLD_RUN_MAX_SEGMENT_S = 40 * 60
 
