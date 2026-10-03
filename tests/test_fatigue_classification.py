@@ -268,3 +268,36 @@ def test_belief_update_skips_null_session_type():
     assert len(none_keys) == 0, (
         f"Belief con session_type=None non devono essere creati, trovati: {none_keys}"
     )
+
+
+def test_belief_update_ignores_insufficient_data():
+    """insufficient_data non è evidenza: 4 nuotate senza HR affidabile non
+    devono creare 'responds_well_<tipo>' (col session matching il path è attivo)."""
+    from coach.coaching.pattern_extraction import update_beliefs_from_session_patterns
+
+    fake = {
+        "session_analyses": [
+            {"activity_id": f"act_{i}", "fatigue_type": "insufficient_data",
+             "fatigue_confidence": 0.3, "created_at": f"2026-09-2{i}T10:00:00Z"}
+            for i in range(4)
+        ],
+        "activities": [{"id": f"uuid_{i}", "external_id": f"act_{i}"} for i in range(4)],
+        "planned_sessions": [{"completed_activity_id": f"uuid_{i}", "session_type": "aerobic_technique"} for i in range(4)],
+    }
+
+    def table_side_effect(name):
+        chain = MagicMock()
+        chain.execute.return_value = MagicMock(data=fake.get(name, []))
+        for meth in ("select", "gte", "in_", "eq", "is_"):
+            getattr(chain, meth).return_value = chain
+        return chain
+
+    sb = MagicMock()
+    sb.table.side_effect = table_side_effect
+    created, reinforced = [], []
+    with patch("coach.coaching.pattern_extraction.get_supabase", return_value=sb), \
+         patch("coach.analytics.belief_engine.create_belief", side_effect=lambda *a, **k: created.append(a)), \
+         patch("coach.analytics.belief_engine.reinforce_belief", side_effect=lambda *a, **k: reinforced.append(a)):
+        update_beliefs_from_session_patterns(days=14)
+
+    assert created == [] and reinforced == []

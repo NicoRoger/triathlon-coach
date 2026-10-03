@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 from datetime import timedelta
 from pathlib import Path
 from typing import Optional
@@ -121,6 +122,105 @@ def _weather_temp_c(weather: Optional[dict]) -> Optional[float]:
     return round((raw - 32) * 5 / 9, 1) if raw >= 50 else raw
 
 
+def _fmt_pace(s_per_km: Optional[float]) -> Optional[str]:
+    """455.8 → '7:36/km'. None se il pace manca."""
+    if not s_per_km:
+        return None
+    total = int(round(float(s_per_km)))
+    return f"{total // 60}:{total % 60:02d}/km"
+
+
+_PACE_RANGE_RE = re.compile(r"(\d{1,2}):(\d{2})\s*(?:/km)?\s*[-–]\s*(\d{1,2}):(\d{2})\s*/km")
+_HR_CAP_RE = re.compile(r"\bcap\s*(?:FC\s*|HR\s*)?(\d{3})\b", re.IGNORECASE)
+
+
+def _planned_text(planned: dict) -> str:
+    """Testo prescrittivo del piano: description + target/notes degli step.
+    NON include structured.zones_derived, che elenca le definizioni di TUTTE le
+    zone (range pace inclusi) e verrebbe scambiato per il target della seduta."""
+    parts = [planned.get("description") or ""]
+    for step in ((planned.get("structured") or {}).get("steps") or []):
+        if isinstance(step, dict):
+            parts += [str(step.get("target") or ""), str(step.get("notes") or "")]
+    return "\n".join(parts)
+
+
+def _run_pace_context(activity: dict, planned: Optional[dict]) -> Optional[str]:
+    """Confronto pace/FC vs piano calcolato in modo deterministico.
+
+    Il pace è tempo per km: un numero PIÙ ALTO è PIÙ LENTO. Lasciato all'LLM
+    come secondi grezzi (avg_pace_s_per_km=455) veniva letto come una velocità:
+    una corsa a 7:35/km con piano 5:40-6:15 è diventata "ritmo troppo elevato"
+    e la seduta (cap FC rispettato) "problematica" — e quell'analisi alimenta
+    pattern_extraction e le belief."""
+    pace_s = activity.get("avg_pace_s_per_km")
+    pace = _fmt_pace(pace_s)
+    if not pace:
+        return None
+    lines = [f"Pace media eseguita: {pace} (tempo per km: valore più ALTO = più LENTO)."]
+    text = _planned_text(planned or {})
+
+    m = _PACE_RANGE_RE.search(text)
+    if m:
+        a = int(m.group(1)) * 60 + int(m.group(2))
+        b = int(m.group(3)) * 60 + int(m.group(4))
+        fast, slow = min(a, b), max(a, b)
+        rng = f"{_fmt_pace(fast)[:-3]}–{_fmt_pace(slow)}"
+        if pace_s > slow:
+            verdict = f"più LENTO del range di {_fmt_pace(pace_s - slow)[:-3]} min/km"
+        elif pace_s < fast:
+            verdict = f"più VELOCE del range di {_fmt_pace(fast - pace_s)[:-3]} min/km"
+        else:
+            verdict = "dentro il range"
+        lines.append(f"Pace atteso dal piano: {rng} → eseguito {verdict}.")
+
+    cap = _HR_CAP_RE.search(text)
+    avg_hr = activity.get("avg_hr")
+    if cap and avg_hr:
+        cap_hr = int(cap.group(1))
+        ok = float(avg_hr) <= cap_hr
+        lines.append(
+            f"Cap FC del piano: {cap_hr} bpm → FC media {avg_hr} bpm: "
+            + ("cap RISPETTATO." if ok else f"cap SUPERATO di {round(float(avg_hr) - cap_hr)} bpm.")
+        )
+        if ok and m and pace_s > max(a, b):
+            lines.append(
+                "Con il cap FC rispettato, un pace più lento del previsto è l'esito "
+                "corretto di una seduta guidata dalla FC, non un errore di esecuzione."
+            )
+    return "\n".join(lines)
+
+
+def _swim_pace_context(activity: dict, css_s: Optional[float]) -> str:
+    """Pace medio vs CSS per il nuoto (l'HR in vasca non è affidabile).
+
+    L'ingest Garmin scrive per il nuoto SOLO avg_pace_s_per_100m: leggendo il
+    solo campo /km il confronto con CSS non veniva mai prodotto e l'LLM
+    riceveva sempre "CSS non disponibile o pace non registrata"."""
+    avg_pace_100m = activity.get("avg_pace_s_per_100m")
+    if not avg_pace_100m and activity.get("avg_pace_s_per_km"):
+        avg_pace_100m = activity["avg_pace_s_per_km"] / 10
+    avg_pace_100m = round(float(avg_pace_100m), 1) if avg_pace_100m else None
+    if not (css_s and avg_pace_100m):
+        return (
+            "CSS non disponibile o pace non registrata. "
+            "NOTA: dati HR pool inaffidabili — valuta su RPE e sensazione."
+        )
+    delta = round(avg_pace_100m - css_s, 1)
+    interp = (
+        "più VELOCE del CSS — sprint/Z4+" if delta < -5
+        else "± CSS — soglia/Z4" if abs(delta) <= 5
+        else f"{abs(delta)}s/100m più LENTO del CSS — aerobico Z2/Z3"
+    )
+    fmt = lambda s: _fmt_pace(float(s)).replace("/km", "/100m")  # noqa: E731
+    return (
+        f"CSS: {fmt(css_s)} | Pace media: {fmt(avg_pace_100m)} | "
+        f"Delta: {delta:+.1f}s/100m ({interp})\n"
+        f"Il pace è tempo per 100m: valore più ALTO = più LENTO.\n"
+        f"NOTA: dati HR pool inaffidabili — valuta compliance solo su pace e RPE."
+    )
+
+
 def _our_hr_zone(avg_hr: float, lthr: float) -> str:
     """Classifica una HR media nella NOSTRA zona (LTHR 5-zone, confini contigui)."""
     r = avg_hr / lthr
@@ -223,26 +323,7 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     if sport == "swim":
         zones_row = _get_physiology_zones(sb, "swim")
         css_s = (zones_row or {}).get("css_pace_s_per_100m")
-        # avg_pace_s_per_km per nuoto = s/km; converti in s/100m dividendo per 10
-        avg_pace_km = activity.get("avg_pace_s_per_km")
-        avg_pace_100m = round(avg_pace_km / 10, 1) if avg_pace_km else None
-        if css_s and avg_pace_100m:
-            delta = round(avg_pace_100m - css_s, 1)
-            interp = (
-                "sotto CSS — sprint/Z4+" if delta < -5
-                else "± CSS — soglia/Z4" if abs(delta) <= 5
-                else f"+{abs(delta)}s/100m sopra CSS — aerobico Z2/Z3"
-            )
-            swim_pace_context = (
-                f"CSS: {css_s}s/100m | Pace media: {avg_pace_100m}s/100m | "
-                f"Delta: {delta:+.1f}s/100m ({interp})\n"
-                f"NOTA: dati HR pool inaffidabili — valuta compliance solo su pace e RPE."
-            )
-        else:
-            swim_pace_context = (
-                "CSS non disponibile o pace non registrata. "
-                "NOTA: dati HR pool inaffidabili — valuta su RPE e sensazione."
-            )
+        swim_pace_context = _swim_pace_context(activity, css_s)
 
     # ADAPT-01: classificazione deterministica cedimento (zero LLM)
     from coach.analytics.readiness import classify_fatigue_type
@@ -302,6 +383,8 @@ def analyze_session(activity_id: str) -> Optional[dict]:
                 f"Scala l'HR osservato di questa quota prima di giudicare zona o calo di fitness."
             )
 
+    run_pace_context = _run_pace_context(activity, planned) if sport in ("run", "brick") else None
+
     context_parts = [
         f"## Attività analizzata\n{json.dumps(prompt_activity, indent=2, default=str)}",
     ]
@@ -318,6 +401,8 @@ def analyze_session(activity_id: str) -> Optional[dict]:
         context_parts.append(f"## Intensità: nostra zona vs piano\n{intensity_context}")
     if heat_note:
         context_parts.append(f"## Correzione caldo\n{heat_note}")
+    if run_pace_context:
+        context_parts.append(f"## Corsa: pace e FC vs piano\n{run_pace_context}")
     if swim_pace_context:
         context_parts.append(f"## Nuoto: Pace vs CSS\n{swim_pace_context}")
     if historical:
@@ -454,7 +539,12 @@ def analyze_recent(days: int = 2) -> int:
 def _clean_for_prompt(d: dict) -> dict:
     """Rimuove campi pesanti dal dict per prompt (raw_payload, id, created_at)."""
     skip = {"raw_payload", "id", "created_at", "updated_at"}
-    return {k: v for k, v in d.items() if k not in skip and v is not None}
+    out = {k: v for k, v in d.items() if k not in skip and v is not None}
+    # Pace in m:ss/km, mai secondi grezzi: l'LLM leggeva 455 s/km come una
+    # velocità e invertiva "più lento"/"più veloce" (vedi _run_pace_context).
+    if "avg_pace_s_per_km" in out:
+        out["avg_pace"] = _fmt_pace(out.pop("avg_pace_s_per_km"))
+    return out
 
 
 def _extract_actions(text: str) -> list[dict]:

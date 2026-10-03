@@ -13,6 +13,8 @@
  * Comandi: /brief /log /rpe /debrief /status /budget /undo /history /help
  */
 
+import { parseDebrief, parseLog } from "./parse";
+
 // ============================================================================
 // Tipi
 // ============================================================================
@@ -662,7 +664,8 @@ async function createPendingAndAsk(
   const durationLabel = parsedData.expected_duration_days
     ? `\nDurata attesa: ${parsedData.expected_duration_days}gg`
     : "";
-  const text = `Ho capito che hai un <b>${actionLabel}${location}</b>${severityLabel}.${durationLabel}\n\nSalvo con flag attivo e attivo il monitoraggio?`;
+  const article = action === "log_injury" ? "un" : "una";
+  const text = `Ho capito che hai ${article} <b>${actionLabel}${location}</b>${severityLabel}.${durationLabel}\n\nSalvo con flag attivo e attivo il monitoraggio?`;
 
   const keyboard = {
     inline_keyboard: [[
@@ -1096,205 +1099,6 @@ async function handleCallbackQuery(env: Env, query: CallbackQuery): Promise<void
     if (messageId) await editMessageReplyMarkup(env, chatId, messageId, { inline_keyboard: [] });
     return;
   }
-}
-
-// ============================================================================
-// Parsing (deterministico, no LLM)
-// ============================================================================
-
-// Fase 1.5 — Severity detection for injury/illness
-function detectInjurySeverity(text: string): "mild" | "moderate" | "severe" {
-  const t = text.toLowerCase();
-  // severe markers
-  if (/\b(fortissim[oa]|acut[oa]|lancinant[ei]|non riesco|impossibile|blocca|bloccat[oa]|fratt(?:ur|a)|strappo|distorsion[ei] grav|lesione|operazion[ei])\b/.test(t)) {
-    return "severe";
-  }
-  // mild markers
-  if (/\b(fastidi[oa]|lieve|leggero|leggera|piccol[oa]|rigidit[aà]|indolenziment[oa]|tens[ia]on[ei] muscolare)\b/.test(t)) {
-    return "mild";
-  }
-  // moderate is default when injury detected
-  return "moderate";
-}
-
-function detectIllnessSeverity(text: string): "mild" | "moderate" | "severe" {
-  const t = text.toLowerCase();
-  if (/\b(febbre alta|polmonit[ei]|ricoverat[oa]|grav[ei]|incapace|delirio|39|40\b)\b/.test(t)) {
-    return "severe";
-  }
-  if (/\b(raffreddore lieve|mal di gola leggero|qualche colp[oi] tosse)\b/.test(t)) {
-    return "mild";
-  }
-  if (/\b(influenza|febbre|covid|gastroenterit[ei])\b/.test(t)) {
-    return "moderate";
-  }
-  return "mild";
-}
-
-function detectExpectedDuration(text: string): number | null {
-  const t = text.toLowerCase();
-  // "5 giorni", "1 settimana", "2 settimane"
-  const days = t.match(/(\d+)\s*giorn[oi]/);
-  if (days) return parseInt(days[1], 10);
-  const weeks = t.match(/(\d+)\s*settiman[ae]/);
-  if (weeks) return parseInt(weeks[1], 10) * 7;
-  const months = t.match(/(\d+)\s*mes[ie]/);
-  if (months) return parseInt(months[1], 10) * 30;
-  return null;
-}
-
-function parseLog(body: string): { kind: string; fields: any; summary: string } {
-  const lower = body.toLowerCase();
-  const fields: any = {};
-  const summary: string[] = [];
-
-  const rpeMatch = body.match(/rpe\s*(\d{1,2})/i);
-  if (rpeMatch) {
-    const v = parseInt(rpeMatch[1], 10);
-    if (v >= 1 && v <= 10) { fields.rpe = v; summary.push(`RPE ${v}`); }
-  }
-
-  const sorMatch = body.match(/(soreness|dolore muscolare)\s*(\d{1,2})/i);
-  if (sorMatch) {
-    const v = parseInt(sorMatch[2], 10);
-    if (v >= 0 && v <= 10) { fields.soreness = v; summary.push(`soreness ${v}`); }
-  }
-
-  if (/\b(malato|malata|febbre|raffreddore|influenza|mal di gola|tosse|covid)\b/i.test(lower)) {
-    fields.illness_flag = true;
-    fields.illness_details = body.slice(0, 200);
-    // Fase 1.5 — severity + expected duration
-    fields.severity = detectIllnessSeverity(body);
-    const dur = detectExpectedDuration(body);
-    if (dur !== null) fields.expected_duration_days = dur;
-    summary.push(`malattia (${fields.severity})`);
-    return { kind: "illness", fields, summary: summary.join(", ") };
-  }
-
-  // Rimuovi le frasi di negazione PRIMA del match: "no dolori muscolari, ma
-  // dolore alla spalla" deve comunque flaggare (la negazione globale sopprimeva
-  // infortuni reali in coda alla frase — zona spalla dx a constraint medico).
-  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/gi;
-  const lowerNoNeg = lower.replace(noPainRegex, "");
-  if (/\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lowerNoNeg)) {
-    fields.injury_flag = true;
-    fields.injury_details = body.slice(0, 200);
-    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|fascite|plantar[ei]|tibi[ae])\b/i);
-    if (locMatch) {
-      fields.injury_location = locMatch[1];
-      fields.body_location = locMatch[1];   // canonical DB column
-    }
-    // Fase 1.5 — severity + expected duration
-    fields.severity = detectInjurySeverity(body);
-    const dur = detectExpectedDuration(body);
-    if (dur !== null) fields.expected_duration_days = dur;
-    summary.push(`infortunio (${fields.severity})`);
-    return { kind: "injury", fields, summary: summary.join(", ") };
-  }
-
-  const motMatch = body.match(/motivazione\s*(\d{1,2})/i);
-  if (motMatch) {
-    const v = parseInt(motMatch[1], 10);
-    if (v >= 1 && v <= 10) { fields.motivation = v; summary.push(`motivation ${v}`); }
-  }
-
-  return {
-    kind: fields.rpe !== undefined ? "post_session" : "free_note",
-    fields,
-    summary: summary.join(", "),
-  };
-}
-
-function parseDebrief(body: string): { fields: any; summary: string } {
-  const fields: any = {};
-  const parsed: any = {};
-  const summary: string[] = [];
-  const lower = body.toLowerCase();
-
-  const rpeMatch = body.match(/rpe\s*(\d{1,2})/i);
-  if (rpeMatch) {
-    const v = parseInt(rpeMatch[1], 10);
-    if (v >= 1 && v <= 10) { fields.rpe = v; summary.push(`RPE ${v}`); }
-  }
-
-  const sorMatch = body.match(/(soreness|dolore muscolare)\s*(\d{1,2})/i);
-  if (sorMatch) {
-    const v = parseInt(sorMatch[2], 10);
-    if (v >= 0 && v <= 10) fields.soreness = v;
-  }
-
-  const motMatch = body.match(/motivazione\s*(\d{1,2})/i);
-  if (motMatch) {
-    const v = parseInt(motMatch[1], 10);
-    if (v >= 1 && v <= 10) { fields.motivation = v; summary.push(`motivation ${v}`); }
-  }
-
-  if (/\b(malato|malata|febbre|raffreddore|influenza|mal di gola|tosse|covid)\b/i.test(lower)) {
-    fields.illness_flag = true;
-    fields.illness_details = body.slice(0, 200);
-    fields.severity = detectIllnessSeverity(body);
-    const dur = detectExpectedDuration(body);
-    if (dur !== null) fields.expected_duration_days = dur;
-    summary.push(`malattia (${fields.severity})`);
-  }
-
-  // Rimuovi le frasi di negazione PRIMA del match: "no dolori muscolari, ma
-  // dolore alla spalla" deve comunque flaggare (la negazione globale sopprimeva
-  // infortuni reali in coda alla frase — zona spalla dx a constraint medico).
-  const noPainRegex = /\b(no dolori|nessun dolore|no pain|niente dolori|no dolore|zero dolori)\b/gi;
-  const lowerNoNeg = lower.replace(noPainRegex, "");
-  if (/\b(dolore|infortunio|tendine|stiramento|contrattura|gonfio|male)\b/i.test(lowerNoNeg)) {
-    fields.injury_flag = true;
-    fields.injury_details = body.slice(0, 200);
-    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io]|fascite|plantar[ei]|tibi[ae])\b/i);
-    if (locMatch) {
-      fields.injury_location = locMatch[1];
-      fields.body_location = locMatch[1];
-    }
-    fields.severity = detectInjurySeverity(body);
-    const dur = detectExpectedDuration(body);
-    if (dur !== null) fields.expected_duration_days = dur;
-    summary.push(`infortunio (${fields.severity})`);
-  }
-
-  if (/\b(no dolori|nessun dolore|no pain|niente dolori)\b/i.test(lower)) {
-    parsed.pain_reported = false;
-  } else if (/\b(dolore|dolori|male|fastidio)\b/i.test(lower)) {
-    parsed.pain_reported = true;
-    const locMatch = body.match(/\b(ginocchi[ao]|caviglie?|polpacc[io]|tendine d'achille|achille|cosc[ea]|adduttor[ei]|spall[ae]|schiena|lombar[ei]|pied[ei]|tallon[ei]|anc[ah]e?|quadricipiti?|glute[io])\b/i);
-    if (locMatch) parsed.pain_location = locMatch[1];
-  }
-
-  if (/\b(energia alta|fresco|riposato)\b/i.test(lower)) parsed.energy = "high";
-  else if (/\b(energia media|normale)\b/i.test(lower)) parsed.energy = "medium";
-  else if (/\b(energia bassa|stanco|scarico|distrutto|cotto)\b/i.test(lower)) parsed.energy = "low";
-
-  // Blocco 4.1: session quality
-  if (/\b(ottima sessione|sessione perfetta|tutto bene|fluidit[aà]|gir(ava|o) bene|eccellente)\b/i.test(lower)) parsed.session_quality = "high";
-  else if (/\b(sessione ok|nella media|decente|niente di speciale)\b/i.test(lower)) parsed.session_quality = "medium";
-  else if (/\b(sessione brutta|fatica|pesante|non girava|bloccato|pessim[ao])\b/i.test(lower)) parsed.session_quality = "low";
-
-  // Blocco 4.1: nutrition issues
-  if (/\b(crampi?|stomaco|nausea|vomito|digestione|nutrizione|gel|barretta|disidratat[oa]|sete)\b/i.test(lower)) {
-    parsed.nutrition_issue = true;
-  }
-
-  // Blocco 4.1: mental state
-  if (/\b(concentrato|presente|determinato|carico|motivato|grinta|flow)\b/i.test(lower)) parsed.mental_state = "high";
-  else if (/\b(distratto|assente|svogliat[oa]|demotivat[oa]|ment[ae] altrove|annoiato)\b/i.test(lower)) parsed.mental_state = "low";
-
-  // Blocco 4.1: sleep quality
-  const sleepMatch = body.match(/(?:dormi(?:to|re)?|sonno|ore di sonno|ore sonno)\s*(\d{1,2})\s*(?:ore|h)?/i);
-  if (sleepMatch) {
-    parsed.sleep_hours_reported = parseInt(sleepMatch[1], 10);
-  }
-  if (/\b(dormito bene|sonno buono|riposato bene|sonno profondo)\b/i.test(lower)) parsed.sleep_quality = "good";
-  else if (/\b(dormito male|insonnia|sonno pessimo|svegliato|nottata|poco sonno)\b/i.test(lower)) parsed.sleep_quality = "poor";
-
-  parsed.sensations = body.slice(0, 500);
-  fields.parsed_data = parsed;
-
-  return { fields, summary: summary.join(", ") };
 }
 
 // ============================================================================

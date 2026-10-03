@@ -64,6 +64,8 @@ TEST_TEMPLATES = {
             "🧪 Threshold Run 30min. Nome Garmin esatto: 'Threshold Run 30min'.\n"
             "Struttura: 15min warmup easy + 4×30s allunghi + 30min ALL-OUT "
             "sostenibile + 10min cooldown.\n"
+            "Premi LAP all'inizio e alla fine dei 30': senza, il pace del test "
+            "non è distinguibile dal riscaldamento e le zone non si aggiornano.\n"
             "Risultato: media HR ultimi 20min = LTHR; media pace 30min = soglia."
         ),
     },

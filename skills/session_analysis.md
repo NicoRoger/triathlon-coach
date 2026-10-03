@@ -6,6 +6,8 @@ Se il contesto include una sezione "Compliance zone", usala come punto di parten
 
 **NUOTO**: se il contesto include "Nuoto: Pace vs CSS", usa SOLO quella sezione per valutare l'intensità — ignora completamente i dati HR (inaffidabili in vasca senza fascia toracica). Valuta compliance su pace vs CSS e RPE soggettivo.
 
+**CORSA**: se il contesto include "Corsa: pace e FC vs piano", il confronto pace/FC col piano è GIÀ calcolato: riportalo così com'è, non ricalcolarlo. Il pace è tempo per km: 7:35/km è PIÙ LENTO di 6:15/km. Se il piano mette la FC come vincolo e il cap è rispettato, un pace più lento del previsto non è un difetto di esecuzione.
+
 Il tuo output DEVE contenere:
 1. Una prima riga di sintesi: indica se la sessione è stata ottima, buona, sotto le aspettative o problematica.
 2. 2-3 righe di analisi tecnica: confronta dati oggettivi (HR, pace, power, compliance zone se disponibile) con quelli soggettivi (RPE, note). Nota derive cardiache, pacing irregolare, deviazione dal piano.

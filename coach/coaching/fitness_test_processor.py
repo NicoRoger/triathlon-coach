@@ -115,7 +115,7 @@ class FitnessTestProcessor:
         # instradiamo alla revisione del coach.
         if structured.get("extraction"):
             result = extractor(activity, structured)
-            if result is None:
+            if result is None and test_type not in NO_ACTIVITY_FALLBACK:
                 result = self._try_fallback_extraction(activity, structured)
         else:
             result = None
@@ -243,14 +243,10 @@ class FitnessTestProcessor:
         splits = activity.get("splits")
         extraction = (structured.get("extraction") or {}).get("primary", {})
         idx = extraction.get("interval_index", 1)
-        if splits and isinstance(splits, list) and len(splits) > idx:
-            # Bug fix audit E2: NIENTE fallback su averagePace (chiave raw Garmin
-            # con unità diversa da s/km) — usiamo solo il campo normalizzato dal
-            # nostro ingest. Unità errata produrrebbe zone senza senso.
-            pace = splits[idx].get("avg_pace_s_per_km")
-            if pace and float(pace) > 0:
-                return round(float(pace), 1)
-        return None
+        if not splits or not isinstance(splits, list):
+            return None
+        seg = _threshold_run_segment(splits, idx)
+        return _split_pace_s_per_km(seg) if seg else None
 
     def _extract_css_swim(self, activity: dict, structured: dict) -> Optional[float]:
         splits = activity.get("splits")
@@ -575,6 +571,63 @@ class FitnessTestProcessor:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
+
+# Il segmento del test soglia (30') deve durare almeno 20'. Con l'auto-lap
+# di Garmin a 1 km, splits[interval_index] è un km del riscaldamento: il suo
+# pace (~5:30/km) sta dentro i bound di plausibilità e sarebbe stato scritto
+# come soglia senza alcun avviso.
+# Test per cui il fallback sulla MEDIA DELL'ATTIVITÀ non è una stima della
+# soglia: la seduta comprende 25' di riscaldamento e defaticamento, quindi il
+# pace medio × 1.02 (protocollo) esce molto più lento della soglia vera e
+# passerebbe i bound di plausibilità. Senza segmento valido → revisione coach.
+NO_ACTIVITY_FALLBACK = {"threshold_run_30min", "threshold_run_20min"}
+
+THRESHOLD_RUN_MIN_SEGMENT_S = 20 * 60
+THRESHOLD_RUN_MAX_SEGMENT_S = 40 * 60
+
+
+def _split_duration_s(split: dict) -> Optional[float]:
+    d = split.get("duration") or split.get("duration_s") or split.get("elapsedDuration")
+    return float(d) if d else None
+
+
+def _threshold_run_segment(splits: list, idx: int) -> Optional[dict]:
+    """Split del test: quello indicato se ha la durata di un test, altrimenti
+    l'unico/il più lungo tra 20' e 40'. None se non c'è (es. auto-lap 1 km):
+    meglio nessuna soglia che una soglia presa dal riscaldamento."""
+    if 0 <= idx < len(splits):
+        dur = _split_duration_s(splits[idx])
+        if dur is None or THRESHOLD_RUN_MIN_SEGMENT_S <= dur <= THRESHOLD_RUN_MAX_SEGMENT_S:
+            return splits[idx]
+    candidates = [
+        s for s in splits
+        if THRESHOLD_RUN_MIN_SEGMENT_S <= (_split_duration_s(s) or 0) <= THRESHOLD_RUN_MAX_SEGMENT_S
+    ]
+    return max(candidates, key=lambda s: _split_duration_s(s) or 0) if candidates else None
+
+
+def _split_pace_s_per_km(split: dict) -> Optional[float]:
+    """Pace (s/km) di uno split.
+
+    Gli split salvati dall'ingest sono i lapDTOs GREZZI di Garmin
+    (averageSpeed, duration, distance): il campo normalizzato
+    avg_pace_s_per_km c'è solo negli split costruiti a mano. Leggendo solo
+    quello, il test soglia corsa non estraeva mai il pace dal segmento.
+    averageSpeed è in m/s (unità certa, la stessa che l'ingest usa per il pace
+    dell'attività). averagePace resta escluso: unità diversa (audit E2).
+    """
+    pace = split.get("avg_pace_s_per_km")
+    if pace and float(pace) > 0:
+        return round(float(pace), 1)
+    speed = split.get("averageSpeed")
+    if speed and float(speed) > 0:
+        return round(1000.0 / float(speed), 1)
+    dur = split.get("duration") or split.get("duration_s")
+    dist = split.get("distance") or split.get("distance_m")
+    if dur and dist and float(dist) >= 200:
+        return round(float(dur) / float(dist) * 1000.0, 1)
+    return None
+
 
 def _test_type_to_sport(test_type: str) -> str:
     if "bike" in test_type:

@@ -26,6 +26,7 @@ ZONES_RECALC = "zones_recalc"
 BUDGET_ALERT = "budget_alert"
 PROVIDER_FALLBACK = "provider_fallback"
 SMOKE_TEST = "smoke_test"
+WATCHDOG_ALERT = "watchdog_alert"
 
 GENERIC = "generic"
 
