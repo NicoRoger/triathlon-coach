@@ -62,8 +62,79 @@ SPORT_MAP = {
 }
 
 
-def _restore_garmin_session() -> Path:
-    """Restore session from base64 env var to temp dir."""
+# ============================================================================
+# Token Garmin: persistiti tra i run
+# ============================================================================
+# garminconnect usa token DI con refresh token a ROTAZIONE: ogni refresh ne
+# restituisce uno nuovo e invalida il precedente. Su GitHub Actions i token
+# vengono ripristinati da GARMIN_SESSION_JSON in una cartella temporanea: il
+# refresh scriveva i token nuovi lì e la cartella spariva a fine job. Dal run
+# dopo si ripartiva dal refresh token del secret, ormai invalidato: 401 "Failed
+# to retrieve social profile" a ogni run (rotto dal 30/09/2026). Ora i token
+# aggiornati si salvano in `service_tokens` e al run successivo si usa il più
+# recente tra DB e secret (così anche un secret rigenerato a mano vince).
+TOKEN_FILE = "garmin_tokens.json"
+AUTH_HELP = (
+    "token Garmin non più valido: rifai il login in locale con "
+    "`python scripts/garmin_first_login.py` e aggiorna il secret GARMIN_SESSION_JSON"
+)
+
+
+def _token_row_name() -> str:
+    from coach.utils.athlete import current_slug
+    return f"garmin:{current_slug()}"
+
+
+def _token_expiry(payload: Optional[str]) -> float:
+    """exp (epoch) del di_token contenuto in un garmin_tokens.json; 0 se ignoto."""
+    if not payload:
+        return 0.0
+    try:
+        token = json.loads(payload).get("di_token") or ""
+        part = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+        return float(claims.get("exp") or 0)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def _load_stored_tokens() -> Optional[str]:
+    from coach.utils.athlete import aq
+    try:
+        res = aq("service_tokens").select("payload").eq("name", _token_row_name()).limit(1).execute()
+    except Exception as exc:  # noqa: BLE001
+        # Migration 2026-10-06-service-tokens.sql non ancora applicata: si
+        # lavora come prima, solo dal secret.
+        logger.warning("service_tokens non leggibile (%s): uso solo GARMIN_SESSION_JSON", exc)
+        return None
+    return res.data[0]["payload"] if res.data else None
+
+
+def _save_tokens(tokendir: Path, loaded: Optional[str]) -> None:
+    """Salva i token se la libreria li ha aggiornati (refresh durante il login)."""
+    from coach.utils.athlete import aq
+    path = tokendir / TOKEN_FILE
+    if not path.exists():
+        return
+    current = path.read_text()
+    if current == loaded:
+        return
+    try:
+        aq("service_tokens").upsert(
+            {"name": _token_row_name(), "payload": current,
+             "updated_at": datetime.now(timezone.utc).isoformat()},
+            on_conflict="name",
+        ).execute()
+        logger.info("Token Garmin aggiornati salvati (scadenza access token: %s)",
+                    datetime.fromtimestamp(_token_expiry(current), timezone.utc).isoformat())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Impossibile salvare i token Garmin aggiornati: %s", exc)
+
+
+def _restore_garmin_session() -> tuple[Path, Optional[str]]:
+    """Ricostruisce la cartella token per la libreria, usando il token più
+    recente tra GARMIN_SESSION_JSON e service_tokens. Ritorna (cartella,
+    contenuto di garmin_tokens.json usato)."""
     raw = os.environ.get("GARMIN_SESSION_JSON")
     if not raw:
         raise RuntimeError("GARMIN_SESSION_JSON not set")
@@ -72,16 +143,25 @@ def _restore_garmin_session() -> Path:
     for name, content in decoded.items():
         text = content if isinstance(content, str) else json.dumps(content)
         (tokendir / name).write_text(text)
+
+    secret_tokens = (tokendir / TOKEN_FILE).read_text() if (tokendir / TOKEN_FILE).exists() else None
+    stored = _load_stored_tokens()
+    chosen = secret_tokens
+    if stored and _token_expiry(stored) > _token_expiry(secret_tokens):
+        (tokendir / TOKEN_FILE).write_text(stored)
+        chosen = stored
+        logger.info("Token Garmin: uso quelli salvati in service_tokens (più recenti del secret)")
     # Library espera GARMINTOKENS env var
     os.environ["GARMINTOKENS"] = str(tokendir)
-    return tokendir
+    return tokendir, chosen
 
 
 def _login():
     from garminconnect import Garmin  # type: ignore
-    _restore_garmin_session()
+    tokendir, loaded = _restore_garmin_session()
     g = Garmin()
-    g.login()  # legge da GARMINTOKENS env var
+    g.login()  # legge da GARMINTOKENS env var; può fare refresh e riscrivere i token
+    _save_tokens(tokendir, loaded)
     return g
 
 
@@ -564,7 +644,12 @@ def main() -> None:
         )
     except Exception as e:  # noqa: BLE001
         logger.exception("Garmin sync failed")
-        record_health("garmin_sync", success=False, error=str(e))
+        error = str(e)
+        if type(e).__name__ == "GarminConnectAuthenticationError":
+            # Il messaggio della libreria ("Failed to retrieve social profile")
+            # non dice cosa fare: nel watchdog e in /status serve il rimedio.
+            error = f"AUTH: {AUTH_HELP} ({e})"
+        record_health("garmin_sync", success=False, error=error)
         raise
 
 

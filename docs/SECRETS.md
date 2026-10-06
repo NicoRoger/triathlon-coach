@@ -12,7 +12,7 @@
 | `SUPABASE_SERVICE_KEY` | tutti i workflow Python | service_role — bypassa RLS. Con la ANON key le query tornano [] in silenzio |
 | `TELEGRAM_BOT_TOKEN` | ingest, briefing, reminders, watchdog… | da @BotFather |
 | `TELEGRAM_CHAT_ID` | idem | chat privata di Nicolò |
-| `GARMIN_SESSION_JSON` | ingest | sessione OAuth garminconnect; rigenerare con `scripts/garmin_first_login.py` se scade |
+| `GARMIN_SESSION_JSON` | ingest | sessione OAuth garminconnect; rigenerare con `scripts/garmin_first_login.py` se il watchdog segnala "AUTH". I token rinnovati vivono in `service_tokens` (migration 2026-10-06): l'ingest usa il più recente tra DB e secret |
 | `ANTHROPIC_API_KEY` | ingest (modulation), weekly, pattern | budget hard €5/mese |
 | `GEMINI_API_KEY` | ingest, pattern, reminders | free tier |
 | `CF_WORKERS_API_TOKEN` | deploy-workers | token Cloudflare scope "Edit Cloudflare Workers" |

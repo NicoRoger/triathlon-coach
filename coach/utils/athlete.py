@@ -56,7 +56,7 @@ PER_ATHLETE_TABLES = frozenset({
 #:   vs strava_sync), vedi migration.
 #: - api_usage: il cap di spesa è GLOBALE; athlete_id serve solo ad attribuire.
 #: - athletes: è l'anagrafica stessa.
-SYSTEM_TABLES = frozenset({"health", "api_usage", "athletes"})
+SYSTEM_TABLES = frozenset({"health", "api_usage", "athletes", "service_tokens"})
 
 DEFAULT_SLUG = "nicolo"
 

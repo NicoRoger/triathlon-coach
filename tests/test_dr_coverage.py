@@ -21,6 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 INTENTIONALLY_EXCLUDED = {
     # Viste, non tabelle: si ricalcolano dai dati sottostanti.
     "prediction_accuracy",
+    # Credenziali OAuth con refresh a rotazione: non vanno copiate negli
+    # snapshot, e dopo un restore sarebbero comunque già invalidate.
+    "service_tokens",
 }
 
 
