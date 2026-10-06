@@ -1,14 +1,14 @@
 # Progress Tracker
 
-*Aggiornato automaticamente il 2026-09-28*
+*Aggiornato automaticamente il 2026-10-05*
 
 ## Forma Fisica (CTL Trend)
 
-- **CTL attuale**: 11.5
-- **Delta 90gg**: -30.0 (-72%)
-- **TSB oggi**: 2.7
-- **Readiness**: 63/100
-- **Trend settimanale**: ↗ (+0.9)
+- **CTL attuale**: 12.1
+- **Delta 90gg**: -31.2 (-72%)
+- **TSB oggi**: -0.1
+- **Readiness**: 79/100
+- **Trend settimanale**: ↗ (+1.0)
 
 ## Zone Fisiologiche
 
@@ -22,14 +22,17 @@
 
 ## Compliance Piano
 
+- Sett. 28/09: ██░░░░░░░░ 20% (1/5)
 - Sett. 21/09: ███████████████ 150% (3/2)
 - Sett. 14/09: ░░░░░░░░░░ 0% (0/0)
 - Sett. 07/09: ░░░░░░░░░░ 0% (0/0)
-- Sett. 31/08: ░░░░░░░░░░ 0% (1/0)
 
 ## Mesociclo Corrente
 
-- Nessun mesociclo attivo — pianifica con `/generate_mesocycle`
+- **Ricostruzione post-stop cardiologico** — fase `base`
+- Settimana 1 di 3 (2026-09-29 → 2026-10-25)
+- Avanzamento: ███████░░░░░░░░░░░░░ 7/27gg
+- Note: Rientro dopo ~10 settimane di stop precauzionale (via libera cardiologica 28/09/2026, vincolo medico chiuso). Nessuna gara target: obiettivo = routine sostenibile. Scheletro storico (Corsa lun+ven, Nuoto mar+gio, Bici mer+sab, dom Z1) reintrodotto per gradi. Tutto Z1-Z2 fino a S3; allunghi da S2. S4 scarico + retest zone (CSS, soglia corsa, LTHR bici) — valori attuali di giugno non più rappresentativi. REGOLA DEL BLOCCO: nei giorni storti il volume può scendere, mai salire; niente vasche/km bonus (pattern storico di sforamento, n=12; 22/09 nuoto 2000m vs 1200 prescritti). Nuoto mar/gio mattina o sera a scelta dell'atleta.
 
 ## Prossimo Obiettivo
 
