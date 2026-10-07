@@ -155,6 +155,10 @@ def _check_test_due(now: datetime, sb, ignore_time_window: bool = False) -> Opti
             return None
         if not (time(9, 0) <= now.time() <= time(11, 0)):
             return None
+    # Se il mesociclo prevede già il retest, il promemoria è rumore.
+    from coach.coaching.test_scheduler import mesocycle_with_planned_retest
+    if mesocycle_with_planned_retest(now.date()):
+        return None
     res = (
         sb.table("physiology_zones")
         .select("discipline,valid_from")
@@ -169,7 +173,7 @@ def _check_test_due(now: datetime, sb, ignore_time_window: bool = False) -> Opti
             "text": (
                 "🧪 <b>Test fitness mai eseguito</b>\n\n"
                 "Non ci sono zone fisiologiche nel sistema. Apri Claude.ai:\n"
-                "<code>pianifica il primo test FTP</code>"
+                "<code>pianifica i primi test di soglia</code>"
             ),
             "context": {"reason": "no_zones"},
         }
@@ -191,7 +195,7 @@ def _check_test_due(now: datetime, sb, ignore_time_window: bool = False) -> Opti
             f"🧪 <b>Test fitness da rifare</b>\n\n"
             f"Discipline con ultimo test > 6 settimane: {disciplines}\n\n"
             f"Apri Claude.ai:\n"
-            f"<code>pianifica il prossimo test FTP</code>"
+            f"<code>pianifica il prossimo test di soglia</code>"
         ),
         "context": {"overdue": overdue},
     }

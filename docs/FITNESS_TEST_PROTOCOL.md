@@ -80,7 +80,7 @@ Il processore automatico usa il campo `garmin_activity_name` per il matching.
   "protocol": "30min_maximal",
   "garmin_activity_name": "Threshold Run 30min",
   "warmup": "15min progressive Z1→Z2, 4x20s strides",
-  "main_set": "30min massimale su terreno pianeggiante. Pacing conservativo primo km, poi steady.",
+  "main_set": "30min massimale su terreno pianeggiante. Pacing conservativo primo km, poi steady. Premere LAP all'inizio e alla fine dei 30' (il segmento estratto deve durare 20-40').",
   "cooldown": "10min Z1 jog",
   "extraction": {
     "primary": {

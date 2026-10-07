@@ -56,13 +56,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 22: serve per eseguire i test .ts con --experimental-strip-types
+          node-version: '22'
       - name: Installa dipendenze
         working-directory: workers/${{ matrix.worker }}
         run: npm ci
       - name: tsc --noEmit
         working-directory: workers/${{ matrix.worker }}
         run: npx tsc --noEmit
+      - name: Test (node --test)
+        working-directory: workers/${{ matrix.worker }}
+        run: |
+          if ls test/*.test.ts >/dev/null 2>&1; then
+            node --experimental-strip-types --test test/*.test.ts
+          else
+            echo "Nessun test per ${{ matrix.worker }}"
+          fi
 
   dashboard:
     name: Build dashboard

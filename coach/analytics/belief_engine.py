@@ -408,11 +408,22 @@ def reconcile_flagged_beliefs() -> int:
     Returns: numero di belief sbloccate.
     """
     from coach.analytics.belief_guardrails import check_belief_admissible
+    from coach.utils.athlete import aq
 
     sb = get_supabase()
     res = sb.table("beliefs").select("*").eq("flagged", True).neq("status", "retired").execute()
+    # Le belief confutate a mano (refute_belief via MCP, che scrive una riga
+    # 'refuted' in beliefs_history) sono flagged per DECISIONE del coach, non
+    # per il vecchio bug di create_belief: vanno lasciate flagged. Senza questo
+    # filtro, una belief confutata con evidence_n alto risultava "admissible",
+    # veniva sbloccata alla domenica successiva e reinforce_belief la riportava
+    # a 0.95 — la confutazione durava al massimo una settimana.
+    refuted = aq("beliefs_history").select("belief_id").eq("change_type", "refuted").execute()
+    refuted_ids = {r["belief_id"] for r in (refuted.data or [])}
     n_unflagged = 0
     for b in res.data or []:
+        if b["id"] in refuted_ids:
+            continue
         admissible, _ = check_belief_admissible(
             belief_text=b["belief_text"],
             initial_confidence=float(b["confidence"]),

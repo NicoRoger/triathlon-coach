@@ -3,8 +3,13 @@
 Esegui una volta in locale:
     python scripts/garmin_first_login.py
 
-Poi copia l'output in GitHub Secret `GARMIN_SESSION_JSON`.
-Re-esegui se Garmin invalida la sessione (raro, ~6+ mesi).
+Poi copia l'output in GitHub Secret `GARMIN_SESSION_JSON`
+(repo → Settings → Secrets and variables → Actions).
+
+Re-eseguilo quando il watchdog segnala "AUTH: token Garmin non più valido".
+Dal 06/10/2026 l'ingest salva da solo i token rinnovati (tabella
+service_tokens, migration 2026-10-06): prima li perdeva a ogni run e il
+refresh token del secret, a rotazione, scadeva al primo rinnovo.
 """
 from __future__ import annotations
 
@@ -30,7 +35,9 @@ def main() -> None:
     tokendir.mkdir(exist_ok=True)
     os.environ["GARMINTOKENS"] = str(tokendir)
 
-    g = Garmin(email, password)
+    # Con la verifica in due passaggi attiva Garmin chiede il codice ricevuto
+    # via email/app: senza prompt_mfa il login falliva senza spiegazioni.
+    g = Garmin(email, password, prompt_mfa=lambda: input("Codice MFA Garmin: ").strip())
     g.login()
     print(f"\nToken salvati in: {tokendir}")
 
@@ -43,7 +50,8 @@ def main() -> None:
     encoded = base64.b64encode(json.dumps(files).encode()).decode()
     print("\n=== GARMIN_SESSION_JSON (copia tutto) ===")
     print(encoded)
-    print("\n=== Aggiungi come GitHub Secret e Cloudflare secret ===")
+    print("\n=== Incollalo nel GitHub Secret GARMIN_SESSION_JSON ===")
+    print("Poi lancia a mano il workflow 'ingest' (Actions → ingest → Run workflow).")
 
 
 if __name__ == "__main__":

@@ -86,6 +86,10 @@ potenza restano solo per il futuro (se arriverà un wattmetro).
 Serve almeno `test_type` e, per l'auto-estrazione, `extraction.primary`
 (quale lap usare). Senza `structured` il test NON aggiorna le zone (BUG-010).
 Esempio: `{"test_type":"threshold_run_30min","zone_system":"pace_5zone","extraction":{"primary":{"interval_index":1}}}`
+Nella descrizione scrivi SEMPRE di premere LAP all'inizio e alla fine del
+segmento di test. Con l'auto-lap di Garmin a 1 km il lap 1 è un km di
+riscaldamento: il processore lo scarta (il segmento della corsa deve durare
+20-40') e il test non aggiorna le zone.
 
 ### 3. Salvataggio zone: tool `commit_physiology_zones`
 Se l'auto-estrazione non è possibile (split assenti, pacing pessimo, dati

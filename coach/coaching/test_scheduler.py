@@ -12,7 +12,9 @@ Trigger reminder Telegram (gestito da proactive_reminders.py).
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import date, timedelta
 from typing import Optional
 
@@ -64,6 +66,8 @@ TEST_TEMPLATES = {
             "🧪 Threshold Run 30min. Nome Garmin esatto: 'Threshold Run 30min'.\n"
             "Struttura: 15min warmup easy + 4×30s allunghi + 30min ALL-OUT "
             "sostenibile + 10min cooldown.\n"
+            "Premi LAP all'inizio e alla fine dei 30': senza, il pace del test "
+            "non è distinguibile dal riscaldamento e le zone non si aggiornano.\n"
             "Risultato: media HR ultimi 20min = LTHR; media pace 30min = soglia."
         ),
     },
@@ -82,9 +86,66 @@ TEST_TEMPLATES = {
 }
 
 
+# Il coach pianifica i retest DENTRO il mesociclo (es. "S4 scarico + retest
+# zone (CSS, soglia corsa, LTHR bici)"), in testo libero: non esiste un campo
+# strutturato. Lo scheduler ignorava il mesociclo e ogni domenica notte
+# riproponeva gli stessi tre test massimali, in giorni consecutivi, nel mezzo
+# di un blocco di ricostruzione post-stop (rifiutati il 29/09 e il 05/10/2026).
+RETEST_IN_PLAN = re.compile(
+    r"\bre-?test\b|\btest\s+(?:di\s+)?(?:soglia|css|ftp|lthr|zone|fitness)\b",
+    re.IGNORECASE,
+)
+# Un mesociclo che parte entro questa finestra conta già: le proposte
+# cadono a 7+ giorni da oggi.
+MESOCYCLE_LOOKAHEAD_DAYS = 14
+# Dopo un rifiuto lo stesso test non si ripropone per 3 settimane.
+REJECTION_MEMORY_DAYS = 21
+# Mai due test massimali a meno di 2 giorni l'uno dall'altro.
+MIN_DAYS_BETWEEN_TESTS = 2
+
+
 # ============================================================================
 # Schedule logic
 # ============================================================================
+
+def mesocycle_with_planned_retest(today: date) -> Optional[dict]:
+    """Mesociclo attivo (o in partenza a breve) che prevede già un retest.
+    In quel caso i test li decide il piano, non lo scheduler."""
+    horizon = today + timedelta(days=MESOCYCLE_LOOKAHEAD_DAYS)
+    from coach.utils.athlete import aq
+    res = (
+        aq("mesocycles")
+        .select("id,name,start_date,end_date,notes,progression_plan")
+        .gte("end_date", today.isoformat())
+        .lte("start_date", horizon.isoformat())
+        .execute()
+    )
+    for meso in res.data or []:
+        text = (meso.get("notes") or "") + " " + json.dumps(
+            meso.get("progression_plan") or {}, ensure_ascii=False
+        )
+        if RETEST_IN_PLAN.search(text):
+            return meso
+    return None
+
+
+def _recently_rejected(discipline: str, today: date) -> bool:
+    """True se un test per questa disciplina è stato rifiutato di recente."""
+    since = today - timedelta(days=REJECTION_MEMORY_DAYS)
+    from coach.utils.athlete import aq
+    res = (
+        aq("plan_modulations")
+        .select("proposed_changes,status,proposed_at")
+        .eq("source", "test_scheduler")
+        .in_("status", ["rejected", "dismissed"])
+        .gte("proposed_at", since.isoformat())
+        .execute()
+    )
+    for row in res.data or []:
+        for change in row.get("proposed_changes") or []:
+            if isinstance(change, dict) and change.get("sport") == discipline:
+                return True
+    return False
 
 def _last_test_date(sb, discipline: str) -> Optional[date]:
     """Data ultimo test (valid_from) per disciplina dalla tabella physiology_zones."""
@@ -134,12 +195,18 @@ def _is_race_week(sb, today: date) -> bool:
     return bool(res.data)
 
 
-def _pick_test_date(sb, today: date, discipline: str) -> date:
+def _pick_test_date(sb, today: date, discipline: str, avoid: Optional[set] = None) -> date:
     """Sceglie il giorno del test: un giorno della struttura settimanale fissa
-    dedicato a `discipline` (A1), nella prossima settimana libera."""
+    dedicato a `discipline` (A1), nella prossima settimana libera, distante
+    almeno MIN_DAYS_BETWEEN_TESTS dagli altri test proposti nello stesso run."""
     weekdays = DISCIPLINE_WEEKDAYS.get(discipline, {1, 5})
+    avoid = avoid or set()
+
+    def _too_close(d: date) -> bool:
+        return any(abs((d - other).days) < MIN_DAYS_BETWEEN_TESTS for other in avoid)
+
     candidate = today + timedelta(days=7)
-    while candidate.weekday() not in weekdays:
+    while candidate.weekday() not in weekdays or _too_close(candidate):
         candidate += timedelta(days=1)
     # Verifica che il giorno scelto sia libero
     res = (
@@ -153,7 +220,7 @@ def _pick_test_date(sb, today: date, discipline: str) -> date:
     max_iter = 52
     while res.data and max_iter > 0:
         candidate += timedelta(days=1)
-        while candidate.weekday() not in weekdays:
+        while candidate.weekday() not in weekdays or _too_close(candidate):
             candidate += timedelta(days=1)
         res = (
             sb.table("planned_sessions")
@@ -189,6 +256,14 @@ def schedule_overdue_tests(today: Optional[date] = None) -> list[dict]:
         logger.info("Race week (entro 10gg) → skip test scheduling")
         return scheduled
 
+    meso = mesocycle_with_planned_retest(today)
+    if meso:
+        logger.info("Mesociclo '%s' (fino al %s) prevede già il retest → nessuna proposta",
+                    meso.get("name"), meso.get("end_date"))
+        return scheduled
+
+    picked: set = set()
+
     for discipline, interval in TEST_INTERVAL_DAYS.items():
         last_test = _last_test_date(sb, discipline)
         if last_test is not None:
@@ -201,8 +276,14 @@ def schedule_overdue_tests(today: Optional[date] = None) -> list[dict]:
             logger.info("[%s] test già pianificato entro 14gg → skip", discipline)
             continue
 
+        if _recently_rejected(discipline, today):
+            logger.info("[%s] test rifiutato negli ultimi %d giorni → skip",
+                        discipline, REJECTION_MEMORY_DAYS)
+            continue
+
         # Proponi (richiede conferma atleta via Telegram prima di finire sul piano)
-        target_date = _pick_test_date(sb, today, discipline)
+        target_date = _pick_test_date(sb, today, discipline, avoid=picked)
+        picked.add(target_date)
         tpl = TEST_TEMPLATES[discipline]
         mod_id = propose_modulation(
             trigger_event="fitness_test_due",

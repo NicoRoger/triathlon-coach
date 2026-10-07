@@ -209,7 +209,12 @@ def update_beliefs_from_session_patterns(days: int = 14) -> dict:
         .gte("created_at", since)
         .execute().data or []
     )
-    analyses = [a for a in all_analyses if a.get("fatigue_type") is not None]
+    # "insufficient_data" non è un'osservazione: contarla come "non cardiovascolare"
+    # creava belief responds_well_* dal nulla (il nuoto, senza HR affidabile in
+    # vasca, è SEMPRE insufficient_data). Il path era inerte finché nessuna
+    # planned_session aveva completed_activity_id; col session matching è attivo.
+    analyses = [a for a in all_analyses
+                if a.get("fatigue_type") not in (None, "insufficient_data")]
     if not analyses:
         return counters
 
