@@ -191,34 +191,63 @@ def _run_pace_context(activity: dict, planned: Optional[dict]) -> Optional[str]:
     return "\n".join(lines)
 
 
-def _swim_pace_context(activity: dict, css_s: Optional[float]) -> str:
-    """Pace medio vs CSS per il nuoto (l'HR in vasca non è affidabile).
+_SWIM_RANGE_RE = re.compile(r"(\d):(\d{2})\s*[-–]\s*(\d):(\d{2})\s*/100m")
+
+
+def _swim_pace_context(activity: dict, css_s: Optional[float], planned: Optional[dict] = None) -> str:
+    """Pace medio vs CSS e vs target del piano, volume vs piano (nuoto).
 
     L'ingest Garmin scrive per il nuoto SOLO avg_pace_s_per_100m: leggendo il
     solo campo /km il confronto con CSS non veniva mai prodotto e l'LLM
-    riceveva sempre "CSS non disponibile o pace non registrata"."""
+    riceveva sempre "CSS non disponibile o pace non registrata".
+    Il confronto con il target del piano è calcolato qui: lasciato all'LLM, il
+    06/10/2026 un 1:23/100m con target 1:35-1:40 è diventato "più lento del
+    target" (è 12" PIÙ VELOCE)."""
     avg_pace_100m = activity.get("avg_pace_s_per_100m")
     if not avg_pace_100m and activity.get("avg_pace_s_per_km"):
         avg_pace_100m = activity["avg_pace_s_per_km"] / 10
     avg_pace_100m = round(float(avg_pace_100m), 1) if avg_pace_100m else None
-    if not (css_s and avg_pace_100m):
-        return (
-            "CSS non disponibile o pace non registrata. "
-            "NOTA: dati HR pool inaffidabili — valuta su RPE e sensazione."
-        )
-    delta = round(avg_pace_100m - css_s, 1)
-    interp = (
-        "più VELOCE del CSS — sprint/Z4+" if delta < -5
-        else "± CSS — soglia/Z4" if abs(delta) <= 5
-        else f"{abs(delta)}s/100m più LENTO del CSS — aerobico Z2/Z3"
-    )
     fmt = lambda s: _fmt_pace(float(s)).replace("/km", "/100m")  # noqa: E731
-    return (
-        f"CSS: {fmt(css_s)} | Pace media: {fmt(avg_pace_100m)} | "
-        f"Delta: {delta:+.1f}s/100m ({interp})\n"
-        f"Il pace è tempo per 100m: valore più ALTO = più LENTO.\n"
-        f"NOTA: dati HR pool inaffidabili — valuta compliance solo su pace e RPE."
-    )
+    lines: list[str] = []
+
+    if css_s and avg_pace_100m:
+        delta = round(avg_pace_100m - css_s, 1)
+        interp = (
+            "più VELOCE del CSS — sprint/Z4+" if delta < -5
+            else "± CSS — soglia/Z4" if abs(delta) <= 5
+            else f"{abs(delta)}s/100m più LENTO del CSS — aerobico Z2/Z3"
+        )
+        lines.append(
+            f"CSS: {fmt(css_s)} | Pace media: {fmt(avg_pace_100m)} | "
+            f"Delta: {delta:+.1f}s/100m ({interp})"
+        )
+    elif not avg_pace_100m:
+        lines.append("Pace non registrata.")
+    else:
+        lines.append(f"Pace media: {fmt(avg_pace_100m)} (CSS non disponibile).")
+
+    m = _SWIM_RANGE_RE.search(_planned_text(planned or {}))
+    if m and avg_pace_100m:
+        a = int(m.group(1)) * 60 + int(m.group(2))
+        b = int(m.group(3)) * 60 + int(m.group(4))
+        fast, slow = min(a, b), max(a, b)
+        if avg_pace_100m < fast:
+            verdict = f"{round(fast - avg_pace_100m)}s/100m più VELOCE del target (intensità sopra il piano)"
+        elif avg_pace_100m > slow:
+            verdict = f"{round(avg_pace_100m - slow)}s/100m più LENTO del target"
+        else:
+            verdict = "dentro il target"
+        lines.append(f"Target del piano: {fmt(fast)[:-5]}–{fmt(slow)} → eseguito {verdict}.")
+
+    planned_m = (((planned or {}).get("structured") or {}).get("computed") or {}).get("total_distance_m")
+    done_m = activity.get("distance_m")
+    if planned_m and done_m:
+        diff = round((float(done_m) / float(planned_m) - 1) * 100)
+        lines.append(f"Volume: {int(done_m)}m eseguiti vs {int(planned_m)}m pianificati ({diff:+d}%).")
+
+    lines.append("Il pace è tempo per 100m: valore più ALTO = più LENTO.")
+    lines.append("NOTA: dati HR pool inaffidabili — valuta compliance solo su pace, volume e RPE.")
+    return "\n".join(lines)
 
 
 def _our_hr_zone(avg_hr: float, lthr: float) -> str:
@@ -323,7 +352,7 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     if sport == "swim":
         zones_row = _get_physiology_zones(sb, "swim")
         css_s = (zones_row or {}).get("css_pace_s_per_100m")
-        swim_pace_context = _swim_pace_context(activity, css_s)
+        swim_pace_context = _swim_pace_context(activity, css_s, planned)
 
     # ADAPT-01: classificazione deterministica cedimento (zero LLM)
     from coach.analytics.readiness import classify_fatigue_type
@@ -404,7 +433,21 @@ def analyze_session(activity_id: str) -> Optional[dict]:
     if run_pace_context:
         context_parts.append(f"## Corsa: pace e FC vs piano\n{run_pace_context}")
     if swim_pace_context:
-        context_parts.append(f"## Nuoto: Pace vs CSS\n{swim_pace_context}")
+        context_parts.append(f"## Nuoto: pace e volume vs CSS e piano\n{swim_pace_context}")
+    # Retest già nel piano del mesociclo: l'analisi non deve suggerire test
+    # (il 06/10 ha proposto un test CSS con il retest fissato in settimana 4).
+    try:
+        from datetime import date as _date
+
+        from coach.coaching.test_scheduler import mesocycle_with_planned_retest
+        meso = mesocycle_with_planned_retest(_date.fromisoformat(activity_date))
+    except Exception:  # noqa: BLE001
+        meso = None
+    if meso:
+        context_parts.append(
+            f"## Test fitness\nIl mesociclo \"{meso.get('name')}\" prevede già il retest delle zone: "
+            "NON suggerire test fitness, sono decisi dal piano."
+        )
     if historical:
         context_parts.append(f"## Storico ultime {len(historical)} sessioni {sport}\n{json.dumps([_clean_for_prompt(h) for h in historical], indent=2, default=str)}")
     if metrics:
@@ -544,7 +587,18 @@ def _clean_for_prompt(d: dict) -> dict:
     # velocità e invertiva "più lento"/"più veloce" (vedi _run_pace_context).
     if "avg_pace_s_per_km" in out:
         out["avg_pace"] = _fmt_pace(out.pop("avg_pace_s_per_km"))
+    # Durata in h:mm:ss: 4723 s (1h18') è stato letto come "47:23".
+    if "duration_s" in out:
+        out["duration"] = _fmt_duration(out.pop("duration_s"))
     return out
+
+
+def _fmt_duration(seconds) -> str:
+    """4723 → '1:18:43 (h:mm:ss)', 1930 → '32:10 (mm:ss)'."""
+    total = int(round(float(seconds)))
+    h, rem = divmod(total, 3600)
+    mnt, sec = divmod(rem, 60)
+    return f"{h}:{mnt:02d}:{sec:02d} (h:mm:ss)" if h else f"{mnt}:{sec:02d} (mm:ss)"
 
 
 def _extract_actions(text: str) -> list[dict]:
