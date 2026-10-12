@@ -88,6 +88,8 @@ def env(monkeypatch):
             garmin_state["used_refresh"].add(data["di_refresh_token"])
             garmin_state["refreshes"] += 1
             path.write_text(_tokens(garmin_state["now"] + 3600, f"r{garmin_state['refreshes']}"))
+            if garmin_state.get("api_rejects"):
+                raise AuthError("Failed to retrieve social profile")
             return None, None
 
     fake = types.ModuleType("garminconnect")
@@ -128,6 +130,23 @@ def test_without_persistence_the_second_run_fails(env):
     env.state["now"] = 10_000
     with pytest.raises(Exception, match="social profile"):
         env.garmin._login()
+
+
+def test_tokens_rotated_by_a_failed_login_are_saved(env):
+    """07/10: l'API rifiuta il token, la libreria fa il refresh (ruotando il
+    refresh token) e poi fallisce. Il refresh token nuovo va salvato lo stesso,
+    altrimenti il tentativo successivo riparte da quello bruciato del secret."""
+    env.monkeypatch.setenv("GARMIN_SESSION_JSON", _secret(_tokens(500, "r0")))
+    env.state["api_rejects"] = True
+    with pytest.raises(Exception, match="social profile"):
+        env.garmin._login()
+    stored = env.db["service_tokens"]["garmin:test-athlete"]["payload"]
+    assert json.loads(stored)["di_refresh_token"] == "r1"
+
+    env.state["api_rejects"] = False           # tentativo successivo
+    env.state["now"] = 10_000
+    env.garmin._login()
+    assert env.state["refreshes"] == 2
 
 
 def test_freshly_regenerated_secret_wins_over_stale_db(env):

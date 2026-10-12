@@ -309,3 +309,32 @@ def test_warnings_section_is_valid_telegram_html(m):
     assert "recovery obbligatorio" in text
     stripped = re.sub(r"</?(b|i|code)>", "", text)
     assert "<" not in stripped and ">" not in stripped
+
+
+# --- 8. Nuoto del 06/10: target del piano e durata ------------------------------
+
+SWIM_PLAN_0610 = {
+    "description": "S2 — Nuoto aerobico + tecnica 2000m.",
+    "structured": {
+        "steps": [{"name": "main_set", "target": "1:35-1:40/100m, rec 20\"", "notes": "Stesso pace"}],
+        "computed": {"total_distance_m": 2000},
+    },
+}
+
+
+def test_swim_faster_than_plan_target_is_called_faster(m):
+    """1:23/100m con target 1:35-1:40 è 12" PIÙ VELOCE (l'LLM aveva scritto 'più lento')."""
+    ctx = m.psa._swim_pace_context({"avg_pace_s_per_100m": 83.0, "distance_m": 2850}, 80, SWIM_PLAN_0610)
+    assert "Target del piano: 1:35–1:40/100m → eseguito 12s/100m più VELOCE del target" in ctx
+    assert "Volume: 2850m eseguiti vs 2000m pianificati (+43%)" in ctx
+
+
+def test_swim_plan_verdict_without_css(m):
+    ctx = m.psa._swim_pace_context({"avg_pace_s_per_100m": 97.0}, None, SWIM_PLAN_0610)
+    assert "dentro il target" in ctx
+
+
+def test_prompt_duration_is_human_readable(m):
+    """4723 s è 1h18', non '47:23'."""
+    assert m.psa._clean_for_prompt({"duration_s": 4723})["duration"] == "1:18:43 (h:mm:ss)"
+    assert m.psa._clean_for_prompt({"duration_s": 1930})["duration"] == "32:10 (mm:ss)"
