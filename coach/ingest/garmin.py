@@ -160,8 +160,13 @@ def _login():
     from garminconnect import Garmin  # type: ignore
     tokendir, loaded = _restore_garmin_session()
     g = Garmin()
-    g.login()  # legge da GARMINTOKENS env var; può fare refresh e riscrivere i token
-    _save_tokens(tokendir, loaded)
+    try:
+        g.login()  # legge da GARMINTOKENS env var; può fare refresh e riscrivere i token
+    finally:
+        # Anche se il login fallisce: su 401 la libreria fa comunque il refresh,
+        # che ruota il refresh token. Se non lo salviamo, quello del secret è
+        # già bruciato e il tentativo successivo non ha più nulla di valido.
+        _save_tokens(tokendir, loaded)
     return g
 
 
