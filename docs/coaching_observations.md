@@ -5,7 +5,7 @@ Ottimo lavoro, coach. Ecco l'analisi dei log e delle sessioni dell'ultimo mese, 
 - **HRV picco sabato (media 88.2, z=+0.8)** (n=4 sett, confidence 0.85) → **Prescrizione**: Programmare FTP test, sessioni soglia e blocchi Z3-Z4 preferibilmente sabato. Questo è il giorno di massima disponibilità neuromuscolare. **Expected outcome**: +12-15% efficacia stimoli, adattamento ottimizzato.
 - **HRV crollo mercoledì (media 75.3, z=-1.2)** (n=4 sett, confidence 0.85) → **Prescrizione**: Mercoledì è giorno di recupero obbligatorio. Implementare riposo completo o Z1 passivo (max 30min). Se programmato carico, posticipare a giovedì. **Expected outcome**: +15-20 punti HRV giovedì, prevenzione overtraining settimanale.
 - **Correlazione TSS-qualità sonno (TSS>70 → sonno 87.3 vs TSS<50 → sonno 53.4)** (n=11 giorni, confidence 0.85) → **Prescrizione**: Dopo TSS>70, anticipare sonno di 30-45min e implementare routine pre-sonno (10min stretching + respirazione 4-7-8). **Expected outcome**: +45min qualità sonno, +1-2 cicli REM, recovery window ottimizzato.
-- **Recupero lento post-sessioni hard (HRV delta -4.9%, TSB -33.88, readiness 27)** (n=1 sessione, confidence 0.5) → **Prescrizione**: Dopo TSB<-30 o HRV delta>-4%, inserire giorno di recupero attivo (30min Z1) o riposo completo prima carico successivo. **Expected outcome**: TSB ritorno a -15 entro 48h, readiness +10-15 punti.
+- **IPOTESI: Recupero lento post-sessioni hard (HRV delta -4.9%, TSB -33.88, readiness 27)** (n=1 sessione, confidence 0.5) → **Prescrizione**: Dopo TSB<-30 o HRV delta>-4%, inserire giorno di recupero attivo (30min Z1) o riposo completo prima carico successivo. **Expected outcome**: TSB ritorno a -15 entro 48h, readiness +10-15 punti.
 
 ## Pattern per sport
 
@@ -24,4 +24,4 @@ Ottimo lavoro, coach. Ecco l'analisi dei log e delle sessioni dell'ultimo mese, 
 ### Corsa
 
 - **Ritmo elevato in sessioni di recupero (avg pace 7:35/km vs 5:40-6:15/km atteso, HR 144bpm in Z2)** (n=6 sessioni, confidence 0.75) → **Prescrizione**: Priorità assoluta alla FC e RPE (max 148bpm, RPE 2-3/10). Ignorare il pace. Concentrarsi su cadenza costante e passo leggero. **Expected outcome**: Compliance Z2, recupero attivo efficace, prevenzione infortuni.
-- **Cadenza decrescente in sessioni lunghe (da 175
+- **Cadenza decrescente in sessioni lunghe (da 
