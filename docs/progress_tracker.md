@@ -1,14 +1,14 @@
 # Progress Tracker
 
-*Aggiornato automaticamente il 2026-11-02*
+*Aggiornato automaticamente il 2026-11-09*
 
 ## Forma Fisica (CTL Trend)
 
-- **CTL attuale**: 20.8
-- **Delta 90gg**: -6.0 (-22%)
-- **TSB oggi**: -3.0
+- **CTL attuale**: 24.0
+- **Delta 90gg**: +1.3 (+6%)
+- **TSB oggi**: -8.5
 - **Readiness**: 63/100
-- **Trend settimanale**: ↘ (-0.5)
+- **Trend settimanale**: ↗ (+2.8)
 
 ## Zone Fisiologiche
 
@@ -22,10 +22,10 @@
 
 ## Compliance Piano
 
+- Sett. 02/11: ░░░░░░░░░░ 0% (3/0)
 - Sett. 26/10: ░░░░░░░░░░ 0% (3/0)
 - Sett. 19/10: ░░░░░░░░░░ 0% (2/0)
 - Sett. 12/10: ██████████ 100% (4/4)
-- Sett. 05/10: ████████░░ 80% (4/5)
 
 ## Mesociclo Corrente
 

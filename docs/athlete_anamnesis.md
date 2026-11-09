@@ -42,18 +42,19 @@ spalla dx post borsite + tendinopatia CLB: via libera fisio ai carichi (29/06), 
 
 Nessun mesociclo attivo.
 
-Carico al 2026-11-02: CTL 20.79 | ATL 23.82 | TSB -3.03 | readiness 63/100 (caution)
+Carico al 2026-11-09: CTL 24.01 | ATL 32.5 | TSB -8.49 | readiness 63/100 (caution)
 
 ## Baseline fisiologiche (finestra 28gg)
-- HR riposo: 48 bpm tipica (range 44-53)
-- HRV rMSSD baseline: 85 ms (n=27)
+- HR riposo: 48 bpm tipica (range 45-54)
+- HRV rMSSD baseline: 84 ms (n=27)
 
 ## Pattern osservati (belief non flaggate, weak+)
-- [validated_belief n=19 conf=0.91] Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)
-- [validated_belief n=13 conf=0.91] RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)
-- [validated_belief n=16 conf=0.91] Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)
-- [validated_belief n=16 conf=0.91] Overpacing Z2 sistematico (HR media 147bpm, NP 243W in Z2 target, 67.4% Z3 in gruppo)
-- [validated_belief n=14 conf=0.91] Overpacing sistematico in sessioni aerobiche (pace 1:17/100m vs target 1:40/100m, HR 151bpm in Z2 target)
+- [weak_belief n=6 conf=0.80] HRV crollato domenica (mean z=-1.8, dom 75.8 vs media settimanale 85.5)
+- [validated_belief n=14 conf=0.73] RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)
+- [validated_belief n=20 conf=0.73] Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)
+- [validated_belief n=17 conf=0.73] Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)
+- [validated_belief n=17 conf=0.73] Overpacing Z2 sistematico (HR media 147bpm, NP 243W in Z2 target, 67.4% Z3 in gruppo)
+- [validated_belief n=15 conf=0.73] Overpacing sistematico in sessioni aerobiche (pace 1:17/100m vs target 1:40/100m, HR 151bpm in Z2 target)
 
 ## Storico test fisiologici
 
