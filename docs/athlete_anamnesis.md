@@ -42,19 +42,20 @@ spalla dx post borsite + tendinopatia CLB: via libera fisio ai carichi (29/06), 
 
 Nessun mesociclo attivo.
 
-Carico al 2026-11-09: CTL 24.01 | ATL 32.5 | TSB -8.49 | readiness 63/100 (caution)
+Carico al 2026-11-16: CTL 25.0 | ATL 27.05 | TSB -2.04 | readiness 63/100 (caution)
 
 ## Baseline fisiologiche (finestra 28gg)
-- HR riposo: 48 bpm tipica (range 45-54)
-- HRV rMSSD baseline: 84 ms (n=27)
+- HR riposo: 50 bpm tipica (range 46-54)
+- HRV rMSSD baseline: 82 ms (n=26)
 
 ## Pattern osservati (belief non flaggate, weak+)
-- [weak_belief n=6 conf=0.80] HRV crollato domenica (mean z=-1.8, dom 75.8 vs media settimanale 85.5)
-- [validated_belief n=14 conf=0.73] RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)
-- [validated_belief n=20 conf=0.73] Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)
-- [validated_belief n=17 conf=0.73] Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)
-- [validated_belief n=17 conf=0.73] Overpacing Z2 sistematico (HR media 147bpm, NP 243W in Z2 target, 67.4% Z3 in gruppo)
-- [validated_belief n=15 conf=0.73] Overpacing sistematico in sessioni aerobiche (pace 1:17/100m vs target 1:40/100m, HR 151bpm in Z2 target)
+- [weak_belief n=7 conf=0.88] HRV crollato domenica (mean z=-1.8, dom 75.8 vs media settimanale 85.5)
+- [weak_belief n=4 conf=0.70] RPE sottostimato in nuoto Z4+ (percezione "moderato" vs esecuzione sprint)
+- [weak_belief n=18 conf=0.56] Fatica muscolare braccia ricorrente + scarsa mobilità spalle (RPE 4, n=6 debrief, pace lenta)
+- [weak_belief n=18 conf=0.56] Overpacing Z2 sistematico (HR media 147bpm, NP 243W in Z2 target, 67.4% Z3 in gruppo)
+- [weak_belief n=16 conf=0.56] Overpacing sistematico in sessioni aerobiche (pace 1:17/100m vs target 1:40/100m, HR 151bpm in Z2 target)
+- [weak_belief n=21 conf=0.56] Superamento zone in sessioni tecnica/recupero (HR media 151bpm in Z2 target, 80% Z3 in recovery)
+- [weak_belief n=15 conf=0.56] RPE sottostimato Z3-Z4 (delta -1.5, RPE 2 con gambe pesanti, incoerenza HR 155bpm)
 
 ## Storico test fisiologici
 
